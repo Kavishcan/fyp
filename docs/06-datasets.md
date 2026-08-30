@@ -38,6 +38,24 @@ before experiments.
 
 Repo: https://github.com/Kavishcan/fedrag-dataset
 
+### MedQA-USMLE — healthcare case study
+
+Add a subset of roughly 150 questions. **Not** a primary benchmark.
+
+A project claiming healthcare that evaluates only on news and StackExchange-style
+data will be challenged. Mu and Li used 100 MedQA questions as a high-stakes case
+study and it carried the domain claim adequately. MedQA is small and easy to
+obtain, unlike the MedRAG corpora cut below.
+
+Reuse their node partition directly: 15 non-medical nodes, 3 honest medical nodes
+built from disjoint training shards, plus malicious nodes. Queries come from the
+test split, using the question stem only.
+
+Role: demonstrates that routing behaviour and leakage persist under a clinical
+query distribution. Not used for tuning.
+
+Dataset: https://huggingface.co/datasets/bigbio/med_qa
+
 ## Cut
 
 | Dataset | Reason |

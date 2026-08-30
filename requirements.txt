@@ -1,0 +1,12 @@
+# Pin exact versions once the environment is confirmed.
+numpy>=1.26
+scipy>=1.11
+faiss-cpu>=1.8
+sentence-transformers>=3.0
+torch>=2.2
+datasets>=2.19
+pandas>=2.2
+scikit-learn>=1.4
+pyyaml>=6.0
+mcp>=1.0
+pytest>=8.0
