@@ -6,11 +6,15 @@ Three trust zones. The router sits in the middle with an adversary on each side.
 
 **Trusted zone (user side).** Query embedding and perturbation happen here.
 Generation also happens here, on a local open-weight model with a fixed prompt.
-Keeping generation inside this boundary is what removes prompt and output leakage
-from scope.
+This avoids disclosure to an external model provider. Output leakage is not
+evaluated in this project, but local generation does not make it impossible.
 
 **Router zone (honest but curious).** Holds the profile registry and makes the
-selection. This is the adversary in A1 and A2. It never holds documents.
+selection. This is the A1 adversary. It never holds documents.
+
+**Routing-observer zone.** Observes contacted source aliases and timing over many
+queries but not the query content. This is the A2 adversary. It may represent
+network telemetry, shared audit infrastructure, or an operational observer.
 
 **Node zone (some malicious).** Each node holds its own documents and local
 index. At least one forges its published profile — the A3 adversary.
@@ -21,10 +25,12 @@ index. At least one forges its published profile — the A3 adversary.
 query
   -> embed (user side)
   -> perturb embedding (user side)
-  -> ROUTER
-       coarse filter    1000 -> 50 candidates
-       trust rerank     50 -> k relevant
-       anonymity set    k + decoys = m
+  -> BASELINE ROUTER ADAPTER
+       RAGRoute / cosine source ranking
+  -> PROPOSED PRIVACY LAYER
+       exposure constraint
+       trust-aware selection
+       anonymity set    k + decoys = m <= fan-out budget
   -> fan out to m nodes
   -> each node retrieves locally, returns top-n passages
   -> merge and rerank
@@ -33,8 +39,22 @@ query
   -> answer
 ```
 
-The perturbed embedding travels the whole path. Nodes never see the clean query
-either.
+The perturbed embedding travels the whole path. Nodes never see the clean query.
+Decoys nevertheless increase the number of nodes receiving a query-derived
+representation, so route privacy and query exposure must be measured separately.
+
+## Baseline-first implementation
+
+The project does not rebuild standard source routing before testing existing
+implementations. Official RAGRoute is the primary relevance/efficiency platform.
+Mu and Li's public routing-hijacking repository supplies the A3 attack, HERouter
+comparison and TASR defence. Both are accessed through a small adapter that
+returns ranked source IDs, scores and timings. Broadcast, random and cosine
+controls are implemented locally because they are small and transparent.
+
+RAGRouter is an adjacent peer-reviewed method, not the primary baseline: it routes
+among retrieval-augmented language models rather than distributed knowledge
+sources.
 
 ## Offline path (once per node)
 
@@ -58,12 +78,14 @@ the PII and the published centroids inherit it.
 | A2 | Source inference | Observer of selection patterns | The fan-out, across many queries |
 | A3 | Routing hijack | Malicious node | Profile publication, surfaces at rerank |
 
-A2 is the core novel result. It makes "routing decisions as metadata" concrete
-rather than rhetorical.
+A2 is the project's primary new measurement. It makes "routing decisions as
+metadata" concrete rather than rhetorical; novelty is stated as a finding of the
+reviewed literature until the final literature search is completed.
 
 ## MCP as node interface
 
-Each node is an MCP server exposing a `retrieve` tool. The router is the client.
+Each live demonstration node is an MCP server exposing a `retrieve` tool. The
+coordinator is the client.
 This gives real transport, real serialisation, and honest byte counts instead of
 hand-waved communication costs.
 

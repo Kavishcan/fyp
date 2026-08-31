@@ -2,7 +2,9 @@
 
 Prep scripts and node partitioning. Raw data is gitignored.
 
-- FeB4RAG — primary routing benchmark, 16 clients
+- FeB4RAG — primary routing benchmark, 16 clients. Precomputed pools support
+  evaluation; document-derived profiles require the relevant underlying BEIR
+  corpora or verified published artifacts.
 - MultiHop-RAG — external validation, 49 clients
 - MedQA-USMLE — healthcare case study, ~150 questions
 - BEIR single-dataset hard split — same-domain difficulty control

@@ -19,7 +19,7 @@ on baselines and the literature chapter.
 
 | Month | Build | Write |
 |---|---|---|
-| 1 | Clone and verify Mu and Li's repo. FeB4RAG loaded. Baselines 0, 1, 2. Recall@K table. | Chapter 2 literature review |
+| 1 | Reproduce official RAGRoute on FeB4RAG; clone and verify Mu and Li's A3/TASR repo; save baseline outputs. | Chapter 2 literature review |
 | 2 | Threat model. Instrumentation. A1 and A2 against the unprotected router. | **PPRS: Chapter 4 requirements spec** |
 | 3 | Noisy profiles and query perturbation. **Noise calibration pilot.** | Chapter 3 methodology |
 | 4 | Anonymity sets. HE baseline (rung 2.5). Full cost instrumentation including audit cost. | Chapter 6 design |
@@ -31,14 +31,21 @@ on baselines and the literature chapter.
 
 Month 8 as buffer is not padding. Something will break in month 4 or 5.
 
-## Week 1 milestone, ahead of everything else
+## Week 1 baseline gate
 
-Clone the routing-hijack reference implementation and confirm it runs.
+1. Run official RAGRoute on FeB4RAG and obtain ranked source IDs and metrics.
+2. Run the routing-hijacking/TASR reference evaluation.
+3. Record commits, licences, environments, commands and outputs.
+4. Decide adapter, black-box or minimal-reimplementation status for each baseline.
 
-RQ03 depends on it entirely. If it is broken, fall back to RQ01 and RQ02 — same
-build, narrower story. Two days now saves five months of exposure.
+RQ03 depends on a reproducible TASR condition. RQ01 and RQ02 remain viable if that
+integration fails. Do not spend the first month rebuilding an ordinary router
+before completing this gate.
 
-Repo: https://github.com/Junjie-Mu/routing-hijacking-fedrag
+Repos:
+
+- https://github.com/sacs-epfl/ragroute
+- https://github.com/Junjie-Mu/routing-hijacking-fedrag
 
 ## External evaluators
 
@@ -72,6 +79,6 @@ status of "pending" is acceptable for the dissertation; acceptance is not requir
 
 ## Standing task
 
-Set an arXiv alert for federated RAG routing. The papers defining this gap appeared
-within six months and the reference implementation is public at EMNLP. Re-verify
-before the PPRS and again before paper submission.
+Set an arXiv alert for federated RAG routing. The papers defining this gap are
+recent; treat the routing-hijacking work as emerging preprint evidence unless its
+peer-reviewed status is verified. Re-check before the PPRS and paper submission.

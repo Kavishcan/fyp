@@ -6,17 +6,31 @@
 |---|---|---|
 | 0 | Oracle routing | Upper bound using dataset labels |
 | 1 | Broadcast to all | Max coverage, max exposure, max cost |
-| 2 | Plain relevance router | Efficiency-only baseline (RAGRoute-style) |
+| 2 | Official RAGRoute | Primary peer-reviewed source-routing baseline |
 | **2.5** | **HE routing (CKKS)** | **Peer-reviewed privacy baseline. Reuse Mu and Li's HERouter.** |
 | 3 | + query perturbation | Isolates the query-noise effect |
 | 4 | + noisy profiles | Isolates the profile-noise effect |
 | 5 | + anonymity sets | Full privacy router |
 | 6 | + decoy-aware trust | Full system |
 
-Rung 2.5 is essential and costs nothing to add. Showing that A2 succeeds against
-encrypted routing exactly as well as against plaintext is the cleanest result in
-the thesis, and their own Table 17 predicts it: encrypted and plaintext routing
-produce identical rankings, so the observable selection set is unchanged.
+Rung 2 uses the official RAGRoute implementation through the common source-router
+adapter where practical. The local cosine router remains a transparent additional
+control rather than being presented as RAGRoute. RAGRouter is not a direct
+federated-source baseline because it selects among RAG-enabled language models.
+
+## Baseline comparability rule
+
+A router can be benchmarked without open source code if an executable, package,
+checkpoint or API lets the project register the same sources, run the same queries
+and obtain ranked source IDs. If only published aggregate numbers are available,
+cite them as literature comparison and do not place them in the direct experimental
+table.
+
+Rung 2.5 is essential because it is the closest published privacy baseline.
+Mu and Li's Table 17 predicts that A2 receives the same observable selection set
+under plaintext and ranking-preserving encrypted routing. The project must
+reproduce that condition; it must not report the predicted equality as its own
+result before running the experiment.
 
 ## Attacks
 
@@ -26,7 +40,7 @@ produce identical rankings, so the observable selection set is unchanged.
 | A2 | Source inference | Observer of selection decisions | Accuracy of the reconstructed topic-to-node map |
 | A3 | Routing hijack | Malicious node forging its profile | Attacker selection rate |
 
-**A2 is the novel contribution.** Build it with a strong adversary: many observed
+**A2 is the primary new measurement in this project.** Build it with a strong adversary: many observed
 queries, a known topic taxonomy, the full selection sequence. An under-powered A2
 makes a low leakage figure uninterpretable.
 
@@ -40,7 +54,8 @@ is the ceiling and diagnoses which stage broke). MRR, nDCG, top-1 accuracy.
 **Answer quality.** EM and F1 where labels allow; groundedness; citation accuracy.
 
 **Privacy.** A1 inversion success; A2 map-reconstruction accuracy; irrelevant nodes
-contacted.
+contacted; sensitive-token fraction sent; repeated-route linkability. Report route
+privacy separately from the additional query exposure caused by decoys.
 
 **Robustness.** A3 hijack rate; malicious selection rate; honest-node false-positive
 rate.
@@ -54,6 +69,10 @@ Two knobs, swept jointly:
 
 - `sigma` — perturbation magnitude on queries and profiles
 - `m` — anonymity set size
+
+The sweep is subject to a maximum fan-out and audit/exposure budget. A larger
+anonymity set is not automatically more private because it discloses a
+query-derived representation to more sources.
 
 Record every metric above at each setting.
 
@@ -96,8 +115,14 @@ final recall, nodes contacted, latency, bytes, audit cost.
 
 If recall collapses at 300, publish the ceiling. A measured limit is a finding.
 
-Real MCP servers at 8 to 16 nodes; in-process simulation above that. State the
-split explicitly.
+Real MCP servers at 8 to 16 nodes; logical or in-process clients above that. State
+the split explicitly.
+
+## Reproduction records
+
+For every external baseline record repository commit, environment, dataset version,
+source-profile construction, query split, embedding model, top-k, seed, hardware,
+commands and any adapter changes. Save raw routing outputs before computing metrics.
 
 ## Known confound
 

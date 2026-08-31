@@ -1,23 +1,26 @@
-# A Smart, Privacy-Aware Source Router for Federated RAG
+# Training-Free Exposure-Constrained and Trust-Aware Source Routing for Federated RAG
 
-Final year project. A source router for federated retrieval-augmented generation
-that selects a small set of relevant, trustworthy nodes from a large pool without
-revealing which nodes hold what. Evaluated in a healthcare network setting.
+Final year project. A privacy layer for federated retrieval-augmented generation
+that selects a small set of relevant, trustworthy sources while measuring and
+reducing leakage from queries and observable routing decisions. Healthcare is the
+case-study domain; the routing method is domain independent.
 
 ## The problem in one paragraph
 
-Federated RAG keeps documents local, but the routing decision is exposed. A router
-sees the query, holds a map of which node knows what, and its selection pattern is
-readable across repeated queries. The one existing privacy mechanism at this stage
-is ranking-preserving homomorphic encryption: it hides the query from the router
-and leaves the selected node IDs unchanged.
+Federated RAG keeps documents local, but routing still exposes a query-derived
+representation and a pattern of contacted sources. Existing source routing
+primarily optimises relevance and efficiency. Encrypted routing can protect query
+content while preserving the same source ranking, so it does not by itself hide
+the observable selection pattern. This project measures that leakage and adds a
+training-free privacy and trust layer to a reproduced public routing baseline.
 
 ## Structure
 
 | Path | Contents |
 |---|---|
 | `docs/` | Gap, proposal, architecture, router design, experiments, datasets, roadmap, deployment, thesis mapping |
-| `src/router/` | Two-stage privacy-aware router |
+| `src/baselines/` | Adapters for runnable published routers and simple controls |
+| `src/router/` | Proposed privacy, exposure and trust layer |
 | `src/nodes/` | MCP node servers and in-process simulator |
 | `src/attacks/` | A1 inversion, A2 source inference, A3 hijack integration |
 | `src/eval/` | Instrumentation, metrics, ablation harness |
@@ -35,10 +38,13 @@ and leaves the selected node IDs unchanged.
 7. [Roadmap](docs/07-roadmap.md)
 8. [Deployment](docs/08-deployment.md)
 9. [Thesis mapping](docs/09-thesis-mapping.md)
+10. [Baseline selection](docs/10-baseline-selection.md)
 
 ## Status
 
-Planning. Nothing implemented.
+Planning and baseline-selection stage. Nothing implemented in this repository.
 
-**Next action:** clone https://github.com/Junjie-Mu/routing-hijacking-fedrag and
-confirm it runs. RQ03 depends on it entirely.
+**Next action:** reproduce official RAGRoute on FeB4RAG and record ranked source
+IDs, Recall@K, latency and communication output. Then reproduce the public
+routing-hijacking/TASR evaluation used for RQ03. Do not rebuild an ordinary
+source router before testing whether the published implementations are usable.

@@ -9,8 +9,11 @@ Three datasets. Deliberately few.
 790 queries, 16 source clients, precomputed top-100 result pools and qrels.
 Apache-2.0 (underlying BEIR datasets carry separate terms).
 
-The precomputed pools are why this is primary — they save months of index
-building. Use for the main routing and communication experiments.
+The precomputed pools support routing and merging evaluation, but they are not a
+replacement for the source corpora when constructing document-derived centroids.
+Official FeB4RAG instructions require the underlying BEIR collections. Use the
+published RAGRoute/FeB4RAG artifacts where available and document exactly which
+parts are reproduced versus reused.
 
 Repo: https://github.com/ielab/FeB4RAG
 
@@ -75,8 +78,8 @@ download them is cut.
 
 | Scale | Source | Transport |
 |---|---|---|
-| 16 | FeB4RAG native clients | Real MCP servers |
-| 49 | MultiHop-RAG source metadata | Real MCP servers |
+| 8-16 | FeB4RAG clients | Real MCP demonstration and in-process research runs |
+| 49 | MultiHop-RAG source metadata | Logical clients; in-process by default |
 | 100 / 300 / 1000 | Synthetic sharding of the above | In-process, mocked |
 
 Synthetic shards from one corpus are more homogeneous than real institutions.

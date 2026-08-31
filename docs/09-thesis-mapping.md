@@ -16,6 +16,9 @@ missing. The structure follows the IIT / University of Westminster template.
 | 9 | Critical Evaluation | — | **Missing — needs external evaluators** |
 | 10 | Conclusion | — | Written last |
 
+Baseline selection and reproducibility evidence come from
+`10-baseline-selection.md` and support Chapters 2, 3, 7 and 8.
+
 ## Chapter 1 subsection checklist
 
 The template requires all of these. Present state:

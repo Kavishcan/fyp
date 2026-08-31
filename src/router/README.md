@@ -1,13 +1,14 @@
-# Router
+# Proposed routing privacy layer
 
-Two-stage privacy-aware source router.
+This package wraps a reproduced source-routing baseline. It does not rebuild the
+ordinary router unless the baseline acceptance gate proves that adaptation is
+unavoidable.
 
-- `registry.py` — node profiles, flattened FAISS centroid index, trust state
-- `coarse.py` — stage 1, max-over-centroid scoring, 1000 to ~50 candidates
-- `rerank.py` — stage 2, relevance + trust + cost, 50 to k
-- `anonymity.py` — stage 3, topic-stable decoy sampling, k to m
-- `trust.py` — stage 4, decoy-aware wrapper around TASR
+- `exposure.py` — exposure proxies, budget accounting and fan-out constraint
+- `perturb.py` — empirical query/profile perturbation
+- `anonymity.py` — topic-stable decoy sampling under the exposure budget
+- `trust.py` — decoy-aware wrapper around unmodified TASR
+- `pipeline.py` — composition of baseline ranking and proposed privacy layer
 
-Use max over centroids, not mean. Averaging buries a strong single-cluster match
-under many irrelevant ones, and this is the most common way a coarse filter
-silently loses recall.
+Max-over-centroid, mean and top-r mean are ablation conditions. Do not present one
+as universally correct before measuring it.

@@ -8,10 +8,12 @@
 
 ## Statement
 
-Federated RAG protects documents and, in one case, query confidentiality at the
-router. It does not protect the routing decision itself. Nobody has measured what
-that decision leaks, and nobody has tested whether protecting it breaks the
-defences that already exist.
+Federated RAG can protect documents and query content while still exposing the
+identity and sequence of contacted sources. In the literature reviewed for this
+project, no study was found that jointly measures this selection-pattern leakage,
+reduces it under an explicit exposure/cost constraint, and evaluates the effect on
+trust-based routing-hijack defence. This claim must be rechecked before proposal
+submission and paper submission; it is not a universal claim that no work exists.
 
 ## What each existing mechanism protects
 
@@ -26,7 +28,7 @@ defences that already exist.
 | RemoteRAG | Query to a single cloud service | Selection among many sources |
 | **HERouter (Mu and Li)** | **Query content at the router** | **The selection pattern** |
 
-## The decisive evidence
+## Closest technical evidence
 
 Mu and Li's Table 17 reports hijack rate under plaintext and encrypted routing:
 
@@ -40,8 +42,10 @@ same ranking. The router cannot read the query, but the selected node IDs are
 unchanged, so anyone observing which nodes are contacted learns exactly what they
 would have learned without encryption.
 
-This single table is the strongest motivation available for this project. Cite it
-in the introduction and in the gap statement.
+The result motivates an empirical reproduction: if encryption returns the same
+ranking, an observer of contacted IDs receives the same routing trace. The thesis
+must reproduce this behaviour under the selected benchmark instead of relying on
+the published table alone.
 
 ## Who has named the channel
 
@@ -52,18 +56,27 @@ in the introduction and in the gap statement.
   assets crossing edge-to-cloud trust boundaries.
 - RAGRoute optimises routing purely for efficiency and notes only that privacy
   schemes "can benefit from" it, with no mechanism, threat model or experiment.
-- Mu and Li (EMNLP 2026 Main) attack routing **integrity** and defend it with
-  TASR. Routing **privacy** is explicitly out of their scope. A keyword search of
-  their released codebase for leak, privacy, inversion, anonymity, decoy,
-  differential and epsilon returns zero matches.
+- Mu and Li's 2026 routing-hijacking preprint attacks routing **integrity** and
+  defends it with TASR. It is exceptionally relevant and has runnable code, but it
+  is treated as emerging preprint evidence unless peer-reviewed status is
+  independently verified. Routing privacy is not its main contribution.
+
+## Evidence weighting
+
+| Work | Status in this project | Evidence weight |
+|---|---|---|
+| RAGRoute | Closest peer-reviewed source-routing method and primary runnable baseline | Core / strong |
+| RAGRouter | Peer-reviewed routing methodology, but routes among RAG-enabled LLMs rather than knowledge sources | Adjacent / strong |
+| Routing Hijacking + TASR | Closest security attack and defence with public implementation | Core security / emerging |
+| Security and privacy surveys | Motivate metadata, coupled threats and multi-objective evaluation | Supporting |
 
 ## The three unanswered questions
 
 | | Question | Status |
 |---|---|---|
-| 1 | How much does routing leak? | Named as a risk, never measured |
-| 2 | Can it be reduced at acceptable cost? | Only a ranking-preserving mechanism exists, which offers no trade-off to characterise |
-| 3 | Does protecting it weaken trust-based defence? | Not asked by anyone |
+| 1 | How much does routing leak? | Not quantified in the reviewed source-routing studies |
+| 2 | Can it be reduced at acceptable cost? | No directly comparable exposure-constrained mechanism was found |
+| 3 | Does protecting it weaken trust-based defence? | No joint privacy/TASR evaluation was found |
 
 ## The sharpened form of question 3
 
@@ -91,17 +104,18 @@ paper.
 
 ## Why the gap holds
 
-**Validated** — two independent surveys call it open, so it was not invented here.
-**Unoccupied** — the closest paper explicitly scopes privacy out and ships no
-privacy metric.
+**Supported** — surveys identify metadata, partial observability, trust and
+privacy-utility evaluation as open concerns.
+**Unoccupied in the reviewed set** — the closest source-routing and routing-
+security studies do not jointly evaluate selection-pattern privacy and TASR.
 **Narrow** — one stage, not five.
 **Falsifiable** — the decoy-hijacker collision is a specific prediction, and a
 null result is still useful to deployers.
 
 ## Standing caution
 
-The papers defining this gap are months old and the reference implementation is
-public at a top venue. "Add noise to this and measure leakage" is a reasonable
-next step for anyone already holding that repository. Re-verify before the
-proposal deadline and again before paper submission, and set an arXiv alert for
-federated RAG routing.
+The papers defining this gap are recent and the reference implementations are
+public. "Add noise and measure leakage" is not enough by itself. The contribution
+must include a strong attacker, a measurable exposure model, a reproducible
+baseline, a constrained privacy mechanism, and the privacy-trust interference
+experiments. Re-verify the literature before the proposal and paper deadlines.
