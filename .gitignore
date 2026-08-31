@@ -24,3 +24,14 @@ experiments/logs/
 
 .env
 *.key
+
+# Vendored third-party research repos (docs/10-baseline-selection.md).
+# Not committed as part of this repo — cloned locally per the setup
+# instructions in each adapter's docstring, pinned to a recorded commit.
+backend/vendor/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local

@@ -4,15 +4,19 @@ Guidance for working in this repository.
 
 ## What this is
 
-A final-year research project: a training-free, exposure-constrained,
-trust-aware privacy layer for source routing in federated RAG. The contribution
-is the privacy/trust layer and the leakage measurement, evaluated on top of a
-**reproduced published router**, not a new router built from scratch.
+**FedSafeRouter** — a final-year research project: a training-free,
+exposure-constrained, trust-aware privacy layer for source routing in
+federated RAG. The contribution is the privacy/trust layer and the leakage
+measurement, evaluated on top of a **reproduced published router**, not a new
+router built from scratch. A Next.js dashboard (`frontend/`) sits on top of a
+FastAPI backend (`backend/api/`) as a demo/dev surface — it is not the
+research contribution and has no bearing on any reported result.
 
-Read [README.md](README.md) for the architecture summary. Read the numbered docs
-in `docs/` for full detail — `01-research-gap.md` and `02-proposal.md` for the
-research framing, `03-architecture.md` and `04-router-design.md` for the system
-contract, `10-baseline-selection.md` for which published works are reused and how.
+Read [README.md](README.md) for the architecture summary and how to run both
+halves. Read the numbered docs in `docs/` for full detail —
+`01-research-gap.md` and `02-proposal.md` for the research framing,
+`03-architecture.md` and `04-router-design.md` for the system contract,
+`10-baseline-selection.md` for which published works are reused and how.
 
 ## The one rule that shapes everything else
 
@@ -55,11 +59,14 @@ comments, docstrings, and commit messages alike:
 
 | Path | Contract |
 |---|---|
-| `src/baselines/` | `SourceRouter` adapters (`register_sources`, `rank`) — RAGRoute, TASR/routing-hijacking, broadcast, random, cosine, oracle |
-| `src/router/` | The proposed layer: `registry.py` (source profiles), `perturb.py` (perturbation), `exposure.py` (exposure cost + budget), `anonymity.py` (decoy selection), `trust.py` (bounded trust update), `pipeline.py` (composes a baseline with the layer) |
-| `src/nodes/` | `profile.py` (offline profile construction), `simulator.py` (in-process nodes), `server.py` (MCP transport, added after the in-process pipeline is stable) |
-| `src/attacks/` | `a1_inversion.py`, `a2_source_inference.py` (the project's primary new measurement), `a3_hijack.py` (integrates the routing-hijacking repo) |
-| `src/eval/` | `instrument.py`, `metrics.py`, `sweep.py`, `ablation.py`, `reproduce.py` (baseline provenance records) |
+| `backend/baselines/` | `SourceRouter` adapters (`register_sources`, `rank`) — RAGRoute (stub), TASR/routing-hijacking (real, wired), broadcast, random, cosine, oracle |
+| `backend/router/` | The proposed layer: `registry.py` (source profiles), `perturb.py` (perturbation), `exposure.py` (exposure cost + budget), `anonymity.py` (decoy selection), `trust.py` (bounded trust update), `pipeline.py` (composes a baseline with the layer) |
+| `backend/nodes/` | `profile.py` (offline profile construction), `simulator.py` (in-process nodes), `server.py` (MCP transport, added after the in-process pipeline is stable) |
+| `backend/attacks/` | `a1_inversion.py`, `a2_source_inference.py` (the project's primary new measurement), `a3_hijack.py` (integrates the routing-hijacking repo) |
+| `backend/eval/` | `instrument.py`, `metrics.py`, `sweep.py`, `ablation.py`, `reproduce.py` (baseline provenance records) |
+| `backend/api/` | FastAPI dev backend (`app.py`, `state.py`, `schemas.py`) for the Next.js frontend — not a deployment target, no answer generation, nodes registered by document upload since MCP isn't wired up |
+| `backend/vendor/` | Gitignored clones of RAGRoute and routing-hijacking-fedrag. Never assume they're present — adapters must fail clearly (`FileNotFoundError` with the clone command) when they aren't |
+| `frontend/` | Next.js + TypeScript + Tailwind + shadcn/ui. `lib/api.ts` is a hand-maintained mirror of `backend/api/schemas.py` — keep them in sync when either changes |
 | `data/` | Dataset loading and source partitioning |
 
 ## Build order (from `docs/04-router-design.md`)

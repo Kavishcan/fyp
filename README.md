@@ -1,9 +1,15 @@
-# Training-Free Exposure-Constrained and Trust-Aware Source Routing for Federated RAG
+# FedSafeRouter
 
-Final year project. A privacy layer for federated retrieval-augmented generation
-that selects a small set of relevant, trustworthy sources while measuring and
-reducing leakage from queries and observable routing decisions. Healthcare is the
-case-study domain; the routing method is domain independent.
+Training-Free Exposure-Constrained and Trust-Aware Source Routing for
+Federated RAG. Final year project. A smart, privacy-aware source router for
+federated retrieval-augmented generation that selects a small set of relevant,
+trustworthy sources while measuring and reducing leakage from queries and
+observable routing decisions. Healthcare is the case-study domain; the
+routing method is domain independent.
+
+The name is literal: **Fed**erated + **Safe** + **Router** — the contribution
+is the router and its privacy/trust layer specifically, not a full RAG
+pipeline (answer generation is deliberately out of scope, see Status below).
 
 ## The problem in one paragraph
 
@@ -57,16 +63,71 @@ layer sits on top of a reproduced baseline rather than a bespoke router. See
 
 ## Structure
 
+Monorepo: a Python research backend, a Next.js dashboard frontend, and
+gitignored local checkouts of the external baselines being reproduced.
+
 | Path | Contents |
 |---|---|
-| `docs/` | Gap, proposal, architecture, router design, experiments, datasets, roadmap, deployment, thesis mapping |
-| `src/baselines/` | Adapters for runnable published routers and simple controls |
-| `src/router/` | Proposed privacy, exposure and trust layer |
-| `src/nodes/` | MCP node servers and in-process simulator |
-| `src/attacks/` | A1 inversion, A2 source inference, A3 hijack integration |
-| `src/eval/` | Instrumentation, metrics, ablation harness |
+| `backend/baselines/` | `SourceRouter` adapters — RAGRoute, TASR/HERouter, broadcast, random, cosine, oracle |
+| `backend/router/` | Proposed privacy, exposure and trust layer |
+| `backend/nodes/` | MCP node servers and in-process simulator |
+| `backend/attacks/` | A1 inversion, A2 source inference, A3 hijack integration |
+| `backend/eval/` | Instrumentation, metrics, ablation harness |
+| `backend/api/` | FastAPI service backing the frontend |
+| `backend/vendor/` | Gitignored clones of RAGRoute and routing-hijacking-fedrag (TASR) — see below |
+| `backend/tests/` | Unit and integration tests (pytest) |
+| `frontend/` | Next.js + TypeScript + Tailwind + shadcn/ui dashboard |
+| `docs/` | Gap, proposal, architecture, router design, experiments, datasets, roadmap, deployment, thesis mapping, baseline selection |
 | `data/` | Dataset prep and node partitioning |
-| `experiments/` | Configs and result logs |
+| `experiments/` | Configs, result logs, and the baseline reproduction log |
+
+## Running it
+
+Backend (from repo root):
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+uvicorn api.app:app --reload --app-dir backend
+```
+
+Frontend, in a second terminal:
+
+```bash
+cd frontend
+npm install
+cp .env.local.example .env.local   # points at http://localhost:8000 by default
+npm run dev
+```
+
+Open `http://localhost:3000`. Register a source with a few documents, run a
+query, then use "Reveal audit trail" to see the genuine/decoy breakdown the
+query response itself deliberately withholds.
+
+Tests: `pytest` from the repo root (config in `pyproject.toml` points at
+`backend/`).
+
+## External baselines (`backend/vendor/`)
+
+RAGRoute and the routing-hijacking-fedrag repo (source of TASR and HERouter)
+are cloned locally, not committed — `backend/vendor/` is gitignored. Clone them
+yourself to reproduce:
+
+```bash
+git clone https://github.com/sacs-epfl/ragroute backend/vendor/ragroute
+git clone https://github.com/Junjie-Mu/routing-hijacking-fedrag backend/vendor/routing-hijacking-fedrag
+```
+
+- **TASR is wired for real** (`backend/baselines/tasr_adapter.py` loads their
+  actual `TrustAwareRouter` class directly, bypassing their package's heavier
+  optional imports). `backend/tests/test_tasr_adapter.py` runs against it
+  automatically once cloned.
+- **RAGRoute is not wired up.** It's a multi-process system (HTTP coordinator +
+  routing process + Ollama for generation), not an importable router — see the
+  docstring in `backend/baselines/ragroute_adapter.py` for exactly what running
+  it for real requires.
+- Provenance for both is recorded in `experiments/reproduction_log.jsonl`
+  (commit hashes, licences, what's actually verified vs. not).
 
 ## Documents
 
@@ -83,33 +144,22 @@ layer sits on top of a reproduced baseline rather than a bespoke router. See
 
 ## Status
 
-Implemented, tested locally on synthetic data, not yet run against any real
-dataset or upstream repository:
+**Backend:** implemented and tested on synthetic data — the `SourceRouter`
+contract and local controls, the full privacy/trust layer (registry,
+perturbation, exposure budget, topic-stable anonymity sets, bounded trust
+update), node simulation, A1/A2/A3 attack modules, evaluation/instrumentation,
+and a real (not reimplemented) TASR adapter. 70 tests passing.
 
-- `src/baselines/`: the `SourceRouter` adapter contract, plus broadcast,
-  random, cosine (max/mean/top-r-mean aggregation), and oracle controls.
-- `src/router/`: source registry with a neutral trust prior, empirical query
-  and profile perturbation, exposure cost and budget enforcement, topic-stable
-  and random anonymity-set construction, bounded trust update (unmodified and
-  decoy-aware), and the pipeline composing all of it around a baseline router.
-- `src/nodes/`: PII-redaction heuristic, k-means profile construction with
-  noise, in-process source simulator, and A3 profile forgery.
-- `src/attacks/`: A2 source-inference (frequency and intersection variants —
-  the intersection attack is what topic-stable decoys are specifically
-  designed to defeat), a nearest-neighbour A1 inversion baseline, and a local
-  hijack-trial harness for prototyping against the project's own trust update.
-- `src/eval/`: routing metrics (recall/coarse-recall kept separate, precision,
-  MRR, nDCG, audit cost), per-query instrumentation, and baseline-provenance
-  recording.
-- `data/partition.py`: cluster-based and random synthetic source partitioning.
-- 59 unit/integration tests, all passing, run on synthetic vectors with no
-  optional heavy dependencies required.
+**Frontend:** a working dashboard — register sources, list them with live
+trust scores, run a query, inspect citations, and reveal the audit trail. No
+auth, no persistence beyond the backend's in-memory state — a research demo,
+not a deployment target.
 
-**Not yet done, deliberately:** `ragroute_adapter.py` and `tasr_adapter.py` are
-contract-only stubs — they raise until the actual upstream repositories
-(linked in [docs/10-baseline-selection.md](docs/10-baseline-selection.md)) are
-cloned, verified against the acceptance gate, and wired in. No baseline result
-should be reported until that reproduction has actually been run. MCP
-transport (`src/nodes/server.py`) is a thin, unwired stub, per the build order
-in `docs/04-router-design.md` — it comes after the in-process pipeline is
-validated against real data, not before.
+**Not yet done, deliberately:**
+- `ragroute_adapter.py` is a stub — RAGRoute needs its own process (and Ollama)
+  running, which is a real resource commitment, not something to silently
+  trigger.
+- No answer generation. `POST /query` always returns `answer: null`.
+- MCP transport (`backend/nodes/server.py`) is unwired — sources are simulated
+  in-process, per the build order in `docs/04-router-design.md`.
+- A2 exists as a tested module but isn't wired into the API as a live observer.
