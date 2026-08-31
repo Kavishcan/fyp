@@ -25,6 +25,16 @@ class NodeRegisterResponse(BaseModel):
     note: str = "simulated mode: profile computed server-side from submitted documents"
 
 
+class AvailableMCPNode(BaseModel):
+    node_id: str
+    local_model: str
+    document_count: int
+
+
+class ActivateNodeRequest(BaseModel):
+    node_id: str
+
+
 class NodeStatus(BaseModel):
     node_id: str
     trust: float
@@ -32,6 +42,7 @@ class NodeStatus(BaseModel):
     document_count_bucket: str
     profile_version: int
     local_model: str
+    transport: str  # "mcp" (real, separate process) or "simulated" (in-process)
 
 
 class QueryRequest(BaseModel):

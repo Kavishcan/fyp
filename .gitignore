@@ -13,6 +13,10 @@ env/
 
 data/raw/
 data/processed/
+# Derived from real BEIR corpora in backend/vendor/beir/ (also gitignored) —
+# regenerate with data/prepare_beir_nodes.py, don't commit.
+data/mcp_nodes/
+data/mcp_nodes_extra/
 *.faiss
 *.index
 *.npy

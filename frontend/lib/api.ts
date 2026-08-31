@@ -34,6 +34,9 @@ export interface NodeStatus {
   document_count_bucket: string;
   profile_version: number;
   local_model: string;
+  /** "mcp" — a real, separate server process reached over MCP. "simulated" —
+   * documents held in the coordinator's own process. */
+  transport: "mcp" | "simulated";
 }
 
 export interface QueryRequest {
@@ -64,6 +67,14 @@ export interface AuditResponse {
   genuine_source_ids: string[];
   dispatched_source_ids: string[];
   decoy_source_ids: string[];
+}
+
+/** A real MCP node server prepared by data/prepare_beir_nodes.py but not
+ * auto-loaded at startup — activate it with api.activateNode. */
+export interface AvailableMCPNode {
+  node_id: string;
+  local_model: string;
+  document_count: number;
 }
 
 class ApiError extends Error {
@@ -106,6 +117,14 @@ export const api = {
     }),
 
   audit: (queryId: string) => request<AuditResponse>(`/audit/${encodeURIComponent(queryId)}`),
+
+  listAvailableNodes: () => request<AvailableMCPNode[]>("/nodes/available"),
+
+  activateNode: (nodeId: string) =>
+    request<NodeRegisterResponse>("/nodes/activate", {
+      method: "POST",
+      body: JSON.stringify({ node_id: nodeId }),
+    }),
 };
 
 export { ApiError, BASE_URL };

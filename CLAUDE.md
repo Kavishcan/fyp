@@ -61,13 +61,19 @@ comments, docstrings, and commit messages alike:
 |---|---|
 | `backend/baselines/` | `SourceRouter` adapters (`register_sources`, `rank`) — RAGRoute (stub), TASR/routing-hijacking (real, wired), broadcast, random, cosine, oracle |
 | `backend/router/` | The proposed layer: `registry.py` (source profiles), `perturb.py` (perturbation), `exposure.py` (exposure cost + budget), `anonymity.py` (decoy selection), `trust.py` (bounded trust update), `pipeline.py` (composes a baseline with the layer) |
-| `backend/nodes/` | `profile.py` (offline profile construction), `simulator.py` (in-process nodes), `server.py` (MCP transport, added after the in-process pipeline is stable) |
+| `backend/nodes/` | `embedding.py` (shared placeholder embedder), `profile.py` (offline profile construction), `simulator.py` (in-process nodes), `mcp_server.py` (real MCP node server — launch with `python -m nodes.mcp_server --data-file ...`), `mcp_client.py` (real MCP client, spawns a fresh subprocess per call) |
 | `backend/attacks/` | `a1_inversion.py`, `a2_source_inference.py` (the project's primary new measurement), `a3_hijack.py` (integrates the routing-hijacking repo) |
 | `backend/eval/` | `instrument.py`, `metrics.py`, `sweep.py`, `ablation.py`, `reproduce.py` (baseline provenance records) |
-| `backend/api/` | FastAPI dev backend (`app.py`, `state.py`, `schemas.py`) for the Next.js frontend — not a deployment target, no answer generation, nodes registered by document upload since MCP isn't wired up |
-| `backend/vendor/` | Gitignored clones of RAGRoute and routing-hijacking-fedrag. Never assume they're present — adapters must fail clearly (`FileNotFoundError` with the clone command) when they aren't |
+| `backend/api/` | FastAPI dev backend (`app.py`, `state.py`, `schemas.py`) for the Next.js frontend — not a deployment target, no answer generation. Both simulated nodes (document upload) and real MCP nodes (auto-loaded from `data/mcp_nodes/` at startup) publish into the same registry |
+| `backend/vendor/` | Gitignored clones of RAGRoute, routing-hijacking-fedrag, and BEIR corpora (`vendor/beir/`). Never assume they're present — adapters must fail clearly (`FileNotFoundError` with the clone command) when they aren't |
 | `frontend/` | Next.js + TypeScript + Tailwind + shadcn/ui. `lib/api.ts` is a hand-maintained mirror of `backend/api/schemas.py` — keep them in sync when either changes |
-| `data/` | Dataset loading and source partitioning |
+| `data/` | `prepare_beir_nodes.py` (real BEIR corpora -> `data/mcp_nodes/*.json`, gitignored, regenerate don't commit), `partition.py` (synthetic source partitioning) |
+
+**Python 3.10+ is required project-wide** (not just for a submodule) — the
+`mcp` SDK dropped 3.9 support entirely, and since node server processes
+(`mcp_server.py`) and the coordinator both need it, there is one venv, not a
+split one. If you ever see `ModuleNotFoundError: mcp` or a "requires-python"
+pip error, check `python --version` before anything else.
 
 ## Build order (from `docs/04-router-design.md`)
 
@@ -76,7 +82,10 @@ protection. Roughly: baseline adapter and local controls first, then A1/A2
 instrumentation against the unprotected router, then perturbation, then the
 exposure-constrained anonymity set, then A3/TASR integration and the
 interference sweep, then MCP transport last, once the in-process pipeline is
-stable. Do not add a mechanism whose baseline comparison hasn't been run yet.
+stable. MCP is now wired (`nodes/mcp_server.py` + `nodes/mcp_client.py`), but
+only against 2 small BEIR corpora sampled at 40 docs/node with the
+placeholder embedder — scaling that up is still open. Do not add a mechanism
+whose baseline comparison hasn't been run yet.
 
 ## External code
 
@@ -89,7 +98,10 @@ direct benchmark.
 
 ## Testing
 
-Router-logic tests should run on synthetic vectors without requiring the heavy
-optional dependencies (`torch`, `sentence-transformers`, `faiss-cpu`, `mcp`) to
-be installed — embedding and transport are injected, not hard-imported, so the
-privacy-layer logic is testable in isolation.
+Router-logic tests run on synthetic vectors without requiring the heavy
+optional dependencies (`torch`, `sentence-transformers`, `faiss-cpu`) to be
+installed — embedding is injected, not hard-imported, so the privacy-layer
+logic is testable in isolation. `mcp` is no longer optional (see the Python
+3.10+ note above); `backend/tests/test_mcp_integration.py` spawns real
+subprocesses against a small synthetic fixture, not the downloaded BEIR data,
+so the suite stays self-contained.

@@ -84,7 +84,7 @@ gitignored local checkouts of the external baselines being reproduced.
 |---|---|
 | `backend/baselines/` | `SourceRouter` adapters — RAGRoute, TASR/HERouter, broadcast, random, cosine, oracle |
 | `backend/router/` | Proposed privacy, exposure and trust layer |
-| `backend/nodes/` | MCP node servers and in-process simulator |
+| `backend/nodes/` | Real MCP node servers (`mcp_server.py`), the client that talks to them (`mcp_client.py`), and the in-process simulator |
 | `backend/attacks/` | A1 inversion, A2 source inference, A3 hijack integration |
 | `backend/eval/` | Instrumentation, metrics, ablation harness |
 | `backend/api/` | FastAPI service backing the frontend |
@@ -97,12 +97,27 @@ gitignored local checkouts of the external baselines being reproduced.
 
 ## Running it
 
-Backend (from repo root):
+Backend (from repo root). **Requires Python 3.10+** — the `mcp` SDK dropped
+3.9 support entirely, and node server processes need it too:
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate   # brew install python@3.12 if needed
 pip install -r backend/requirements.txt
 uvicorn api.app:app --reload --app-dir backend
+```
+
+To see real MCP nodes (see "MCP nodes" below) rather than an empty source
+list, fetch a couple of small BEIR corpora and prepare their node files
+first — otherwise the backend starts fine with zero nodes and you register
+simulated ones from the UI instead:
+
+```bash
+mkdir -p backend/vendor/beir && cd backend/vendor/beir
+for name in arguana nfcorpus; do
+  curl -sL -o "$name.zip" "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/$name.zip"
+  unzip -q "$name.zip" && rm "$name.zip"
+done
+cd ../../.. && python data/prepare_beir_nodes.py
 ```
 
 Frontend, in a second terminal:
@@ -149,6 +164,31 @@ Provider is auto-detected from whichever key is set (or force one with
 local-model implementation can replace this later without touching the API
 layer.
 
+## MCP nodes
+
+Two kinds of source coexist in the same registry and pipeline:
+
+- **Simulated** (the Register panel / dialog): documents posted straight to
+  the coordinator's own process. Fast to set up, nothing genuinely separate.
+- **MCP-backed** (`backend/nodes/mcp_server.py`): a real, separate OS process
+  per source, holding real documents (from `data/prepare_beir_nodes.py`,
+  sourced from the actual BEIR `arguana`/`nfcorpus` corpora — not toy
+  strings), reached over the actual MCP protocol via
+  `backend/nodes/mcp_client.py`. The coordinator never reads a node's
+  documents directly — at startup it calls each node's `get_profile` MCP tool
+  to fetch the (perturbed, centroid-only) profile it publishes, and at query
+  time it calls `retrieve` to get back passages. Every one of those calls
+  spawns and tears down a real subprocess (`nodes/mcp_client.py`'s module
+  docstring explains the tradeoff — no persistent session, so no
+  event-loop-bridging complexity inside a synchronous FastAPI app).
+
+Every `*.json` file in `data/mcp_nodes/` (produced by the prep script above)
+is auto-registered on backend startup. They show up in `/nodes`, the sources
+table, and the Architecture flow diagram with a **transport: MCP** badge,
+indistinguishable from simulated sources to the router — the whole point is
+that routing, decoys, and trust don't need to know which kind they're talking
+to.
+
 ## External baselines (`backend/vendor/`)
 
 RAGRoute and the routing-hijacking-fedrag repo (source of TASR and HERouter)
@@ -186,13 +226,17 @@ git clone https://github.com/Junjie-Mu/routing-hijacking-fedrag backend/vendor/r
 
 ## Status
 
-**Backend:** implemented and tested on synthetic data — the `SourceRouter`
-contract and local controls, the full privacy/trust layer (registry,
-perturbation, exposure budget, topic-stable anonymity sets, bounded trust
-update), node simulation with per-node local embedders decoupled from the
-shared routing embedder, A1/A2/A3 attack modules, evaluation/instrumentation,
-a real (not reimplemented) TASR adapter, and pluggable generation
-(OpenAI/Gemini, demo-only — see Generation above). 89 tests passing.
+**Backend:** implemented and tested — the `SourceRouter` contract and local
+controls, the full privacy/trust layer (registry, perturbation, exposure
+budget, topic-stable anonymity sets, bounded trust update), node simulation
+with per-node local embedders decoupled from the shared routing embedder,
+**real MCP node servers backed by real BEIR document data** (see "MCP nodes"
+above — this is genuine separate-process, real-protocol, real-data
+communication, not a simulation of it), A1/A2/A3 attack modules,
+evaluation/instrumentation, a real (not reimplemented) TASR adapter, and
+pluggable generation (OpenAI/Gemini, demo-only — see Generation above). 96
+tests passing, including live round trips against real spawned MCP
+subprocesses.
 
 **Frontend:** a working dashboard — a live React Flow diagram of the actual
 architecture with registered sources rendered as real nodes in it (add a
@@ -207,6 +251,8 @@ the backend's in-memory state — a research demo, not a deployment target.
   trigger.
 - No local-model generation — only the external-API demo path exists so far.
   The research design's local model is still unbuilt.
-- MCP transport (`backend/nodes/server.py`) is unwired — sources are simulated
-  in-process, per the build order in `docs/04-router-design.md`.
+- MCP nodes hold a small, fixed sample (40 docs each) from 2 of FeB4RAG's 16
+  BEIR corpora, not the full benchmark, and use the placeholder hashing
+  embedder, not a real sentence-embedding model. Real routing-quality numbers
+  need both scaled up.
 - A2 exists as a tested module but isn't wired into the API as a live observer.

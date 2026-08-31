@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,26 @@ def fresh_state(tmp_path, monkeypatch):
     fresh = AppState(instrumentation_path=str(tmp_path / "queries.jsonl"))
     monkeypatch.setattr(app_module, "state", fresh)
     yield fresh
+
+
+@pytest.fixture
+def extra_mcp_node_file(tmp_path, monkeypatch):
+    """A synthetic (not downloaded) MCP node spec in a temp "extra" dir,
+    with app.EXTRA_MCP_NODES_DIR pointed at it — keeps these tests
+    independent of data/mcp_nodes_extra/ actually being populated.
+    """
+    import api.app as app_module
+
+    extra_dir = tmp_path / "extra"
+    extra_dir.mkdir()
+    spec = {
+        "node_id": "extra_test_node",
+        "local_model": "toy-e5",
+        "documents": ["chemo protocol for tumour patients"],
+    }
+    (extra_dir / "extra_test_node.json").write_text(json.dumps(spec))
+    monkeypatch.setattr(app_module, "EXTRA_MCP_NODES_DIR", extra_dir)
+    return extra_dir
 
 
 @pytest.fixture
@@ -183,3 +204,31 @@ def test_repeated_registration_bumps_profile_version(client):
         "/nodes/register", json={"node_id": "n1", "documents": ["second version of the corpus"]}
     ).json()
     assert second["profile_version"] > first["profile_version"]
+
+
+def test_list_available_nodes_returns_unregistered_extra_specs(client, extra_mcp_node_file):
+    resp = client.get("/nodes/available")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == [{"node_id": "extra_test_node", "local_model": "toy-e5", "document_count": 1}]
+
+
+def test_activate_node_registers_a_real_mcp_server_from_the_extra_dir(client, extra_mcp_node_file):
+    resp = client.post("/nodes/activate", json={"node_id": "extra_test_node"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["node_id"] == "extra_test_node"
+    assert body["local_model"] == "toy-e5"
+
+    listing = client.get("/nodes").json()
+    activated = next(n for n in listing if n["node_id"] == "extra_test_node")
+    assert activated["transport"] == "mcp"
+
+    # Once activated it's registered, so it drops off the "available" list.
+    available = client.get("/nodes/available").json()
+    assert available == []
+
+
+def test_activate_node_404_for_unknown_node_id(client, extra_mcp_node_file):
+    resp = client.post("/nodes/activate", json={"node_id": "does-not-exist"})
+    assert resp.status_code == 404

@@ -58,6 +58,7 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Node ID</TableHead>
+                <TableHead>Transport</TableHead>
                 <TableHead>Trust</TableHead>
                 <TableHead>Observations</TableHead>
                 <TableHead>Document count</TableHead>
@@ -69,6 +70,11 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
               {nodes.map((n) => (
                 <TableRow key={n.node_id}>
                   <TableCell className="font-mono text-sm">{n.node_id}</TableCell>
+                  <TableCell>
+                    <Badge variant={n.transport === "mcp" ? "default" : "secondary"}>
+                      {n.transport === "mcp" ? "MCP" : "simulated"}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={trustVariant(n.trust)}>{n.trust.toFixed(3)}</Badge>
                   </TableCell>
