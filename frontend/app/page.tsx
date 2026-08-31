@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ArchitectureFlow } from "@/components/architecture-flow";
 import { NodesList } from "@/components/nodes-list";
 import { QueryPanel } from "@/components/query-panel";
 import { RegisterNodeForm } from "@/components/register-node-form";
@@ -19,6 +20,8 @@ export default function Home() {
           which sources actually hold the answer.
         </p>
       </header>
+
+      <ArchitectureFlow refreshKey={refreshKey} onChanged={bump} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <div className="flex flex-col gap-6">

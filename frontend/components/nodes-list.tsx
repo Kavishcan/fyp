@@ -62,6 +62,7 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
                 <TableHead>Observations</TableHead>
                 <TableHead>Document count</TableHead>
                 <TableHead>Profile version</TableHead>
+                <TableHead>Local model</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -74,6 +75,15 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
                   <TableCell>{n.trust_observations}</TableCell>
                   <TableCell>{n.document_count_bucket}</TableCell>
                   <TableCell>{n.profile_version}</TableCell>
+                  <TableCell>
+                    {n.local_model === "shared-routing-embedder" ? (
+                      <span className="text-muted-foreground text-xs">shared</span>
+                    ) : (
+                      <Badge variant="outline" className="font-mono">
+                        {n.local_model}
+                      </Badge>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

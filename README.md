@@ -8,8 +8,10 @@ observable routing decisions. Healthcare is the case-study domain; the
 routing method is domain independent.
 
 The name is literal: **Fed**erated + **Safe** + **Router** — the contribution
-is the router and its privacy/trust layer specifically, not a full RAG
-pipeline (answer generation is deliberately out of scope, see Status below).
+is the router and its privacy/trust layer specifically. The demo does run a
+full pipeline end to end (routing -> retrieval -> generation), but generation
+itself is not the research contribution and, in the demo, is not even
+built the way the research design specifies — see Generation below.
 
 ## The problem in one paragraph
 
@@ -52,6 +54,18 @@ query
 
 Offline path (once per source): documents -> PII removal -> local embed and
 index (never leaves the source) -> k-means centroids -> Gaussian noise -> publish.
+
+**Two embedding spaces, deliberately kept separate.** FeB4RAG and MultiHop-RAG
+both use a different embedding model per source, not one shared model — and a
+vector from one embedding model can't be compared against a vector from
+another (different dimensionality, unrelated geometry), so naive shared-space
+cosine similarity would silently break under that realism. The fix: a **shared
+routing embedder** (one model, every profile and every routing-time query) is
+the only thing the router ever compares — that's what keeps max-over-centroid
+scoring valid and training-free. Each node's **own local embedder** (free to
+differ node to node) is used only for that node's local index, and the query
+is re-embedded through it again, per selected node, at retrieval time. See
+`backend/nodes/simulator.py` module docstring and `backend/api/embedder.py`.
 
 **Baseline-first.** The project does not rebuild ordinary source routing before
 testing existing implementations. Official RAGRoute is the primary
@@ -100,12 +114,40 @@ cp .env.local.example .env.local   # points at http://localhost:8000 by default
 npm run dev
 ```
 
-Open `http://localhost:3000`. Register a source with a few documents, run a
-query, then use "Reveal audit trail" to see the genuine/decoy breakdown the
-query response itself deliberately withholds.
+Open `http://localhost:3000`. The **Architecture** panel at the top is a live
+[React Flow](https://reactflow.dev) diagram of the actual pipeline — query,
+shared-embedder routing, the anonymity set, and the feedback loop into trust
+update — with currently registered sources rendered as real nodes in it,
+pulled from `/nodes`. Click the dashed "+ Add source" node to register a new
+one directly from the diagram (same effect as the Register panel below; both
+update the same backend state). Below that: register a source with a few
+documents, run a query, then use "Reveal audit trail" to see the genuine/decoy
+breakdown the query response itself deliberately withholds.
 
 Tests: `pytest` from the repo root (config in `pyproject.toml` points at
 `backend/`).
+
+## Generation (demo only — reads as a departure from the research design)
+
+`docs/02-proposal.md` and `docs/03-architecture.md` specify generation on a
+**local** open-weight model specifically so retrieved passages and the query
+never leave the trust boundary — that's what keeps prompt/output leakage out
+of the thesis's scope. The demo API instead calls an external provider
+(OpenAI or Gemini) for convenience, which means passages **do** leave the
+boundary. Don't use its output as evidence for any privacy claim; treat it as
+a UI convenience, not part of the evaluated system.
+
+```bash
+cp backend/.env.example backend/.env
+# fill in exactly one: OPENAI_API_KEY or GEMINI_API_KEY
+```
+
+Provider is auto-detected from whichever key is set (or force one with
+`LLM_PROVIDER=openai|gemini`). With neither key set, `/query` keeps returning
+`answer: null` as before. See `backend/generation/` — the interface
+(`Generator.generate(question, passages)`) is provider-agnostic, so a real
+local-model implementation can replace this later without touching the API
+layer.
 
 ## External baselines (`backend/vendor/`)
 
@@ -147,19 +189,24 @@ git clone https://github.com/Junjie-Mu/routing-hijacking-fedrag backend/vendor/r
 **Backend:** implemented and tested on synthetic data — the `SourceRouter`
 contract and local controls, the full privacy/trust layer (registry,
 perturbation, exposure budget, topic-stable anonymity sets, bounded trust
-update), node simulation, A1/A2/A3 attack modules, evaluation/instrumentation,
-and a real (not reimplemented) TASR adapter. 70 tests passing.
+update), node simulation with per-node local embedders decoupled from the
+shared routing embedder, A1/A2/A3 attack modules, evaluation/instrumentation,
+a real (not reimplemented) TASR adapter, and pluggable generation
+(OpenAI/Gemini, demo-only — see Generation above). 89 tests passing.
 
-**Frontend:** a working dashboard — register sources, list them with live
-trust scores, run a query, inspect citations, and reveal the audit trail. No
-auth, no persistence beyond the backend's in-memory state — a research demo,
-not a deployment target.
+**Frontend:** a working dashboard — a live React Flow diagram of the actual
+architecture with registered sources rendered as real nodes in it (add a
+source directly from the diagram), a table view with live trust scores and
+local model, a query panel with citations and (when a provider is configured)
+a generated answer, and the audit trail reveal. No auth, no persistence beyond
+the backend's in-memory state — a research demo, not a deployment target.
 
 **Not yet done, deliberately:**
 - `ragroute_adapter.py` is a stub — RAGRoute needs its own process (and Ollama)
   running, which is a real resource commitment, not something to silently
   trigger.
-- No answer generation. `POST /query` always returns `answer: null`.
+- No local-model generation — only the external-API demo path exists so far.
+  The research design's local model is still unbuilt.
 - MCP transport (`backend/nodes/server.py`) is unwired — sources are simulated
   in-process, per the build order in `docs/04-router-design.md`.
 - A2 exists as a tested module but isn't wired into the API as a live observer.

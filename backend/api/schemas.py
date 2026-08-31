@@ -12,6 +12,7 @@ class NodeRegisterRequest(BaseModel):
     policy_labels: List[str] = []
     k: int = 1
     sigma: float = 0.0
+    local_model: Optional[str] = None  # any name; omit to share the routing embedder (see backend/api/embedder.py)
     mcp_endpoint: Optional[str] = None  # reserved for real deployment; unused in simulated mode
 
 
@@ -20,6 +21,7 @@ class NodeRegisterResponse(BaseModel):
     document_count_bucket: str
     profile_version: int
     centroid_count: int
+    local_model: str
     note: str = "simulated mode: profile computed server-side from submitted documents"
 
 
@@ -29,6 +31,7 @@ class NodeStatus(BaseModel):
     trust_observations: int
     document_count_bucket: str
     profile_version: int
+    local_model: str
 
 
 class QueryRequest(BaseModel):

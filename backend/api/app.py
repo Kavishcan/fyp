@@ -1,19 +1,25 @@
 """FastAPI app implementing the API surface from docs/08-deployment.md.
 
 Run locally with:
-    uvicorn api.app:app --reload --app-dir src
+    uvicorn api.app:app --reload --app-dir backend
 
-Development server for a future React/Next.js frontend. Single in-memory
-AppState (src/api/state.py) — not a deployment target, and nodes are
-registered by submitting documents directly (simulated mode) rather than by a
+Development server for the Next.js frontend. Single in-memory AppState
+(backend/api/state.py) — not a deployment target, and nodes are registered by
+submitting documents directly (simulated mode) rather than by a
 separately-running MCP node self-publishing its profile, since MCP transport
-is not wired up yet (see src/nodes/server.py and the Status section in the
+is not wired up yet (see backend/nodes/server.py and the Status section in the
 project README).
+
+Loads backend/.env if present (OPENAI_API_KEY / GEMINI_API_KEY / LLM_PROVIDER
+— see backend/generation/factory.py and README's Generation section).
 """
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+load_dotenv()
 
 from .schemas import (
     AuditResponse,
@@ -45,13 +51,19 @@ def health() -> dict:
 @app.post("/nodes/register", response_model=NodeRegisterResponse)
 def register_node(req: NodeRegisterRequest) -> NodeRegisterResponse:
     profile = state.register_node(
-        req.node_id, req.documents, policy_labels=req.policy_labels, k=req.k, sigma=req.sigma
+        req.node_id,
+        req.documents,
+        policy_labels=req.policy_labels,
+        k=req.k,
+        sigma=req.sigma,
+        local_model=req.local_model,
     )
     return NodeRegisterResponse(
         node_id=profile.source_id,
         document_count_bucket=profile.document_count_bucket,
         profile_version=profile.profile_version,
         centroid_count=len(profile.centroids),
+        local_model=state.node_local_models[profile.source_id],
     )
 
 

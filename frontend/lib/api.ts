@@ -12,6 +12,10 @@ export interface NodeRegisterRequest {
   policy_labels?: string[];
   k?: number;
   sigma?: number;
+  /** Any name. Omit to share the routing embedder (no heterogeneity). A
+   * distinct name simulates a genuinely different, incomparable embedding
+   * model for this node's own local retrieval — see backend/api/embedder.py. */
+  local_model?: string;
 }
 
 export interface NodeRegisterResponse {
@@ -19,6 +23,7 @@ export interface NodeRegisterResponse {
   document_count_bucket: string;
   profile_version: number;
   centroid_count: number;
+  local_model: string;
   note: string;
 }
 
@@ -28,6 +33,7 @@ export interface NodeStatus {
   trust_observations: number;
   document_count_bucket: string;
   profile_version: number;
+  local_model: string;
 }
 
 export interface QueryRequest {

@@ -13,13 +13,14 @@ import numpy as np
 
 from baselines.cosine_router import CosineRouter, aggregate_scores
 from eval.instrument import Instrumentation, QueryLog
+from generation import get_generator
 from nodes.simulator import InProcessNode, build_simulated_source
 from router.exposure import ExposureFactors
 from router.pipeline import PrivacyAwarePipeline, RerankFeatures, RerankWeights
 from router.registry import SourceRegistry
 from router.trust import BoundedTrustUpdate
 
-from .embedder import HashingEmbedder
+from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
 from .topic import assign_topic_key
 
 
@@ -27,14 +28,47 @@ class AppState:
     def __init__(self, instrumentation_path: str = "experiments/runs/api_queries.jsonl") -> None:
         self.registry = SourceRegistry()
         self.nodes: dict[str, InProcessNode] = {}
-        self.embedder = HashingEmbedder(n_features=256)
+        self.node_local_models: dict[str, str] = {}
+        # ONE shared embedder for every profile and every routing-time query —
+        # this is what keeps max-over-centroid scoring valid regardless of how
+        # many distinct local_model names nodes register with (see
+        # backend/nodes/simulator.py module docstring).
+        self.routing_embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
         self.trust_update = BoundedTrustUpdate(alpha=0.3, decoy_aware=False)
         self.instrumentation = Instrumentation(instrumentation_path)
         self._rng = np.random.default_rng()
+        # Demo-only, external-API generation — see backend/generation/base.py
+        # docstring for why this is NOT the research pipeline's design.
+        self.generator = get_generator()
 
-    def register_node(self, node_id: str, documents: list[str], *, policy_labels, k: int, sigma: float):
+    def register_node(
+        self,
+        node_id: str,
+        documents: list[str],
+        *,
+        policy_labels,
+        k: int,
+        sigma: float,
+        local_model: str | None = None,
+    ):
+        """`local_model` names this node's own embedding model for local
+        retrieval (any string — see HashingEmbedder docstring for why a
+        distinct name is enough to simulate a genuinely different, mutually
+        incomparable space). Omit it to use the shared routing embedder for
+        this node too, i.e. no heterogeneity.
+        """
+        local_embedder = (
+            HashingEmbedder(model_name=local_model, n_features=256) if local_model else self.routing_embedder
+        )
         node, profile = build_simulated_source(
-            node_id, documents, self.embedder, k=k, sigma=sigma, rng=self._rng, policy_labels=policy_labels
+            node_id,
+            documents,
+            self.routing_embedder,
+            local_embedder,
+            k=k,
+            sigma=sigma,
+            rng=self._rng,
+            policy_labels=policy_labels,
         )
         # Re-publishing an existing node bumps profile_version so the
         # registry's stale-version rejection (router/registry.py) doesn't fire.
@@ -42,6 +76,7 @@ class AppState:
         if existing is not None:
             profile.profile_version = existing.profile_version + 1
         self.nodes[node_id] = node
+        self.node_local_models[node_id] = local_model or SHARED_ROUTING_MODEL
         self.registry.publish(profile)
         return profile
 
@@ -56,6 +91,7 @@ class AppState:
                     "trust_observations": profile.trust_observations,
                     "document_count_bucket": profile.document_count_bucket,
                     "profile_version": profile.profile_version,
+                    "local_model": self.node_local_models.get(profile.source_id, SHARED_ROUTING_MODEL),
                 }
             )
         return statuses
@@ -73,7 +109,7 @@ class AppState:
                 "generation_status": "no_sources_registered",
             }
 
-        query_embedding = self.embedder.embed([question])[0]
+        query_embedding = self.routing_embedder.embed([question])[0]
         topic_key = assign_topic_key(query_embedding, profiles)
 
         baseline = CosineRouter(aggregation="max")
@@ -116,7 +152,17 @@ class AppState:
             node = self.nodes.get(node_id)
             if node is None:
                 continue
-            for passage in node.retrieve(query_embedding, top_n=1):
+            if node.local_embedder is self.routing_embedder:
+                # Same model object as routing — query_embedding is already
+                # the correct vector for this node's space, so reuse it
+                # instead of re-embedding identical text for no reason.
+                passages = node.retrieve(query_embedding, top_n=1)
+            else:
+                # Genuinely different model: must re-embed the raw question
+                # in THIS node's own space. See
+                # nodes/simulator.py::InProcessNode.retrieve_from_text.
+                passages = node.retrieve_from_text(question, top_n=1)
+            for passage in passages:
                 citations.append({"node_id": node_id, "document": passage.document, "score": passage.score})
 
         signals = {node_id: self._evidence_relevance(node_id, citations) for node_id in result.dispatched_source_ids}
@@ -132,12 +178,21 @@ class AppState:
             )
         )
 
+        answer = None
+        generation_status = "not_implemented"
+        if self.generator is not None:
+            try:
+                answer = self.generator.generate(question, [c["document"] for c in citations])
+                generation_status = self.generator.name
+            except Exception as exc:  # surfaced to the caller, not swallowed
+                generation_status = f"error:{type(exc).__name__}"
+
         return {
             "query_id": query_id,
-            "answer": None,
+            "answer": answer,
             "citations": citations,
             "nodes_contacted": result.dispatched_source_ids,
-            "generation_status": "not_implemented",
+            "generation_status": generation_status,
         }
 
     def audit(self, query_id: str) -> dict | None:

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -91,6 +93,86 @@ def test_audit_endpoint_returns_routing_decision_after_query(client):
 def test_audit_endpoint_404_for_unknown_query_id(client):
     resp = client.get("/audit/does-not-exist")
     assert resp.status_code == 404
+
+
+def test_register_node_defaults_local_model_to_shared_routing_embedder(client):
+    resp = client.post(
+        "/nodes/register",
+        json={"node_id": "n1", "documents": ["chemo protocol for tumour patients"]},
+    )
+    assert resp.json()["local_model"] == "shared-routing-embedder"
+
+
+def test_register_node_with_explicit_local_model(client):
+    resp = client.post(
+        "/nodes/register",
+        json={
+            "node_id": "n1",
+            "documents": ["chemo protocol for tumour patients"],
+            "local_model": "toy-bge",
+        },
+    )
+    assert resp.json()["local_model"] == "toy-bge"
+    listing = client.get("/nodes").json()
+    assert next(n for n in listing if n["node_id"] == "n1")["local_model"] == "toy-bge"
+
+
+def test_query_retrieves_correctly_across_nodes_with_different_local_models(client):
+    """End-to-end: two nodes register with DIFFERENT local embedding models.
+    Routing still works (it only ever uses the shared routing embedder), and
+    each node's citation is still retrieved correctly from its own space.
+    """
+    client.post(
+        "/nodes/register",
+        json={
+            "node_id": "hosp_onco",
+            "documents": ["chemo protocol for tumour patients"],
+            "local_model": "toy-e5",
+        },
+    )
+    client.post(
+        "/nodes/register",
+        json={
+            "node_id": "hosp_cardio",
+            "documents": ["heart attack response protocol"],
+            "local_model": "toy-bge",
+        },
+    )
+
+    resp = client.post(
+        "/query", json={"question": "tumour chemo protocol", "max_nodes": 2, "genuine_k": 1}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["citations"]) == 2
+    onco_citation = next(c for c in body["citations"] if c["node_id"] == "hosp_onco")
+    assert onco_citation["document"] == "chemo protocol for tumour patients"
+    assert onco_citation["score"] > 0
+
+
+def test_query_reuses_routing_embedding_when_nodes_share_it(client, fresh_state):
+    """Nodes registered without local_model share routing_embedder by object
+    identity, so the question must be embedded exactly once per query — not
+    once for routing plus once again per dispatched node.
+    """
+    client.post("/nodes/register", json={"node_id": "n1", "documents": ["chemo protocol for tumour patients"]})
+    client.post("/nodes/register", json={"node_id": "n2", "documents": ["heart attack response protocol"]})
+
+    original_embed = fresh_state.routing_embedder.embed
+    calls = []
+
+    def counting_embed(texts):
+        calls.append(texts)
+        return original_embed(texts)
+
+    with patch.object(fresh_state.routing_embedder, "embed", side_effect=counting_embed):
+        resp = client.post(
+            "/query", json={"question": "tumour chemo protocol", "max_nodes": 2, "genuine_k": 1}
+        )
+
+    assert resp.status_code == 200
+    assert len(resp.json()["citations"]) == 2  # both nodes still retrieved correctly
+    assert len(calls) == 1  # embedded once, reused for both nodes
 
 
 def test_repeated_registration_bumps_profile_version(client):
