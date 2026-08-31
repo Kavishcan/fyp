@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { NavBar } from "@/components/nav-bar";
 import { Toaster } from "@/components/ui/sonner";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
@@ -29,7 +30,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`}
     >
       <body className="h-full overflow-hidden flex flex-col">
-        {children}
+        <NavBar />
+        <main className="flex-1 min-h-0">{children}</main>
         <Toaster />
       </body>
     </html>

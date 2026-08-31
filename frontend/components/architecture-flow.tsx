@@ -281,9 +281,8 @@ export function ArchitectureFlow({ refreshKey, onChanged }: { refreshKey: number
       <div>
         <h2 className="text-lg font-medium">Architecture</h2>
         <p className="text-sm text-muted-foreground">
-          The live pipeline, top to bottom. Sources are pulled from the running backend — use the
-          "+ Add source" button in the corner, or the Register panel below; either way it shows up
-          here immediately.
+          The live pipeline, top to bottom. Add a simulated source or activate a real MCP server
+          from the buttons in the corner — either way it shows up here immediately.
         </p>
       </div>
       <div className="h-[600px] rounded-md border bg-muted/20">
