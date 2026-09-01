@@ -53,3 +53,33 @@ class HashingEmbedder:
 
     def __call__(self, texts: list[str]) -> np.ndarray:
         return self.embed(texts)
+
+
+class SentenceTransformerEmbedder:
+    """Real sentence-embedding model — this is the embedder this module's own
+    docstring says must be used "before any leakage or routing-quality result
+    is reported". Kept out of HashingEmbedder's module-level imports so
+    nothing that only needs the placeholder (the MCP demo backend, router-logic
+    unit tests) is forced to install torch/sentence-transformers; the import
+    is lazy, inside __init__, for the same reason.
+
+    `all-MiniLM-L6-v2` is the standard small, fast default used across the
+    BEIR leaderboard for exactly this kind of routing/retrieval evaluation —
+    not fine-tuned or trained on this project's data, consistent with the
+    training-free contribution (CLAUDE.md).
+    """
+
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self.model_name = model_name
+        self._model = SentenceTransformer(model_name)
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        return np.asarray(self._model.encode(list(texts), show_progress_bar=False), dtype=np.float64)
+
+    def embed_one(self, text: str) -> np.ndarray:
+        return self.embed([text])[0]
+
+    def __call__(self, texts: list[str]) -> np.ndarray:
+        return self.embed(texts)

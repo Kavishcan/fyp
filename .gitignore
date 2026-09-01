@@ -17,6 +17,7 @@ data/processed/
 # regenerate with data/prepare_beir_nodes.py, don't commit.
 data/mcp_nodes/
 data/mcp_nodes_extra/
+data/eval_results/
 *.faiss
 *.index
 *.npy
