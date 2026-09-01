@@ -440,6 +440,12 @@ def main() -> None:
         help="skip the cosine sigma x m grid entirely; run only oracle/broadcast/TASR. Much faster — "
              "useful for checking the real TASR reproduction without waiting on the full sweep.",
     )
+    parser.add_argument(
+        "--aggregation-ablation", action="store_true",
+        help="instead of the sigma x m grid, run max/mean/top_r_mean each once at sigma=0, m=top_k "
+             "(no privacy overhead) — CLAUDE.md: 'max-over-centroid is an ablation condition, not a "
+             "default truth. Mean and top-r mean must be measured as alternatives.'",
+    )
     args = parser.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -506,6 +512,36 @@ def main() -> None:
         print(f"skipping TASR: {tasr_vendor_path} not cloned")
 
     if args.tasr_only:
+        with out_csv.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
+            writer.writeheader()
+            writer.writerows(results)
+        print(f"\nwrote {out_csv}")
+        print(f"wrote raw per-query log {raw_log_path}")
+        _print_table(results)
+        return
+
+    if args.aggregation_ablation:
+        from baselines.cosine_router import AGGREGATIONS
+
+        for aggregation in AGGREGATIONS:
+            condition_name = f"cosine_aggregation_{aggregation}"
+            print(f"running {condition_name}...")
+            results.append(
+                run_pipeline_condition(
+                    lambda agg=aggregation: CosineRouter(aggregation=agg),
+                    profiles,
+                    condition_name,
+                    query_vectors,
+                    relevant_nodes,
+                    coarse_k=coarse_k,
+                    top_k=args.top_k,
+                    m=args.top_k,
+                    sigma=0.0,
+                    seed=args.seed,
+                    instrumentation=instrumentation,
+                )
+            )
         with out_csv.open("w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
             writer.writeheader()

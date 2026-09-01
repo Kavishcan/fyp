@@ -43,6 +43,48 @@ The perturbed embedding travels the whole path. Nodes never see the clean query.
 Decoys nevertheless increase the number of nodes receiving a query-derived
 representation, so route privacy and query exposure must be measured separately.
 
+```mermaid
+graph TD
+    User["Trusted zone: embed + perturb query"]
+
+    subgraph Router["Router zone (A1: honest-but-curious)"]
+        Baseline["Baseline router adapter\n(RAGRoute / cosine source ranking)"]
+        Exposure["Exposure constraint"]
+        TrustSelect["Trust-aware selection"]
+        Anon["Anonymity set: k genuine + decoys = m"]
+    end
+
+    FanOut["Fan out to m nodes"]
+
+    subgraph NodeZone["Node zone (A3: some malicious)"]
+        subgraph SimNodes["Simulated nodes"]
+            InProc["In-process — no real transport"]
+        end
+        subgraph MCPNodes["Real MCP nodes"]
+            MCPClient["MCP client\n(fresh subprocess per call)"]
+            MCPServer["MCP server\n(separate process, real BEIR data)"]
+            MCPClient <-->|"stdio, real MCP protocol"| MCPServer
+        end
+        Forged["Malicious node: forged profile"]
+    end
+
+    Merge["Merge + rerank passages"]
+    TrustUpdate["Trust update (feeds back into rerank)"]
+    LLM["Local LLM, fixed prompt"]
+    Answer["Answer"]
+
+    Observer["Routing-observer zone\n(A2: sees contacted aliases + timing,\nnever query content)"]
+
+    User --> Baseline --> Exposure --> TrustSelect --> Anon --> FanOut
+    FanOut --> InProc --> Merge
+    FanOut --> MCPClient
+    MCPServer --> Merge
+    FanOut --> Forged --> Merge
+    Merge --> TrustUpdate --> TrustSelect
+    Merge --> LLM --> Answer
+    FanOut -.->|"observed by"| Observer
+```
+
 ## Baseline-first implementation
 
 The project does not rebuild standard source routing before testing existing
