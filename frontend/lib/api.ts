@@ -125,6 +125,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ node_id: nodeId }),
     }),
+
+  removeNode: (nodeId: string) =>
+    request<{ removed: boolean; node_id: string }>(`/nodes/${encodeURIComponent(nodeId)}`, {
+      method: "DELETE",
+    }),
 };
 
 export { ApiError, BASE_URL };

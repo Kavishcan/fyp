@@ -45,14 +45,28 @@ representation, so route privacy and query exposure must be measured separately.
 
 ```mermaid
 graph TD
+    subgraph Offline["Inside each node — offline, once, before any query"]
+        DocStore["Document storage"]
+        PIIRemove["PII removal"]
+        Embed2["Embedding\n(local embed + index — never leaves the node)"]
+        Cluster["k-means centroids + Gaussian noise"]
+        Publish["Profile published via MCP\n(get_profile tool)"]
+        DocStore --> PIIRemove --> Embed2 --> Cluster --> Publish
+    end
+
+    Registry["Profile registry\nmain-topic metadata per node,\naccessible by the router"]
+    Publish --> Registry
+
     User["Trusted zone: embed + perturb query"]
 
     subgraph Router["Router zone (A1: honest-but-curious)"]
-        Baseline["Baseline router adapter\n(RAGRoute / cosine source ranking)"]
+        Baseline["Baseline router adapter\n(ranks using registry topic profiles —\nRAGRoute / cosine source ranking)"]
         Exposure["Exposure constraint"]
         TrustSelect["Trust-aware selection"]
         Anon["Anonymity set: k genuine + decoys = m"]
     end
+
+    Registry -->|"smart, topic-based selection"| Baseline
 
     FanOut["Fan out to m nodes"]
 
@@ -62,8 +76,8 @@ graph TD
         end
         subgraph MCPNodes["Real MCP nodes"]
             MCPClient["MCP client\n(fresh subprocess per call)"]
-            MCPServer["MCP server\n(separate process, real BEIR data)"]
-            MCPClient <-->|"stdio, real MCP protocol"| MCPServer
+            MCPServer["MCP server — same node as\nOffline above, retrieve tool"]
+            MCPClient <-->|"stdio, retrieve tool"| MCPServer
         end
         Forged["Malicious node: forged profile"]
     end
@@ -84,6 +98,19 @@ graph TD
     Merge --> LLM --> Answer
     FanOut -.->|"observed by"| Observer
 ```
+
+**The router only ever sees topic metadata, never documents.** The offline
+stage (top) runs once per node, independent of any query — it is what makes
+selection "smart": the router picks candidates by comparing a query against
+each node's published topic profile (the registry), *before* the privacy
+layer (exposure constraint, trust-aware selection, anonymity set) ever
+touches the ranking. This is already the real implementation, not a proposed
+change: `nodes/profile.py` builds the offline profile, `router/registry.py`
+holds it, and `baselines/*.py` + `router/pipeline.py` are the two stages
+after it. The offline MCP `get_profile` call and the online MCP `retrieve`
+call in the diagram above hit the *same* node process
+(`nodes/mcp_server.py`) — profile publication and query-time retrieval are
+two tools on one server, not two different nodes.
 
 ## Baseline-first implementation
 

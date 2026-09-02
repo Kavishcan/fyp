@@ -55,6 +55,10 @@ class SourceRegistry:
     def get(self, source_id: str) -> SourceProfile | None:
         return self._profiles.get(source_id)
 
+    def remove(self, source_id: str) -> bool:
+        """Deregister a published profile. Returns False if it wasn't present."""
+        return self._profiles.pop(source_id, None) is not None
+
     def trust_estimate(self, source_id: str) -> TrustEstimate:
         profile = self._profiles.get(source_id)
         if profile is None:

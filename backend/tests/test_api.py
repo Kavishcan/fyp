@@ -232,3 +232,21 @@ def test_activate_node_registers_a_real_mcp_server_from_the_extra_dir(client, ex
 def test_activate_node_404_for_unknown_node_id(client, extra_mcp_node_file):
     resp = client.post("/nodes/activate", json={"node_id": "does-not-exist"})
     assert resp.status_code == 404
+
+
+def test_remove_node_deregisters_it(client):
+    client.post(
+        "/nodes/register",
+        json={"node_id": "hosp_oncology_1", "documents": ["chemo protocol for tumour patients"]},
+    )
+    resp = client.delete("/nodes/hosp_oncology_1")
+    assert resp.status_code == 200
+    assert resp.json() == {"removed": True, "node_id": "hosp_oncology_1"}
+
+    listing = client.get("/nodes").json()
+    assert not any(n["node_id"] == "hosp_oncology_1" for n in listing)
+
+
+def test_remove_node_404_for_unknown_node_id(client):
+    resp = client.delete("/nodes/does-not-exist")
+    assert resp.status_code == 404

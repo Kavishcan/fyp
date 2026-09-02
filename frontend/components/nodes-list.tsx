@@ -1,8 +1,19 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -11,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, type NodeStatus } from "@/lib/api";
+import { api, ApiError, type NodeStatus } from "@/lib/api";
 
 function trustVariant(trust: number): "default" | "secondary" | "destructive" {
   if (trust >= 0.6) return "default";
@@ -19,9 +30,11 @@ function trustVariant(trust: number): "default" | "secondary" | "destructive" {
   return "destructive";
 }
 
-export function NodesList({ refreshKey }: { refreshKey: number }) {
+export function NodesList({ refreshKey, onChanged }: { refreshKey: number; onChanged?: () => void }) {
   const [nodes, setNodes] = useState<NodeStatus[]>([]);
   const [loading, setLoading] = useState(true);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +51,23 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
       cancelled = true;
     };
   }, [refreshKey]);
+
+  async function confirmRemove() {
+    if (!pendingRemove) return;
+    const nodeId = pendingRemove;
+    setRemovingId(nodeId);
+    setPendingRemove(null);
+    try {
+      await api.removeNode(nodeId);
+      toast.success(`Removed ${nodeId}`);
+      setNodes((prev) => prev.filter((n) => n.node_id !== nodeId));
+      onChanged?.();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to remove node");
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   return (
     <Card>
@@ -64,6 +94,7 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
                 <TableHead>Document count</TableHead>
                 <TableHead>Profile version</TableHead>
                 <TableHead>Local model</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -90,12 +121,43 @@ export function NodesList({ refreshKey }: { refreshKey: number }) {
                       </Badge>
                     )}
                   </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 text-muted-foreground hover:text-destructive"
+                      disabled={removingId === n.node_id}
+                      onClick={() => setPendingRemove(n.node_id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
       </CardContent>
+
+      <Dialog open={pendingRemove !== null} onOpenChange={(open) => !open && setPendingRemove(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove {pendingRemove}?</DialogTitle>
+            <DialogDescription>
+              It will stop receiving queries immediately. You can re-add it later via
+              &ldquo;Add source&rdquo; or &ldquo;Activate servers&rdquo;.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingRemove(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmRemove}>
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

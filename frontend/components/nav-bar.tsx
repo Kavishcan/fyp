@@ -13,23 +13,25 @@ export function NavBar() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex items-center gap-6 px-6 py-3 border-b shrink-0 bg-card">
-      <span className="font-semibold tracking-tight">FedSafeRouter</span>
-      <div className="flex items-center gap-1">
-        {LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={cn(
-              "px-3 py-1.5 rounded-md text-sm transition-colors",
-              pathname === link.href
-                ? "bg-accent text-accent-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted",
-            )}
-          >
-            {link.label}
-          </Link>
-        ))}
+    <nav className="h-11 border-b border-border shrink-0 bg-card">
+      <div className="h-full max-w-7xl mx-auto flex items-center gap-8 px-6">
+        <span className="text-sm font-semibold tracking-tight">FedSafeRouter</span>
+        <div className="flex items-center gap-5">
+          {LINKS.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "text-sm transition-colors",
+                pathname === link.href
+                  ? "text-primary font-medium"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
       </div>
     </nav>
   );

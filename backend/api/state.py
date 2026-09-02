@@ -169,6 +169,17 @@ class AppState:
         self.node_local_models[node_id] = local_model
         self.registry.publish(profile)
 
+    def remove_node(self, node_id: str) -> bool:
+        """Deregisters a node — simulated or MCP-backed alike. For an MCP node
+        this only forgets the handle; nodes/mcp_client.py spawns a fresh
+        subprocess per call rather than keeping one alive, so there is no
+        long-lived process to terminate here.
+        """
+        removed = self.registry.remove(node_id)
+        self.nodes.pop(node_id, None)
+        self.node_local_models.pop(node_id, None)
+        return removed
+
     def node_status(self) -> list[dict]:
         statuses = []
         for profile in self.registry.all_profiles():

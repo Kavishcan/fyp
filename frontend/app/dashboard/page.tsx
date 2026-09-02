@@ -22,7 +22,7 @@ export default function DashboardPage() {
 
         <DashboardStats refreshKey={refreshKey} />
         <ArchitectureFlow refreshKey={refreshKey} onChanged={bump} />
-        <NodesList refreshKey={refreshKey} />
+        <NodesList refreshKey={refreshKey} onChanged={bump} />
       </div>
     </div>
   );

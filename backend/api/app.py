@@ -94,6 +94,14 @@ def list_nodes() -> list[NodeStatus]:
     return [NodeStatus(**s) for s in state.node_status()]
 
 
+@app.delete("/nodes/{node_id}")
+def remove_node(node_id: str) -> dict:
+    removed = state.remove_node(node_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="node_id not registered")
+    return {"removed": True, "node_id": node_id}
+
+
 @app.get("/nodes/available", response_model=list[AvailableMCPNode])
 def list_available_nodes() -> list[AvailableMCPNode]:
     """Real MCP node servers prepared by data/prepare_beir_nodes.py but not
