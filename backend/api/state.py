@@ -46,6 +46,12 @@ def _profile_from_dict(data: dict) -> SourceProfile:
         expected_latency_ms=data.get("expected_latency_ms", 0.0),
         profile_version=data.get("profile_version", 1),
         profile_signature=bytes.fromhex(data.get("profile_signature", "")),
+        description=data.get("description", ""),
+        topics=data.get("topics", []),
+        description_embedding=(np.asarray(data["description_embedding"], dtype=np.float64)
+                               if data.get("description_embedding") is not None else None),
+        metadata_method=data.get("metadata_method", ""),
+        metadata_embedding_model=data.get("metadata_embedding_model", ""),
     )
 
 
@@ -80,6 +86,7 @@ class AppState:
         k: int,
         sigma: float,
         local_model: str | None = None,
+        publish_metadata: bool = True,
     ):
         """`local_model` names this node's own embedding model for local
         retrieval (any string — see HashingEmbedder docstring for why a
@@ -99,6 +106,7 @@ class AppState:
             sigma=sigma,
             rng=self._rng,
             policy_labels=policy_labels,
+            publish_metadata=publish_metadata,
         )
         self._publish(node_id, node, profile, local_model or SHARED_ROUTING_MODEL)
         return profile
@@ -203,6 +211,9 @@ class AppState:
                     "profile_version": profile.profile_version,
                     "local_model": self.node_local_models.get(profile.source_id, SHARED_ROUTING_MODEL),
                     "transport": "mcp" if isinstance(node, MCPNodeHandle) else "simulated",
+                    "description": profile.description,
+                    "topics": profile.topics,
+                    "metadata_method": profile.metadata_method,
                 }
             )
         return statuses
@@ -212,17 +223,26 @@ class AppState:
         routing_mode: str = "legacy", exposure_budget: float | None = None,
         minimum_gain: float = 0.05, minimum_trust: float = 0.0,
         aggregation: str = "mean",
+        relevance_mode: str = "centroid", description_weight: float = 0.5,
+        selection_policy: str = "overlap", relative_score_floor: float = 0.8,
     ) -> dict:
         if routing_mode not in {"legacy", "smart"}:
             raise ValueError("routing_mode must be legacy or smart")
+        if routing_mode == "legacy" and selection_policy != "overlap":
+            raise ValueError("relative selection requires smart mode")
         if routing_mode == "smart" and sigma != 0:
             raise ValueError("smart mode does not apply embedding perturbation")
         if routing_mode == "legacy" and exposure_budget is not None:
             raise ValueError("strict exposure_budget requires smart mode")
+        if routing_mode == "legacy" and relevance_mode != "centroid":
+            raise ValueError("metadata relevance requires smart mode")
         smart_config = SmartConfig(
             exposure_budget=float(max_nodes) if exposure_budget is None else exposure_budget,
             max_sources=max_nodes, minimum_gain=minimum_gain,
             minimum_trust=minimum_trust, aggregation=aggregation,
+            relevance_mode=relevance_mode, description_weight=description_weight,
+            query_model=self.routing_embedder.model_name,
+            selection_policy=selection_policy, relative_score_floor=relative_score_floor,
         )
         profiles = self.registry.all_profiles()
         query_id = str(uuid.uuid4())

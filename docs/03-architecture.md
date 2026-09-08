@@ -29,6 +29,7 @@ Source documents
   -> shared-space routing embeddings
   -> clustering and optional empirical profile noise
   -> centroid profile + version + policy labels
+     + optional document-only description/topics/description embedding
   -> registry
 
 Source documents
@@ -41,6 +42,14 @@ A source may use a different local retrieval space; in that case the raw questio
 is embedded again at that source. The live demo uses hashing embeddings.
 SentenceTransformerEmbedder exists but is not wired consistently across the
 live API/MCP path yet.
+
+The same routing model embeds the optional description. get_profile publishes
+it with topics and method/model identifiers; the coordinator caches them during
+registration. Smart relevance_mode can be centroid, description or combined.
+This is application-defined MCP tool output, not automatic MCP knowledge about
+source contents. A node can set publish_metadata=false; topics may disclose
+collection details and are neither private nor authenticated by this extension.
+See [implementation and results](15-mcp-metadata-pilot.md).
 
 Redaction is a regex heuristic, not validated de-identification. Version checks
 exist, but signature verification is a placeholder. Profile noise is not DP.
@@ -80,6 +89,13 @@ No evidence means no generation call. No decoys or query perturbation are
 added in smart mode.
 
 ## Operating modes
+
+Smart mode now offers an opt-in `selection_policy="relative"` alongside the
+existing overlap policy. It changes pre-dispatch selection/stopping only;
+cached source profiles still arrive through registration/MCP, and retrieval,
+budget accounting and coordinator feedback retain the existing path.
+See [routing study protocol](16-routing-study-protocol.md). This is not a
+new MCP protocol or a switch of the live demo to semantic embeddings.
 
 | Mode | Selection | Status |
 |---|---|---|

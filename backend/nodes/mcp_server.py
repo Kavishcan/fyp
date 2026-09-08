@@ -9,13 +9,12 @@ BEIR corpora (see docs/06-datasets.md) — this is not toy data.
 
 This process holds the real documents. It exposes exactly two MCP tools:
 
-- `get_profile`: returns this node's published profile — perturbed centroids
-  computed with the SHARED routing embedder, never raw documents. Called once
+- `get_profile`: returns this node's published profile: perturbed centroids
+  and optional document-derived description/topics/embedding, never raw documents. Called once
   by the coordinator when the node comes online.
 - `retrieve`: given a query string, re-embeds it with this node's OWN local
   embedder (which may differ from every other node's) and returns the top-n
-  passages from its local index. This is the only tool that ever sees a query,
-  and the only thing that ever leaves this process besides the profile.
+  passages from its local index. Only retrieve receives user queries.
 
 Requires Python 3.10+ (the `mcp` package's floor). See README's MCP section
 for why this is a separate venv/interpreter from anything on 3.9.
@@ -23,6 +22,7 @@ for why this is a separate venv/interpreter from anything on 3.9.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # allow `import
 from nodes.embedding import SHARED_ROUTING_MODEL, HashingEmbedder  # noqa: E402
 from nodes.profile import build_profile, embed_documents  # noqa: E402
 from nodes.simulator import InProcessNode  # noqa: E402
+from nodes.metadata import attach_metadata  # noqa: E402
 
 
 def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
@@ -42,13 +43,18 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     node_id = spec["node_id"]
     local_model = spec.get("local_model") or SHARED_ROUTING_MODEL
     documents = spec["documents"]
+    profile_k = spec.get("k", 4)
+    if type(profile_k) is not int or profile_k < 1:
+        raise ValueError("k must be a positive integer")
 
     routing_embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
     local_embedder = (
         routing_embedder if local_model == SHARED_ROUTING_MODEL else HashingEmbedder(model_name=local_model, n_features=256)
     )
 
-    rng = np.random.default_rng(abs(hash(node_id)) % (2**32))
+    # Profiles must stay reproducible across the fresh process used per call.
+    seed = int.from_bytes(hashlib.sha256(node_id.encode()).digest()[:4], "big")
+    rng = np.random.default_rng(seed)
     routing_embeddings = embed_documents(documents, routing_embedder)
     local_embeddings = (
         routing_embeddings if local_embedder is routing_embedder else embed_documents(documents, local_embedder)
@@ -57,11 +63,13 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     profile = build_profile(
         node_id,
         routing_embeddings,
-        k=min(4, len(documents)),
+        k=min(profile_k, len(documents)),
         sigma=0.05,
         rng=rng,
         document_count=len(documents),
+        policy_labels=spec.get("policy_labels", []),
     )
+    attach_metadata(profile, documents, routing_embedder, enabled=spec.get("publish_metadata", True))
     node = InProcessNode(node_id, documents, local_embeddings, local_embedder=local_embedder)
     return node, profile.__dict__, local_model
 
@@ -76,10 +84,12 @@ def main() -> None:
 
     @server.tool()
     def get_profile() -> str:
-        """Return this node's published profile (perturbed centroids only)."""
+        """Return centroids and optional document-derived description/topics."""
         serialisable = dict(profile_dict)
         serialisable["centroids"] = np.asarray(serialisable["centroids"]).tolist()
         serialisable["profile_signature"] = serialisable["profile_signature"].hex()
+        if serialisable["description_embedding"] is not None:
+            serialisable["description_embedding"] = np.asarray(serialisable["description_embedding"]).tolist()
         serialisable["local_model"] = local_model
         return json.dumps(serialisable)
 

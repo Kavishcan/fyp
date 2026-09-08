@@ -14,6 +14,12 @@ Healthcare is the intended case study, not a validated clinical deployment.
 
 ## Current architecture
 
+The [routing improvement study](docs/17-routing-study-results.md) now compares
+coarse/fine source profiles, an opt-in relative stopping policy, and cloned-profile
+attacks on SciFact and NFCorpus. Finer profiles improve retrieval; the stopping
+and trust trade-offs do not yet establish superiority over matched baselines.
+The old default remains unchanged. See the report for measurements and API usage.
+
 ```text
 Source documents -> source index + shared-space profile -> registry
 
@@ -31,6 +37,12 @@ but is not isolated from the coordinator as a separate security boundary.
 The live API/MCP path still uses hashing embeddings. A semantic embedder exists
 but needs consistent integration before meaningful retrieval-quality results.
 The API currently collects passages without a global reranker.
+
+MCP profiles now optionally include deterministic document-derived descriptions,
+topics and description embeddings. Smart requests can select relevance_mode
+centroid, description or combined; centroid remains the default. The
+[metadata comparison](docs/15-mcp-metadata-pilot.md) found a small, statistically
+uncertain fixed-contact gain and no improvement to default adaptive stopping.
 
 ## Modes
 
@@ -135,6 +147,11 @@ See [baseline selection](docs/10-baseline-selection.md).
 
 ## Verification and limitations
 
+The first [real-data pilot](docs/14-smart-router-pilot.md) found that default
+smart routing stops too aggressively on 30 random SciFact sources. It obeyed
+the budget but underperformed cosine top-3 on source/retrieval recall. Preserve
+this negative result; implementation correctness is not algorithmic benefit.
+
 The smart-router implementation was verified with 160 Python tests passing,
 including real MCP integration on a synthetic fixture, and TypeScript checking.
 The 1,000-profile test checks an in-memory invariant, not deployment scalability.
@@ -165,3 +182,5 @@ prove honesty. Do not use real private or patient data in this demo.
 9. [Thesis mapping](docs/09-thesis-mapping.md)
 10. [Baseline selection](docs/10-baseline-selection.md)
 11. [Smart-router implementation and usage](docs/13-smart-router-implementation.md)
+12. [Measured smart-router pilot](docs/14-smart-router-pilot.md)
+13. [MCP metadata extension and comparison](docs/15-mcp-metadata-pilot.md)

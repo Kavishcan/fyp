@@ -1,8 +1,19 @@
 # Experiment plan
 
+The [routing improvement protocol](16-routing-study-protocol.md) fixes the
+new clean, matched-profile and cloned-profile stress comparisons before their
+execution. It separates representation improvements from stopping behaviour.
+The [completed results](17-routing-study-results.md) report 57,939 cases on
+SciFact and NFCorpus, including negative findings and limitations.
+
 This is the evaluation plan for the independent smart router, not a report of
 completed scientific results. Existing legacy sweep outputs must not be
 relabelled as smart-router results.
+
+An initial [SciFact pilot](14-smart-router-pilot.md) is now measured: 300 unique
+queries, 30 randomly partitioned sources and three partition seeds. Defaults
+underperform cosine top-3 despite strict budget compliance. This is exploratory
+evidence, not the completed experiment program below.
 
 ## Comparison systems
 

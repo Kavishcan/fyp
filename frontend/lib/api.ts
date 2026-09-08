@@ -16,6 +16,7 @@ export interface NodeRegisterRequest {
    * distinct name simulates a genuinely different, incomparable embedding
    * model for this node's own local retrieval — see backend/api/embedder.py. */
   local_model?: string;
+  publish_metadata?: boolean;
 }
 
 export interface NodeRegisterResponse {
@@ -37,6 +38,9 @@ export interface NodeStatus {
   /** "mcp" — a real, separate server process reached over MCP. "simulated" —
    * documents held in the coordinator's own process. */
   transport: "mcp" | "simulated";
+  description: string;
+  topics: string[];
+  metadata_method: string;
 }
 
 export interface QueryRequest {
@@ -49,6 +53,10 @@ export interface QueryRequest {
   minimum_gain?: number;
   minimum_trust?: number;
   aggregation?: "mean" | "max";
+  relevance_mode?: "centroid" | "description" | "combined";
+  description_weight?: number;
+  selection_policy?: "overlap" | "relative";
+  relative_score_floor?: number;
 }
 
 export interface SmartRoutingDetails {
@@ -64,12 +72,14 @@ export interface SmartRoutingDetails {
     gain_per_cost: number;
     exposure_cost: number;
     cumulative_exposure: number;
+    centroid_relevance: number;
+    description_relevance: number | null;
   }>;
   excluded: Record<string, string>;
   exposure_spent: number;
   stop_reason: string;
   latency_ms: number;
-  config: Record<string, number | string>;
+  config: Record<string, number | string | null>;
   exposure_unit: string;
   embedding_model: string;
   retrieval_errors: Record<string, string>;

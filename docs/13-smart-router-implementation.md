@@ -4,6 +4,10 @@ This is an implementation specification, not a literature summary or a claim
 of proven novelty. It follows the user's revised direction: build an independent
 router and compare it with published routing systems.
 
+The optional [MCP metadata extension and measured comparison](15-mcp-metadata-pilot.md)
+add centroid, description and combined relevance modes. The default remains
+centroid-only; metadata did not resolve the early-stopping problem.
+
 ## In plain language
 
 1. Embed the question in the same space as the registered source profiles.
@@ -45,6 +49,14 @@ The redundancy score is a coarse profile-overlap proxy, not verified answer
 coverage. This is a greedy heuristic; it has no claimed optimality guarantee.
 In particular, it may stop early on near-duplicate profiles even when those
 sources hold different useful documents. That is an evaluation question.
+
+For relevance_mode=description, r_i is clipped cosine to the published description
+embedding. For combined, r_i is (1-description_weight)*centroid_score plus
+description_weight*description_score, with default weight 0.5. Metadata modes
+exclude sources with missing/invalid description vectors or incompatible model
+identifiers rather than silently substituting centroid scores. Model identifiers
+are compatibility hints, not authenticated claims. Overlap and stopping rules
+are unchanged. The trace includes both component scores.
 
 ## Exposure and authorization
 

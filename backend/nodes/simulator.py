@@ -32,6 +32,7 @@ import numpy as np
 
 from baselines.base import SourceProfile
 from nodes.profile import build_profile, embed_documents
+from nodes.metadata import attach_metadata
 
 
 @dataclass
@@ -110,6 +111,7 @@ def build_simulated_source(
     sigma: float,
     rng: np.random.Generator,
     policy_labels: list | None = None,
+    publish_metadata: bool = True,
 ) -> tuple[InProcessNode, SourceProfile]:
     """PII removal happens once per embedder call, on the same raw documents.
 
@@ -134,6 +136,7 @@ def build_simulated_source(
         document_count=len(documents),
         policy_labels=policy_labels,
     )
+    attach_metadata(profile, documents, routing_embedder, enabled=publish_metadata)
     node = InProcessNode(source_id, documents, local_embeddings, local_embedder=local_embedder)
     return node, profile
 

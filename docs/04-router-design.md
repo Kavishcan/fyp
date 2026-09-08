@@ -25,6 +25,13 @@ Normalize the query and every profile centroid. Clip centroid-query cosine to
 [0, 1]. Aggregate per-source similarities using mean by default, or max as an
 explicit ablation. These are existing similarity operations, not novelty claims.
 
+Optional relevance_mode=description scores a document-derived description vector.
+combined mixes centroid and description cosine scores with description_weight
+(default 0.5). Model/dimension compatibility is checked, and absent metadata
+excludes the source in metadata modes. Centroid remains the default. Topics are
+cached via MCP registration, not fetched by exposing the query to every node.
+See [metadata pilot](15-mcp-metadata-pilot.md) for the measured limitations.
+
 Missing evidence or authorization rejects the source. Incompatible/nonfinite
 profile arrays are excluded. Invalid query vectors or configuration fail
 validation. Zero-vector queries produce no useful sources. Duplicate source IDs
@@ -129,6 +136,27 @@ hijacking resistance.
 
 See [experiments](05-experiments.md) for acceptance evidence and
 [implementation guide](13-smart-router-implementation.md) for exact API usage.
+
+## Relative policy experiment
+
+`SmartConfig(selection_policy="relative")` disables centroid-overlap penalties.
+It selects the best affordable relevance/trust/cost score, and compares later
+scores with `relative_score_floor` (default 0.8) times the first selected score.
+The reference excludes unaffordable sources. This avoids treating shared
+collection topics as proof of duplicate evidence. It adds the stop reason
+`relative_score_floor`; absolute minimum gain, authorization, trust eligibility,
+the contact budget and max-source cap still apply.
+
+It is not retrieval-feedback-driven planning or a guarantee of recall. Equal
+scores can consume the full budget; zero positive scores still abstain.
+The API forwards both new fields in smart mode and rejects relative selection
+in legacy mode. The default remains `overlap` for backwards compatibility.
+
+The offline study uses max aggregation, zero absolute gain floor, no uncertainty
+penalty, and both four- and sixteen-centroid profiles. The live API retains its
+existing uncertainty penalty, hashing encoder and EvidenceTrust update.
+TASR integration in the study is an evaluation-only post-layer adapter.
+See [frozen protocol](16-routing-study-protocol.md).
 
 ## Legacy compatibility
 

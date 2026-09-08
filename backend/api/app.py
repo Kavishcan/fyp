@@ -79,6 +79,7 @@ def register_node(req: NodeRegisterRequest) -> NodeRegisterResponse:
         k=req.k,
         sigma=req.sigma,
         local_model=req.local_model,
+        publish_metadata=req.publish_metadata,
     )
     return NodeRegisterResponse(
         node_id=profile.source_id,
@@ -132,6 +133,8 @@ def query(req: QueryRequest) -> QueryResponse:
         routing_mode=req.routing_mode, exposure_budget=req.exposure_budget,
         minimum_gain=req.minimum_gain, minimum_trust=req.minimum_trust,
         aggregation=req.aggregation,
+        relevance_mode=req.relevance_mode, description_weight=req.description_weight,
+        selection_policy=req.selection_policy, relative_score_floor=req.relative_score_floor,
     )
     return QueryResponse(**result)
 

@@ -14,6 +14,7 @@ class NodeRegisterRequest(BaseModel):
     sigma: float = 0.0
     local_model: Optional[str] = None  # any name; omit to share the routing embedder (see backend/api/embedder.py)
     mcp_endpoint: Optional[str] = None  # reserved for real deployment; unused in simulated mode
+    publish_metadata: bool = True
 
 
 class NodeRegisterResponse(BaseModel):
@@ -43,6 +44,9 @@ class NodeStatus(BaseModel):
     profile_version: int
     local_model: str
     transport: str  # "mcp" (real, separate process) or "simulated" (in-process)
+    description: str = ""
+    topics: List[str] = Field(default_factory=list)
+    metadata_method: str = ""
 
 
 class QueryRequest(BaseModel):
@@ -55,13 +59,21 @@ class QueryRequest(BaseModel):
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
     aggregation: Literal["mean", "max"] = "mean"
+    relevance_mode: Literal["centroid", "description", "combined"] = "centroid"
+    description_weight: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
+    selection_policy: Literal["overlap", "relative"] = "overlap"
+    relative_score_floor: float = Field(default=0.8, ge=0, le=1, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def check_mode(self):
+        if self.routing_mode == "legacy" and self.selection_policy != "overlap":
+            raise ValueError("relative selection requires smart mode")
         if self.routing_mode == "smart" and self.sigma != 0:
             raise ValueError("smart mode does not apply embedding perturbation")
         if self.routing_mode == "legacy" and self.exposure_budget is not None:
             raise ValueError("strict exposure_budget requires smart mode")
+        if self.routing_mode == "legacy" and self.relevance_mode != "centroid":
+            raise ValueError("metadata relevance requires smart mode")
         return self
 
 

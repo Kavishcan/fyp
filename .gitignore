@@ -25,6 +25,12 @@ data/eval_results/
 
 experiments/runs/
 experiments/logs/
+# Reproducible pilot artifacts (embeddings, raw decisions and partitions).
+# The measured summary and command are documented in docs/14-smart-router-pilot.md.
+experiments/smart-pilot-scifact-30-v1/
+experiments/metadata-pilot-scifact-30-*/
+# Routing study raw artifacts; readable measurements are in docs/17.
+experiments/routing-study-*/
 *.log
 
 .env

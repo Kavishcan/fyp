@@ -328,6 +328,50 @@ def test_smart_mode_retrieves_through_real_mcp(client, extra_mcp_node_file):
     assert body["routing_details"]["retrieval_errors"] == {}
 
 
+def test_smart_metadata_mode_uses_cached_mcp_profile(client, extra_mcp_node_file, fresh_state):
+    client.post("/nodes/activate", json={"node_id": "extra_test_node"})
+    handle = fresh_state.nodes["extra_test_node"]
+    with patch.object(handle, "get_profile", side_effect=AssertionError("must use cached profile")):
+        response = client.post("/query", json={
+            "question": "chemo tumour protocol", "routing_mode": "smart",
+            "relevance_mode": "combined", "exposure_budget": 1,
+        })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nodes_contacted"] == ["extra_test_node"]
+    assert body["routing_details"]["steps"][0]["description_relevance"] is not None
+    assert "chemo" in client.get("/nodes").json()[0]["topics"]
+
+
+def test_description_mode_respects_source_opt_out(client):
+    client.post("/nodes/register", json={
+        "node_id": "a", "documents": ["chemo tumour"], "publish_metadata": False,
+    })
+    body = client.post("/query", json={
+        "question": "chemo tumour", "routing_mode": "smart", "relevance_mode": "description",
+    }).json()
+    assert body["nodes_contacted"] == []
+    assert body["routing_details"]["excluded"]["a"] == "missing_or_incompatible_description"
+
+
+def test_legacy_cannot_silently_ignore_metadata_mode(client):
+    response = client.post("/query", json={"question": "test", "relevance_mode": "combined"})
+    assert response.status_code == 422
+
+
+def test_relative_policy_is_opt_in_and_budgeted(client):
+    for sid in ("a", "b", "c"):
+        client.post("/nodes/register", json={"node_id": sid, "documents": ["chemo tumour"]})
+    body = client.post("/query", json={
+        "question": "chemo tumour", "routing_mode": "smart", "selection_policy": "relative",
+        "aggregation": "max", "exposure_budget": 2, "max_nodes": 3,
+    }).json()
+    assert body["nodes_contacted"] == ["a", "b"]
+    assert body["routing_details"]["exposure_spent"] == 2
+    assert body["routing_details"]["config"]["selection_policy"] == "relative"
+    assert client.post("/query", json={"question": "test", "selection_policy": "relative"}).status_code == 422
+
+
 def test_smart_api_enforces_coordinator_weighted_cost(client, fresh_state):
     client.post("/nodes/register", json={"node_id": "a", "documents": ["chemo tumour"]})
     fresh_state.source_exposure_costs["a"] = 2.0

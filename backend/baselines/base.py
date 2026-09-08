@@ -30,6 +30,11 @@ class SourceProfile:
     expected_latency_ms: float = 0.0
     profile_version: int = 1
     profile_signature: bytes = b""
+    description: str = ""
+    topics: list[str] = field(default_factory=list)
+    description_embedding: object | None = None
+    metadata_method: str = ""
+    metadata_embedding_model: str = ""
 
 
 @dataclass

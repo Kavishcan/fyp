@@ -41,18 +41,27 @@ class SmartConfig:
     uncertainty_penalty: float = 0.1
     redundancy_weight: float = 1.0
     aggregation: str = "mean"
+    relevance_mode: str = "centroid"
+    description_weight: float = 0.5
+    query_model: str | None = None
+    selection_policy: str = "overlap"
+    relative_score_floor: float = 0.8
 
     def __post_init__(self):
         if not isfinite(self.exposure_budget) or self.exposure_budget < 0:
             raise ValueError("exposure_budget must be finite and nonnegative")
         if not isinstance(self.max_sources, int) or self.max_sources < 0:
             raise ValueError("max_sources must be a nonnegative integer")
-        for name in ("minimum_gain", "minimum_trust", "uncertainty_penalty", "redundancy_weight"):
+        for name in ("minimum_gain", "minimum_trust", "uncertainty_penalty", "redundancy_weight", "description_weight", "relative_score_floor"):
             value = getattr(self, name)
             if not isfinite(value) or not 0 <= value <= 1:
                 raise ValueError(f"{name} must be finite and in [0, 1]")
         if self.aggregation not in {"mean", "max"}:
             raise ValueError("aggregation must be mean or max")
+        if self.relevance_mode not in {"centroid", "description", "combined"}:
+            raise ValueError("relevance_mode must be centroid, description or combined")
+        if self.selection_policy not in {"overlap", "relative"}:
+            raise ValueError("selection_policy must be overlap or relative")
 
 
 @dataclass
@@ -84,6 +93,8 @@ class SmartRouter:
     effective_trust = max(0, trust - uncertainty_penalty / sqrt(n + 1))
     Redundancy is the maximum positive centroid cosine to any selected source.
     It is only a profile-overlap proxy, not measured answer/evidence coverage.
+    The opt-in relative policy removes this penalty and uses a relative
+    gain-per-cost floor instead. Neither policy guarantees evidence coverage.
     """
 
     def route(
@@ -104,6 +115,7 @@ class SmartRouter:
             raise ValueError("source IDs must be unique")
 
         remaining = {}
+        relevance_components = {}
         for profile in sorted(profiles, key=lambda p: p.source_id):
             sid = profile.source_id
             entry = evidence.get(sid)
@@ -122,14 +134,32 @@ class SmartRouter:
             centroids = _unit_rows(centroids)
             scores = np.clip(centroids @ query, 0.0, 1.0)
             relevance = float(np.mean(scores) if config.aggregation == "mean" else np.max(scores))
+            components = {"centroid_relevance": relevance, "description_relevance": None}
+            if config.relevance_mode != "centroid":
+                if (profile.description_embedding is None or
+                        (config.query_model is not None and profile.metadata_embedding_model != config.query_model)):
+                    decision.excluded[sid] = "missing_or_incompatible_description"
+                    continue
+                description = np.asarray(profile.description_embedding, dtype=np.float64)
+                if description.shape != query.shape or not np.isfinite(description).all():
+                    decision.excluded[sid] = "invalid_description_embedding"
+                    continue
+                description_score = float(np.clip(_unit_rows(description[None, :])[0] @ query, 0.0, 1.0))
+                components["description_relevance"] = description_score
+                relevance = (description_score if config.relevance_mode == "description" else
+                             (1 - config.description_weight) * relevance + config.description_weight * description_score)
+            relevance_components[sid] = components
             remaining[sid] = (centroids, relevance, effective_trust, entry)
 
         decision.candidate_source_ids = list(remaining)
         redundancy = {sid: 0.0 for sid in remaining}
+        reference_ratio = None
         while remaining and len(decision.selected_source_ids) < config.max_sources:
             ranked = []
             for sid, (_, relevance, trust, entry) in remaining.items():
-                gain = relevance * trust * (1 - config.redundancy_weight * redundancy[sid])
+                penalty = (config.redundancy_weight * redundancy[sid]
+                           if config.selection_policy == "overlap" else 0.0)
+                gain = relevance * trust * (1 - penalty)
                 if gain > config.minimum_gain:
                     ranked.append((sid, gain, gain / entry.exposure_cost))
             if not ranked:
@@ -143,6 +173,14 @@ class SmartRouter:
                 decision.stop_reason = "exposure_budget"
                 break
             sid, gain, ratio = min(affordable, key=lambda item: (-item[2], -item[1], item[0]))
+            # Similar collection topics do not imply duplicate evidence. The
+            # relative policy instead compares affordable candidates with the
+            # first selected score; this is a heuristic, not a coverage bound.
+            if reference_ratio is None:
+                reference_ratio = ratio
+            if config.selection_policy == "relative" and ratio < config.relative_score_floor * reference_ratio:
+                decision.stop_reason = "relative_score_floor"
+                break
             centroids, relevance, trust, entry = remaining.pop(sid)
             decision.selected_source_ids.append(sid)
             decision.exposure_spent = fsum([*spent_costs, entry.exposure_cost])
@@ -151,10 +189,12 @@ class SmartRouter:
                 "redundancy": redundancy[sid], "marginal_gain": gain,
                 "gain_per_cost": ratio, "exposure_cost": entry.exposure_cost,
                 "cumulative_exposure": decision.exposure_spent,
+                **relevance_components[sid],
             })
-            for other, (other_centroids, _, _, _) in remaining.items():
-                overlap = float(np.clip(np.max(other_centroids @ centroids.T), 0.0, 1.0))
-                redundancy[other] = max(redundancy[other], overlap)
+            if config.selection_policy == "overlap":
+                for other, (other_centroids, _, _, _) in remaining.items():
+                    overlap = float(np.clip(np.max(other_centroids @ centroids.T), 0.0, 1.0))
+                    redundancy[other] = max(redundancy[other], overlap)
         else:
             if len(decision.selected_source_ids) >= config.max_sources:
                 decision.stop_reason = "max_sources"

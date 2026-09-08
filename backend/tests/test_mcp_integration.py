@@ -38,6 +38,10 @@ def test_mcp_handle_get_profile_returns_real_computed_profile(node_data_file):
     assert profile["local_model"] == "toy-e5"
     assert len(profile["centroids"]) >= 1
     assert profile["document_count_bucket"] == "1-100"
+    assert "chemo" in profile["topics"]
+    assert profile["description"].startswith("Collection topics:")
+    assert len(profile["description_embedding"]) == 256
+    assert "documents" not in profile
 
 
 def test_mcp_handle_retrieve_finds_the_relevant_document(node_data_file):
@@ -69,6 +73,39 @@ def test_appstate_load_mcp_nodes_from_dir_skips_missing_directory():
     assert loaded == []
 
 
+def test_mcp_profiles_stable_across_fresh_processes(node_data_file):
+    handle = MCPNodeHandle(node_id="test_node", data_file=node_data_file)
+    assert handle.get_profile() == handle.get_profile()
+
+
+def test_mcp_metadata_opt_out(node_data_file):
+    spec = json.loads(node_data_file.read_text())
+    spec["publish_metadata"] = False
+    node_data_file.write_text(json.dumps(spec))
+    profile = MCPNodeHandle(node_id="test_node", data_file=node_data_file).get_profile()
+    assert profile["description"] == ""
+    assert profile["description_embedding"] is None
+
+
+def test_mcp_profile_size_is_configurable(node_data_file):
+    spec = json.loads(node_data_file.read_text())
+    spec["documents"] = [f"document topic {i}" for i in range(20)]
+    spec["k"] = 16
+    node_data_file.write_text(json.dumps(spec))
+    profile = MCPNodeHandle(node_id="test_node", data_file=node_data_file).get_profile()
+    assert len(profile["centroids"]) == 16
+
+
+@pytest.mark.parametrize("k", [0, -1, 1.5, True])
+def test_mcp_invalid_profile_size_rejected(node_data_file, k):
+    from nodes.mcp_server import load_node
+    spec = json.loads(node_data_file.read_text())
+    spec["k"] = k
+    node_data_file.write_text(json.dumps(spec))
+    with pytest.raises(ValueError, match="positive integer"):
+        load_node(node_data_file)
+
+
 def test_run_query_dispatches_to_a_real_mcp_node_and_gets_real_citations(node_data_file, tmp_path):
     state = AppState(instrumentation_path=str(tmp_path / "queries.jsonl"))
     asyncio.run(state.register_mcp_node_async(node_data_file))
@@ -78,3 +115,16 @@ def test_run_query_dispatches_to_a_real_mcp_node_and_gets_real_citations(node_da
     assert result["nodes_contacted"] == ["test_node"]
     assert len(result["citations"]) == 1
     assert "chemo" in result["citations"][0]["document"].lower()
+
+
+def test_relative_policy_dispatches_through_real_mcp(node_data_file, tmp_path):
+    state = AppState(instrumentation_path=str(tmp_path / "relative.jsonl"))
+    state.generator = None
+    asyncio.run(state.register_mcp_node_async(node_data_file))
+    result = state.run_query("chemo tumour protocol", max_nodes=3, genuine_k=1, sigma=0,
+                             routing_mode="smart", selection_policy="relative", aggregation="max",
+                             minimum_gain=0, exposure_budget=1)
+    assert result["nodes_contacted"] == ["test_node"]
+    assert result["routing_details"]["exposure_spent"] == 1
+    assert result["citations"]
+    assert state.smart_trust.get("test_node")[1] == 1
