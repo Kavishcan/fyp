@@ -1,9 +1,17 @@
 # Experiments
 
-Configs and result logs. Runs are gitignored; summary CSVs are committed.
+Keep configurations, provenance and raw per-query outputs for each named method.
+Inspect .gitignore and the actual tracked files before assuming results are
+committed. A CSV without model/split/config provenance is not sufficient evidence.
 
-Seven-rung baseline ladder, attacks A1 to A3, interference experiments E1 to E4,
-scaling at 16/100/300/1000. See `docs/05-experiments.md`.
+The independent smart router is evaluated against separate baseline runs and
+ablations, not by relabelling existing legacy outputs. See
+[experiment plan](../docs/05-experiments.md).
 
-Every baseline run records repository commit or executable version, environment,
-dataset/split, source profiles, embedding model, top-k, seed, hardware and command.
+Existing sigma/m and E1-E4 runners belong to the optional legacy decoy/TASR study.
+For smart.py, freeze budgets, gain/trust settings, aggregation, source costs,
+embeddings, manifests and query order. Reset trust for independent runs or
+document the identical stream used across conditions.
+
+Record external code/artifact versions and exact commands. Distinguish a clone,
+a passing adapter test, a reproduction and an adapted benchmark.

@@ -44,6 +44,35 @@ export interface QueryRequest {
   max_nodes?: number;
   genuine_k?: number;
   sigma?: number;
+  routing_mode?: "legacy" | "smart";
+  exposure_budget?: number;
+  minimum_gain?: number;
+  minimum_trust?: number;
+  aggregation?: "mean" | "max";
+}
+
+export interface SmartRoutingDetails {
+  mode: "smart";
+  selected_source_ids: string[];
+  candidate_source_ids: string[];
+  steps: Array<{
+    source_id: string;
+    relevance: number;
+    effective_trust: number;
+    redundancy: number;
+    marginal_gain: number;
+    gain_per_cost: number;
+    exposure_cost: number;
+    cumulative_exposure: number;
+  }>;
+  excluded: Record<string, string>;
+  exposure_spent: number;
+  stop_reason: string;
+  latency_ms: number;
+  config: Record<string, number | string>;
+  exposure_unit: string;
+  embedding_model: string;
+  retrieval_errors: Record<string, string>;
 }
 
 export interface Citation {
@@ -58,6 +87,7 @@ export interface QueryResponse {
   citations: Citation[];
   nodes_contacted: string[];
   generation_status: string;
+  routing_details?: SmartRoutingDetails | null;
 }
 
 export interface AuditResponse {
@@ -67,6 +97,7 @@ export interface AuditResponse {
   genuine_source_ids: string[];
   dispatched_source_ids: string[];
   decoy_source_ids: string[];
+  routing_details?: SmartRoutingDetails | null;
 }
 
 /** A real MCP node server prepared by data/prepare_beir_nodes.py but not

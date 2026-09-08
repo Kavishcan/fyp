@@ -1,172 +1,132 @@
 # Architecture
 
-Three trust zones. The router sits in the middle with an adversary on each side.
+The proposed system is an independent, training-free smart source router.
+RAGRoute is a comparison baseline, not the engine beneath the smart router.
+This document describes the current code; future extensions are labelled.
 
-## Zones
+## Components and boundaries
 
-**Trusted zone (user side).** Query embedding and perturbation happen here.
-Generation also happens here, on a local open-weight model with a fixed prompt.
-This avoids disclosure to an external model provider. Output leakage is not
-evaluated in this project, but local generation does not make it impossible.
+| Component | Current role | Information visible |
+|---|---|---|
+| Next.js studio | Register demo sources, submit legacy queries, inspect results | Query, citations, source IDs and legacy audit |
+| FastAPI coordinator | Own registry, routing, dispatch, trust feedback and optional generation | Raw query, source profiles, returned passages and complete routing trace |
+| SmartRouter | Select an affordable, useful set from existing profiles | Query embedding, centroids, coordinator evidence and configuration |
+| In-process source | Simulate a local index | Documents are held in the coordinator process |
+| MCP source | Retrieve through a separate local subprocess | Local documents and raw questions sent to that source |
+| Optional generator | Produce an answer from selected evidence | Raw question and returned passages; external provider when configured |
+| Audit log | Record routing decisions for evaluation | Source identities, decisions and selection features |
 
-**Router zone (honest but curious).** Holds the profile registry and makes the
-selection. This is the A1 adversary. It never holds documents.
+The pure SmartRouter does not read raw documents. That is a module boundary,
+not an isolated security zone: the coordinator hosting it sees raw questions
+and retrieved passages. The implemented system does not hide queries from an
+honest-but-curious coordinator or from contacted nodes.
 
-**Routing-observer zone.** Observes contacted source aliases and timing over many
-queries but not the query content. This is the A2 adversary. It may represent
-network telemetry, shared audit infrastructure, or an operational observer.
+## Profile registration
 
-**Node zone (some malicious).** Each node holds its own documents and local
-index. At least one forges its published profile — the A3 adversary.
+```text
+Source documents
+  -> heuristic redaction
+  -> shared-space routing embeddings
+  -> clustering and optional empirical profile noise
+  -> centroid profile + version + policy labels
+  -> registry
 
-## Online path
-
-```
-query
-  -> embed (user side)
-  -> perturb embedding (user side)
-  -> BASELINE ROUTER ADAPTER
-       RAGRoute / cosine source ranking
-  -> PROPOSED PRIVACY LAYER
-       exposure constraint
-       trust-aware selection
-       anonymity set    k + decoys = m <= fan-out budget
-  -> fan out to m nodes
-  -> each node retrieves locally, returns top-n passages
-  -> merge and rerank
-  -> trust update (feeds back into rerank)
-  -> local LLM, fixed prompt
-  -> answer
+Source documents
+  -> local retrieval embeddings/index
+  -> source-side retrieval tool
 ```
 
-The perturbed embedding travels the whole path. Nodes never see the clean query.
-Decoys nevertheless increase the number of nodes receiving a query-derived
-representation, so route privacy and query exposure must be measured separately.
+Routing queries and source centroids must share an embedding model and dimension.
+A source may use a different local retrieval space; in that case the raw question
+is embedded again at that source. The live demo uses hashing embeddings.
+SentenceTransformerEmbedder exists but is not wired consistently across the
+live API/MCP path yet.
 
-```mermaid
-graph TD
-    subgraph Offline["Inside each node — offline, once, before any query"]
-        DocStore["Document storage"]
-        PIIRemove["PII removal"]
-        Embed2["Embedding\n(local embed + index — never leaves the node)"]
-        Cluster["k-means centroids + Gaussian noise"]
-        Publish["Profile published via MCP\n(get_profile tool)"]
-        DocStore --> PIIRemove --> Embed2 --> Cluster --> Publish
-    end
+Redaction is a regex heuristic, not validated de-identification. Version checks
+exist, but signature verification is a placeholder. Profile noise is not DP.
+No exact centroid count or noise setting should be assumed across all node files.
 
-    Registry["Profile registry\nmain-topic metadata per node,\naccessible by the router"]
-    Publish --> Registry
+For MCP nodes, get_profile and retrieve are tools on the same server
+implementation. The client currently launches a fresh subprocess for each call;
+it does not retain the same running process from registration to retrieval.
 
-    User["Trusted zone: embed + perturb query"]
+## Smart-mode query path
 
-    subgraph Router["Router zone (A1: honest-but-curious)"]
-        Baseline["Baseline router adapter\n(ranks using registry topic profiles —\nRAGRoute / cosine source ranking)"]
-        Exposure["Exposure constraint"]
-        TrustSelect["Trust-aware selection"]
-        Anon["Anonymity set: k genuine + decoys = m"]
-    end
-
-    Registry -->|"smart, topic-based selection"| Baseline
-
-    FanOut["Fan out to m nodes"]
-
-    subgraph NodeZone["Node zone (A3: some malicious)"]
-        subgraph SimNodes["Simulated nodes"]
-            InProc["In-process — no real transport"]
-        end
-        subgraph MCPNodes["Real MCP nodes"]
-            MCPClient["MCP client\n(fresh subprocess per call)"]
-            MCPServer["MCP server — same node as\nOffline above, retrieve tool"]
-            MCPClient <-->|"stdio, retrieve tool"| MCPServer
-        end
-        Forged["Malicious node: forged profile"]
-    end
-
-    Merge["Merge + rerank passages"]
-    TrustUpdate["Trust update (feeds back into rerank)"]
-    LLM["Local LLM, fixed prompt"]
-    Answer["Answer"]
-
-    Observer["Routing-observer zone\n(A2: sees contacted aliases + timing,\nnever query content)"]
-
-    User --> Baseline --> Exposure --> TrustSelect --> Anon --> FanOut
-    FanOut --> InProc --> Merge
-    FanOut --> MCPClient
-    MCPServer --> Merge
-    FanOut --> Forged --> Merge
-    Merge --> TrustUpdate --> TrustSelect
-    Merge --> LLM --> Answer
-    FanOut -.->|"observed by"| Observer
+```text
+User question
+  -> FastAPI coordinator: embed question
+  -> read already-published profiles and coordinator evidence
+  -> YOUR SmartRouter
+       exclude unauthorized / insufficiently trusted sources
+       estimate relevance and profile overlap
+       select the highest gain-per-cost affordable source
+       repeat until gain, exposure budget or fan-out stops selection
+  -> dispatch only selected sources
+       in-process retrieval OR real MCP retrieve(raw question)
+  -> collect returned passages
+  -> coordinator embeds passages and updates profile-consistency trust
+  -> optional configured generator, only when evidence exists
+  -> answer / citations / routing_details
 ```
 
-**The router only ever sees topic metadata, never documents.** The offline
-stage (top) runs once per node, independent of any query — it is what makes
-selection "smart": the router picks candidates by comparing a query against
-each node's published topic profile (the registry), *before* the privacy
-layer (exposure constraint, trust-aware selection, anonymity set) ever
-touches the ranking. This is already the real implementation, not a proposed
-change: `nodes/profile.py` builds the offline profile, `router/registry.py`
-holds it, and `baselines/*.py` + `router/pipeline.py` are the two stages
-after it. The offline MCP `get_profile` call and the online MCP `retrieve`
-call in the diagram above hit the *same* node process
-(`nodes/mcp_server.py`) — profile publication and query-time retrieval are
-two tools on one server, not two different nodes.
+Selection does not issue retrieval calls to every source. Registered profiles
+are scored locally. Retrieval is currently sequential and requests one passage
+per selected source. The live path collects citations; global deduplication,
+evidence reranking and a fixed local generation backend are not yet implemented.
 
-## Baseline-first implementation
+A failed retrieval still consumes its reserved contact-exposure cost and is
+recorded. Smart mode does not silently broadcast or retry additional sources.
+No evidence means no generation call. No decoys or query perturbation are
+added in smart mode.
 
-The project does not rebuild standard source routing before testing existing
-implementations. Official RAGRoute is the primary relevance/efficiency platform.
-Mu and Li's public routing-hijacking repository supplies the A3 attack, HERouter
-comparison and TASR defence. Both are accessed through a small adapter that
-returns ranked source IDs, scores and timings. Broadcast, random and cosine
-controls are implemented locally because they are small and transparent.
+## Operating modes
 
-RAGRouter is an adjacent peer-reviewed method, not the primary baseline: it routes
-among retrieval-augmented language models rather than distributed knowledge
-sources.
+| Mode | Selection | Status |
+|---|---|---|
+| smart | Independent constrained greedy algorithm in smart.py | Implemented, API opt-in |
+| legacy | Cosine shortlist, weighted rerank, fixed genuine-k and decoys | Preserved control; API/dashboard default |
+| Official RAGRoute | Upstream learned routing | Separate baseline; local adapter remains a stub |
+| Cosine / broadcast / random / oracle | Local comparison controls | Existing adapters, not selectable through this API mode field |
+| TASR / HE comparisons | External security/privacy methods | Separate experiment integration; not the smart-mode trust mechanism |
 
-## Offline path (once per node)
+The dashboard diagram and source trust display still describe legacy operation.
+Smart decisions are available through the API response and audit endpoint.
+See [usage](13-smart-router-implementation.md) and
+[baseline requirements](10-baseline-selection.md).
 
-```
-document storage
-  -> PII removal
-  -> local embed and index      [never leaves the node]
-  -> k-means, 16 to 64 centroids
-  -> add Gaussian noise
-  -> publish via MCP            [only this leaves]
-```
+## Exposure and trust
 
-PII removal runs **before** embedding. If it runs after, the embeddings encode
-the PII and the published centroids inherit it.
+Every selected source has a positive coordinator-configured cost, default one.
+The sum must stay within the per-query budget, including every genuine contact.
+This is recipient-exposure accounting, not a formal privacy budget or measured
+routing-pattern secrecy.
 
-## Attack surfaces
+Smart trust starts at 0.5, with an uncertainty penalty for few observations.
+Returned passages are embedded by the coordinator to assess consistency with
+the advertised profile; source-supplied trust and retrieval scores do not
+determine that update. Matching bait passages can still fool this heuristic.
 
-| ID | Attack | Adversary | Where |
-|---|---|---|---|
-| A1 | Query inversion | Honest-but-curious router | Router holds the perturbed embedding |
-| A2 | Source inference | Observer of selection patterns | The fan-out, across many queries |
-| A3 | Routing hijack | Malicious node | Profile publication, surfaces at rerank |
+The policy-label check is a demo selection hook. Registration, authentication,
+identity binding, signed profiles and multi-tenant authorization remain open.
 
-A2 is the project's primary new measurement. It makes "routing decisions as
-metadata" concrete rather than rhetorical; novelty is stated as a finding of the
-reviewed literature until the final literature search is completed.
+## Evaluation observers
 
-## MCP as node interface
+- A contacted node sees the raw question. Recipient minimization limits who
+  receives it; it does not protect it from that recipient.
+- A routing observer may see contacted identities and timing. Fewer contacts
+  can still make the route easier to identify; A2 must test that separately.
+- A malicious source can advertise a misleading profile or return bait text.
+  A3 must measure selection rate and harm to honest-source retrieval.
+- An external generator sees its prompt when configured. Local-only generation
+  is a future boundary improvement, not current protection.
 
-Each live demonstration node is an MCP server exposing a `retrieve` tool. The
-coordinator is the client.
-This gives real transport, real serialisation, and honest byte counts instead of
-hand-waved communication costs.
+## Scale and instrumentation
 
-**Split the scale claim.** Real MCP servers at 8 to 16 nodes prove the
-architecture works over an actual protocol; measure real bytes and latency there.
-In-process simulation with mocked transport covers 100, 300, and 1000 nodes for
-scaling analysis. State this split explicitly in the thesis. Claiming 1000 live
-MCP nodes when 16 are running is the kind of thing that unravels in a viva.
+The implemented selector scans registered profiles. The 1,000-profile unit
+test is synthetic, in-memory validation, not a distributed scalability result.
+Run separate real-MCP and logical-client benchmarks and report both clearly.
 
-## Instrumentation
-
-A logger taps every arrow: nodes contacted, bytes, per-stage latency, which
-passages survived into the final answer, and the full routing decision.
-
-Build this in month 2. Without it, month 6 means rerunning everything.
+Smart routing logs config, candidate/selected IDs, exclusions, selection scores,
+costs, stop reason, routing latency and retrieval errors. Network byte counts,
+full stage timings and answer-quality metrics are not automatically measured
+just because logging fields or MCP transport exist.

@@ -1,90 +1,87 @@
-# Baseline selection and evidence quality
+# Baseline selection and evidence
 
-## Supervisor-aligned decision
+## Current decision
 
-Reuse a suitable published router instead of rebuilding standard source routing
-from zero. The existing router is the baseline platform. Student implementation
-effort goes into routing-leakage measurement, the privacy mechanism, the
-privacy-utility-cost evaluation and the interaction with trust defence.
+Build the independent SmartRouter and compare it with published and transparent
+local source routers. This revises the earlier baseline-as-engine design.
+Do not present that revision as supervisor approval; confirm the new scope at
+the next meeting.
 
 ```text
-Published source router
-  -> reproduce on FeB4RAG
-  -> record routing quality and cost
-  -> measure A1/A2 leakage
-  -> add proposed privacy layer
-  -> repeat the same attacks and metrics
-  -> integrate A3/TASR
-  -> evaluate privacy-trust interference
+Frozen sources, queries, labels and evaluation conditions
+  -> broadcast / random / cosine / oracle controls
+  -> official RAGRoute or explicitly labelled adaptation
+  -> proposed SmartRouter and its ablations
+  -> matched retrieval, exposure, attack and cost evaluation
 ```
 
-## Selected works
+## Roles
 
-| Work | Publication/evidence status | Fit | Project role |
-|---|---|---|---|
-| RAGRoute | Peer-reviewed EuroMLSys 2025 / later revised work; public code | Direct federated knowledge-source routing | Primary routing baseline and platform |
-| RAGRouter | NeurIPS 2025 Main Conference; public code/data | Routes among RAG-enabled language models, not knowledge silos | Strong adjacent method; optional methodology comparison |
-| Routing Hijacking + TASR | 2026 arXiv preprint with public attack/defence code | Direct routing-security fit | Core emerging evidence for A3, HERouter and trust baseline |
-| Broadcast | Standard control | Direct | Maximum coverage/exposure/cost baseline |
-| Random top-k | Standard control | Direct | Weak selection baseline |
-| Cosine top-k | Transparent local control | Direct | Training-free relevance baseline |
-| Oracle | qrel-derived upper bound | Direct | Maximum achievable source-selection reference |
+| Method | Role | Local implementation status |
+|---|---|---|
+| RAGRoute | Intended primary published source-routing comparator | Upstream checkout exists locally; project adapter is a stub |
+| Broadcast / random / cosine | Direct local controls | Existing SourceRouter adapters |
+| Oracle | Label-derived diagnostic reference | Existing adapter; never a deployable method |
+| TASR | External security comparison | Adapter exists; not the new EvidenceTrust heuristic |
+| HERouter | Optional encrypted routing comparison | Requires a verified runnable condition and explicit key/observer assumptions |
+| DP-CR | Optional DP routing comparison | Verify full mechanism/artifacts before implementing or claiming reproduction |
+| RAGRouter | Adjacent routing methodology | Do not substitute LLM routing for a direct knowledge-source comparison |
 
-Author H-index is not used as the main evidence criterion. Rank evidence by direct
-relevance, publication status/venue, methodological quality, experimental strength,
-reproducibility, code/data availability and recency. Recent preprints are valuable
-for the research frontier but should be supported by peer-reviewed and foundational
-work.
+Publication status and exact versions must be verified against authoritative
+records before submission. This implementation update does not re-audit the
+literature or infer quality from author metrics.
 
-## Direct benchmark eligibility
+## RAGRoute integration requirements
 
-Open source code is ideal but not mandatory. A method is eligible for a direct
-benchmark when the project can:
+The inspected upstream code supports routing without LLM generation and contains
+a router module that can be wrapped. Ollama is not inherently required for a
+routing-only comparison. The old adapter docstring overstates that dependency;
+the adapter remains unimplemented.
 
-- register or configure the same knowledge sources;
-- submit the same test queries;
-- obtain ranked/selected source IDs;
-- set or observe top-k;
-- measure latency and sources contacted;
-- execute repeated programmatic runs;
-- comply with the licence and access conditions.
+Its inspected FeB4RAG configuration uses 13 named sources, specific embedding
+models, centroids, source-ID features and learned weights. The checkout inspected
+during implementation contained training scripts but not a ready checkpoint.
+Obtain compatible artifacts or reproduce offline training.
 
-Executable software, a package, model checkpoint or hosted API can satisfy these
-conditions. A fixed online demo normally cannot. Published aggregate results alone
-are literature comparison and cannot be placed beside project results as though
-the conditions were identical.
+The inspected selection rule uses sigmoid probability above 0.5 rather than
+always selecting top three. Preserve that rule for native reproduction.
+Exposing scores/top-k or changing source embeddings/identities must be recorded
+as an adaptation. Pin the exact upstream commit because paper and code versions
+may differ.
 
-## Reproduction checklist
+Use the upstream routing decision before retrieval; its full query endpoint
+already dispatches source requests and cannot retroactively enforce a budget.
 
-For each direct baseline save:
+## Comparison contract
 
-| Field | Required record |
-|---|---|
-| Upstream identity | Repository/package/API and exact commit/version |
-| Status | Peer-reviewed venue or preprint |
-| Licence | Permitted use and adaptation |
-| Environment | OS, Python, dependencies and model versions |
-| Data | Dataset version, source construction and split manifest |
-| Parameters | Embedding model, top-k, thresholds and random seed |
-| Hardware | CPU/GPU/RAM relevant to latency |
-| Interface | Inputs, ranked outputs, scores and metrics available |
-| Command | Exact reproduction command/configuration |
-| Adaptation | Every local change required to run the comparison |
-| Result | Raw per-query routing output plus aggregate metrics |
+Baseline adapters expose register_sources and rank with ranked IDs/scores where
+available. SmartRouter.route also consumes coordinator evidence/config and
+returns a variable-size constrained set. Preserve both semantics.
 
-## Fallback order
+A direct comparison requires compatible source/question access, observable
+selection, repeatable runs and documented retrieval/generation settings.
+Source count, source IDs, embeddings, learned features and query splits must be
+explicit. Do not force a 13-source checkpoint onto 49 or 1,000 clients silently.
 
-1. Use official runnable implementation directly.
-2. Use checkpoint/package/API as a black-box baseline.
-3. Reimplement only the minimal published routing logic when necessary.
-4. If comparability remains impossible, report the paper only in related work and
-   retain broadcast, random, cosine and oracle as direct controls.
+## Reproduction record
 
-## Primary links
+Record code commit, artifact hashes, license, environment, hardware, dataset
+version, split/partition manifest, model versions, profile construction, query
+order, parameters, seed, exact command, adaptations and raw per-query results.
 
-- RAGRoute code: https://github.com/sacs-epfl/ragroute
-- RAGRoute paper: https://doi.org/10.1145/3721146.3721942
-- RAGRouter paper: https://proceedings.neurips.cc/paper_files/paper/2025/hash/1759a83b007f0685c3fbc460fa1b6395-Abstract-Conference.html
-- RAGRouter code: https://github.com/OwwO99/RAGRouter
-- Routing Hijacking/TASR code: https://github.com/Junjie-Mu/routing-hijacking-fedrag
-- Routing Hijacking preprint: https://arxiv.org/abs/2605.28112
+A clone is not reproduction. A unit test is not the paper's benchmark. Published
+aggregate numbers are related-work context, not directly comparable local
+measurements. An independently reimplemented baseline must be labelled as such.
+
+If upstream artifacts cannot run, report the limitation and use transparent
+controls while pursuing a documented adaptation. Do not fabricate official
+results. Baseline training, when needed, does not change the proposed algorithm's
+training-free status.
+
+## Primary references for verification
+
+- [RAGRoute code](https://github.com/sacs-epfl/ragroute)
+- [RAGRoute DOI](https://doi.org/10.1145/3721146.3721942)
+- [Routing-hijacking/TASR code](https://github.com/Junjie-Mu/routing-hijacking-fedrag)
+- [Routing-hijacking paper record](https://arxiv.org/abs/2605.28112)
+- [RAGRouter code](https://github.com/OwwO99/RAGRouter)

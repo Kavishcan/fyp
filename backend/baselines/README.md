@@ -1,20 +1,25 @@
 # Baseline adapters
 
-Use published implementations as the research platform where they can accept the
-project's sources and queries and return routing decisions.
+These are comparison methods, not required engines beneath SmartRouter.
 
-## Priority
+- ragroute_adapter.py: official RAGRoute adapter placeholder; not runnable yet.
+- tasr_adapter.py: external TASR integration, distinct from smart EvidenceTrust.
+- broadcast.py: all sources.
+- random_router.py: random top-k.
+- cosine_router.py: profile-similarity control.
+- oracle.py: qrel-derived reference; labels must never reach the proposed router.
 
-1. `ragroute_adapter.py` — official RAGRoute source routing, primary baseline.
-2. `tasr_adapter.py` — routing-hijacking attack, HERouter and unmodified TASR.
-3. `broadcast.py` — all sources.
-4. `random_router.py` — random top-k.
-5. `cosine_router.py` — transparent profile-similarity top-k.
-6. `oracle.py` — qrel-derived upper bound.
+Adapters preserve the upstream decision rule. SourceRouter.rank is a ranking
+contract; SmartRouter.route returns a constrained variable-size set. Record
+selection-semantic differences in comparisons.
 
-RAGRouter is documented as adjacent NeurIPS work but is not labelled a direct
-source-routing baseline unless it can be configured with custom distributed
-knowledge sources and return their ranked IDs.
+The RAGRoute adapter's old docstring overstates the full-stack/Ollama requirement.
+Upstream supports disable-LLM operation and has a routing module that can be
+wrapped. Actual weights, source features and compatible embeddings are still
+required. A routing-only wrapper and baseline reproduction remain pending.
 
-Do not vendor third-party code without checking its licence. Prefer pinned Git
-submodules, installation scripts or adapters and record the exact upstream commit.
+HERouter/DP-CR are optional comparisons with separate artifact and threat-model
+verification, not existing smart-mode protections. RAGRouter is adjacent LLM
+routing, not automatically a direct knowledge-source baseline.
+
+See [baseline requirements](../../docs/10-baseline-selection.md).

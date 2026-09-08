@@ -1,9 +1,9 @@
 """Pydantic request/response models for the API surface in docs/08-deployment.md."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class NodeRegisterRequest(BaseModel):
@@ -46,10 +46,23 @@ class NodeStatus(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    question: str
-    max_nodes: int = 5  # m: total dispatched, genuine + decoys
-    genuine_k: int = 2  # k: genuine relevant sources selected before decoys
-    sigma: float = 0.0  # empirical query perturbation magnitude; 0 = baseline
+    question: str = Field(min_length=1)
+    max_nodes: int = Field(default=5, ge=0)  # hard fan-out cap in smart mode
+    genuine_k: int = Field(default=2, ge=0)  # legacy mode only
+    sigma: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    routing_mode: Literal["legacy", "smart"] = "legacy"
+    exposure_budget: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
+    minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
+    aggregation: Literal["mean", "max"] = "mean"
+
+    @model_validator(mode="after")
+    def check_mode(self):
+        if self.routing_mode == "smart" and self.sigma != 0:
+            raise ValueError("smart mode does not apply embedding perturbation")
+        if self.routing_mode == "legacy" and self.exposure_budget is not None:
+            raise ValueError("strict exposure_budget requires smart mode")
+        return self
 
 
 class Citation(BaseModel):
@@ -64,6 +77,7 @@ class QueryResponse(BaseModel):
     citations: List[Citation]
     nodes_contacted: List[str]
     generation_status: str = "not_implemented"
+    routing_details: Optional[dict] = None
 
 
 class AuditResponse(BaseModel):
@@ -73,3 +87,4 @@ class AuditResponse(BaseModel):
     genuine_source_ids: List[str]
     dispatched_source_ids: List[str]
     decoy_source_ids: List[str]
+    routing_details: Optional[dict] = None

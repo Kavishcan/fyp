@@ -1,14 +1,27 @@
-# Proposed routing privacy layer
+# Routing mechanisms
 
-This package wraps a reproduced source-routing baseline. It does not rebuild the
-ordinary router unless the baseline acceptance gate proves that adaptation is
-unavoidable.
+## Current proposed router
 
-- `exposure.py` — exposure proxies, budget accounting and fan-out constraint
-- `perturb.py` — empirical query/profile perturbation
-- `anonymity.py` — topic-stable decoy sampling under the exposure budget
-- `trust.py` — decoy-aware wrapper around unmodified TASR
-- `pipeline.py` — composition of baseline ranking and proposed privacy layer
+smart.py contains the independent training-free SmartRouter, SmartConfig,
+SourceEvidence, SmartDecision and EvidenceTrust.
 
-Max-over-centroid, mean and top-r mean are ablation conditions. Do not present one
-as universally correct before measuring it.
+It greedily selects useful sources under a strict contact-exposure budget,
+using relevance, uncertainty-adjusted trust and profile overlap. It can stop
+before the cap or select nothing. It has no decoys or query perturbation.
+Coordinator-observed passage consistency is a heuristic, not verified honesty.
+
+See [design](../../docs/04-router-design.md) and
+[usage](../../docs/13-smart-router-implementation.md).
+
+## Preserved legacy path
+
+- registry.py: shared profile registry; version checks exist, signatures are a placeholder.
+- pipeline.py: cosine/baseline shortlist, weighted rerank and decoys.
+- exposure.py: legacy proxy-cost helper; genuine sources can exceed its budget.
+- perturb.py: empirical Gaussian perturbation, not automatically DP.
+- anonymity.py: legacy deterministic/topic-stable decoy construction.
+- trust.py: local BoundedTrustUpdate; not the upstream TASR implementation.
+
+Legacy remains the live dashboard/API default. Smart mode is explicit through
+routing_mode=smart. Keep experiment identities separate; legacy results do not
+evaluate the new greedy selector.

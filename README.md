@@ -1,258 +1,167 @@
 # FedSafeRouter
 
-Training-Free Exposure-Constrained and Trust-Aware Source Routing for
-Federated RAG. Final year project. A smart, privacy-aware source router for
-federated retrieval-augmented generation that selects a small set of relevant,
-trustworthy sources while measuring and reducing leakage from queries and
-observable routing decisions. Healthcare is the case-study domain; the
-routing method is domain independent.
+**Training-Free Exposure-Constrained and Trust-Aware Adaptive Source Routing
+for Scalable Federated RAG.**
 
-The name is literal: **Fed**erated + **Safe** + **Router** — the contribution
-is the router and its privacy/trust layer specifically. The demo does run a
-full pipeline end to end (routing -> retrieval -> generation), but generation
-itself is not the research contribution and, in the demo, is not even
-built the way the research design specifies — see Generation below.
+This FYP investigates an independent source-selection algorithm. It combines
+profile relevance, coordinator-observed trust, overlap-aware adaptive selection
+and a strict contact-exposure budget. RAGRoute is a comparison baseline, not
+the required engine underneath the proposed router.
 
-## The problem in one paragraph
+The implementation is a research prototype. Novelty, privacy benefit, attack
+resilience and scalability must be established through comparative experiments.
+Healthcare is the intended case study, not a validated clinical deployment.
 
-Federated RAG keeps documents local, but routing still exposes a query-derived
-representation and a pattern of contacted sources. Existing source routing
-primarily optimises relevance and efficiency. Encrypted routing can protect query
-content while preserving the same source ranking, so it does not by itself hide
-the observable selection pattern. This project measures that leakage and adds a
-training-free privacy and trust layer to a reproduced public routing baseline.
+## Current architecture
 
-## Architecture
+```text
+Source documents -> source index + shared-space profile -> registry
 
-Three trust zones, with the router in the middle and an adversary on each side.
-Full detail in [docs/03-architecture.md](docs/03-architecture.md); design contract
-in [docs/04-router-design.md](docs/04-router-design.md).
-
-- **Trusted zone (user side).** Query embedding, perturbation, and generation
-  (a local open-weight model, fixed prompt) happen here.
-- **Router zone (honest-but-curious, A1).** Holds the source-profile registry and
-  makes the selection. Never holds documents.
-- **Routing-observer zone (A2).** Observes which sources are contacted and when,
-  across many queries, but not query content.
-- **Node zone (some malicious, A3).** Each node holds its own documents and local
-  index; at least one forges its published profile.
-
-Online path:
-
-```
-query
-  -> embed + perturb (user side)
-  -> baseline router adapter        (RAGRoute / cosine top-k / etc.)
-  -> proposed privacy layer         (exposure constraint, trust-aware selection,
-                                      anonymity set: k genuine + decoys = m)
-  -> fan out to m sources
-  -> each source retrieves locally, returns top-n passages
-  -> merge + rerank
-  -> trust update (feeds back into rerank)
-  -> local LLM, fixed prompt -> answer
+Question -> coordinator embedding
+         -> SMART ROUTER: relevance + trust + overlap + strict budget
+         -> selected MCP / in-process nodes
+         -> returned passages -> coordinator consistency-trust update
+         -> optional configured generator -> answer and citations
 ```
 
-Offline path (once per source): documents -> PII removal -> local embed and
-index (never leaves the source) -> k-means centroids -> Gaussian noise -> publish.
+The coordinator sees the raw question and returned passages. Contacted MCP
+nodes receive raw questions. The pure routing module uses embeddings/profiles,
+but is not isolated from the coordinator as a separate security boundary.
 
-**Two embedding spaces, deliberately kept separate.** FeB4RAG and MultiHop-RAG
-both use a different embedding model per source, not one shared model — and a
-vector from one embedding model can't be compared against a vector from
-another (different dimensionality, unrelated geometry), so naive shared-space
-cosine similarity would silently break under that realism. The fix: a **shared
-routing embedder** (one model, every profile and every routing-time query) is
-the only thing the router ever compares — that's what keeps max-over-centroid
-scoring valid and training-free. Each node's **own local embedder** (free to
-differ node to node) is used only for that node's local index, and the query
-is re-embedded through it again, per selected node, at retrieval time. See
-`backend/nodes/simulator.py` module docstring and `backend/api/embedder.py`.
+The live API/MCP path still uses hashing embeddings. A semantic embedder exists
+but needs consistent integration before meaningful retrieval-quality results.
+The API currently collects passages without a global reranker.
 
-**Baseline-first.** The project does not rebuild ordinary source routing before
-testing existing implementations. Official RAGRoute is the primary
-relevance/efficiency platform; Mu and Li's routing-hijacking repository supplies
-the A3 attack, the HERouter comparison, and the TASR defence. Both are accessed
-through a common adapter contract (`register_sources`, `rank`) so the privacy
-layer sits on top of a reproduced baseline rather than a bespoke router. See
-[docs/10-baseline-selection.md](docs/10-baseline-selection.md).
+## Modes
 
-## Structure
+| Mode | Purpose | Current status |
+|---|---|---|
+| smart | Independent constrained adaptive router | Implemented; opt in through the API |
+| legacy | Earlier cosine/rerank/decoy pipeline | Preserved; API and dashboard default |
+| Published/local baselines | Research comparisons | Separate experiment adapters; not smart-router dependencies |
 
-Monorepo: a Python research backend, a Next.js dashboard frontend, and
-gitignored local checkouts of the external baselines being reproduced.
+Smart mode has no decoys and no query-embedding perturbation. Default cost is one
+unit per recipient; every contact must fit the budget. It can select fewer than
+the source cap, or no sources. A smaller contact set is not a formal privacy
+guarantee and may still reveal routing patterns.
 
-| Path | Contents |
-|---|---|
-| `backend/baselines/` | `SourceRouter` adapters — RAGRoute, TASR/HERouter, broadcast, random, cosine, oracle |
-| `backend/router/` | Proposed privacy, exposure and trust layer |
-| `backend/nodes/` | Real MCP node servers (`mcp_server.py`), the client that talks to them (`mcp_client.py`), and the in-process simulator |
-| `backend/attacks/` | A1 inversion, A2 source inference, A3 hijack integration |
-| `backend/eval/` | Instrumentation, metrics, ablation harness |
-| `backend/api/` | FastAPI service backing the frontend |
-| `backend/vendor/` | Gitignored clones of RAGRoute and routing-hijacking-fedrag (TASR) — see below |
-| `backend/tests/` | Unit and integration tests (pytest) |
-| `frontend/` | Next.js + TypeScript + Tailwind + shadcn/ui dashboard |
-| `docs/` | Gap, proposal, architecture, router design, experiments, datasets, roadmap, deployment, thesis mapping, baseline selection |
-| `data/` | Dataset prep and node partitioning |
-| `experiments/` | Configs, result logs, and the baseline reproduction log |
+## Run locally
 
-## Running it
+Use Python 3.10+ and the existing environment when available:
 
-Backend (from repo root). **Requires Python 3.10+** — the `mcp` SDK dropped
-3.9 support entirely, and node server processes need it too:
-
-```bash
-python3.12 -m venv .venv && source .venv/bin/activate   # brew install python@3.12 if needed
-pip install -r backend/requirements.txt
-uvicorn api.app:app --reload --app-dir backend
+```sh
+python3.12 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/uvicorn api.app:app --reload --app-dir backend --port 8000
 ```
 
-To see real MCP nodes (see "MCP nodes" below) rather than an empty source
-list, fetch a couple of small BEIR corpora and prepare their node files
-first — otherwise the backend starts fine with zero nodes and you register
-simulated ones from the UI instead:
+Prepared node files in data/mcp_nodes are registered at startup. Without them,
+register harmless simulated sources through the UI or API. Inspect existing
+datasets before downloading; do not download a dataset larger than 500 MB
+without revisiting the user's limit.
 
-```bash
-mkdir -p backend/vendor/beir && cd backend/vendor/beir
-for name in arguana nfcorpus; do
-  curl -sL -o "$name.zip" "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/$name.zip"
-  unzip -q "$name.zip" && rm "$name.zip"
-done
-cd ../../.. && python data/prepare_beir_nodes.py
-```
+In a second terminal:
 
-Frontend, in a second terminal:
-
-```bash
+```sh
 cd frontend
 npm install
-cp .env.local.example .env.local   # points at http://localhost:8000 by default
 npm run dev
 ```
 
-Open `http://localhost:3000`. The **Architecture** panel at the top is a live
-[React Flow](https://reactflow.dev) diagram of the actual pipeline — query,
-shared-embedder routing, the anonymity set, and the feedback loop into trust
-update — with currently registered sources rendered as real nodes in it,
-pulled from `/nodes`. Click the dashed "+ Add source" node to register a new
-one directly from the diagram (same effect as the Register panel below; both
-update the same backend state). Below that: register a source with a few
-documents, run a query, then use "Reveal audit trail" to see the genuine/decoy
-breakdown the query response itself deliberately withholds.
+Open [the studio](http://localhost:3000). Its diagram, controls and source trust
+display still describe legacy mode. The TypeScript API contract supports smart
+requests, but there is not yet a studio mode selector.
 
-Tests: `pytest` from the repo root (config in `pyproject.toml` points at
-`backend/`).
+## Try the smart router
 
-## Generation (demo only — reads as a departure from the research design)
+After registering suitable sources:
 
-`docs/02-proposal.md` and `docs/03-architecture.md` specify generation on a
-**local** open-weight model specifically so retrieved passages and the query
-never leave the trust boundary — that's what keeps prompt/output leakage out
-of the thesis's scope. The demo API instead calls an external provider
-(OpenAI or Gemini) for convenience, which means passages **do** leave the
-boundary. Don't use its output as evidence for any privacy claim; treat it as
-a UI convenience, not part of the evaluated system.
-
-```bash
-cp backend/.env.example backend/.env
-# fill in exactly one: OPENAI_API_KEY or GEMINI_API_KEY
+```sh
+curl -X POST http://localhost:8000/query \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"COVID treatment research","routing_mode":"smart","max_nodes":5,"exposure_budget":2,"minimum_gain":0.05}'
 ```
 
-Provider is auto-detected from whichever key is set (or force one with
-`LLM_PROVIDER=openai|gemini`). With neither key set, `/query` keeps returning
-`answer: null` as before. See `backend/generation/` — the interface
-(`Generator.generate(question, passages)`) is provider-agnostic, so a real
-local-model implementation can replace this later without touching the API
-layer.
+Smart mode treats max_nodes as a ceiling; genuine_k is legacy-only.
+routing_details in the response and audit endpoint explains selection features,
+costs, exclusions and stopping. See the
+[step-by-step implementation guide](docs/13-smart-router-implementation.md).
 
-## MCP nodes
+## Repository map
 
-Two kinds of source coexist in the same registry and pipeline:
+| Path | Role |
+|---|---|
+| backend/router/smart.py | Independent selector and EvidenceTrust |
+| backend/router/ | Registry and preserved legacy components |
+| backend/baselines/ | RAGRoute stub, TASR adapter and local controls |
+| backend/nodes/ | Profile construction, hashing/semantic embedders, MCP server/client and simulator |
+| backend/api/ | FastAPI coordinator, request validation and mode dispatch |
+| backend/attacks/ | Existing A1/A2/A3 experiment components |
+| backend/eval/ | Metrics, instrumentation and existing evaluation helpers |
+| backend/generation/ | Optional generation backends |
+| backend/tests/ | Unit and integration tests |
+| frontend/ | Legacy-oriented studio and shared API types |
+| data/ | Preparation scripts and local node datasets |
+| experiments/ | Experiment configurations and provenance/results |
+| docs/ | Design, research plan, dataset strategy and status |
 
-- **Simulated** (the Register panel / dialog): documents posted straight to
-  the coordinator's own process. Fast to set up, nothing genuinely separate.
-- **MCP-backed** (`backend/nodes/mcp_server.py`): a real, separate OS process
-  per source, holding real documents (from `data/prepare_beir_nodes.py`,
-  sourced from the actual BEIR `arguana`/`nfcorpus` corpora — not toy
-  strings), reached over the actual MCP protocol via
-  `backend/nodes/mcp_client.py`. The coordinator never reads a node's
-  documents directly — at startup it calls each node's `get_profile` MCP tool
-  to fetch the (perturbed, centroid-only) profile it publishes, and at query
-  time it calls `retrieve` to get back passages. Every one of those calls
-  spawns and tears down a real subprocess (`nodes/mcp_client.py`'s module
-  docstring explains the tradeoff — no persistent session, so no
-  event-loop-bridging complexity inside a synchronous FastAPI app).
+## Generation and transport
 
-Every `*.json` file in `data/mcp_nodes/` (produced by the prep script above)
-is auto-registered on backend startup. They show up in `/nodes`, the sources
-table, and the Architecture flow diagram with a **transport: MCP** badge,
-indistinguishable from simulated sources to the router — the whole point is
-that routing, decoys, and trust don't need to know which kind they're talking
-to.
+With no configured generator, answers are null and retrieved citations remain
+available. When OpenAI/Gemini is configured, the question and passages are sent
+to that provider. This is demo convenience, not privacy-preserving generation.
+Smart mode skips generation when no evidence was retrieved. A fixed local model
+for evaluation remains future work.
 
-## External baselines (`backend/vendor/`)
+Simulated sources hold documents in the coordinator process. MCP sources use
+real local subprocess/stdio transport; each call starts a fresh subprocess.
+Transport is real, but that does not establish remote institutional deployment.
+Raw corpora remain at MCP sources while selected passages return to the coordinator.
 
-RAGRoute and the routing-hijacking-fedrag repo (source of TASR and HERouter)
-are cloned locally, not committed — `backend/vendor/` is gitignored. Clone them
-yourself to reproduce:
+## Baselines
 
-```bash
-git clone https://github.com/sacs-epfl/ragroute backend/vendor/ragroute
-git clone https://github.com/Junjie-Mu/routing-hijacking-fedrag backend/vendor/routing-hijacking-fedrag
+- Official [RAGRoute](https://github.com/sacs-epfl/ragroute) is the intended direct
+  published routing comparison. The adapter is still a stub. Its upstream
+  routing module can be wrapped separately; Ollama is not intrinsically required
+  for routing-only work, and upstream has a disable-LLM option.
+- [Routing-hijacking/TASR](https://github.com/Junjie-Mu/routing-hijacking-fedrag)
+  supplies external security comparison code. The TASR adapter is distinct from
+  the new smart-mode consistency heuristic.
+- Broadcast, random, cosine and oracle adapters remain local controls.
+
+A clone or passing adapter unit test is not a completed benchmark reproduction.
+Record versions, artifacts, commands and raw outputs before reporting results.
+See [baseline selection](docs/10-baseline-selection.md).
+
+## Verification and limitations
+
+The smart-router implementation was verified with 160 Python tests passing,
+including real MCP integration on a synthetic fixture, and TypeScript checking.
+The 1,000-profile test checks an in-memory invariant, not deployment scalability.
+Rerun these checks after changes:
+
+```sh
+.venv/bin/pytest -q
+cd frontend
+./node_modules/.bin/tsc --noEmit --incremental false
 ```
 
-- **TASR is wired for real** (`backend/baselines/tasr_adapter.py` loads their
-  actual `TrustAwareRouter` class directly, bypassing their package's heavier
-  optional imports). `backend/tests/test_tasr_adapter.py` runs against it
-  automatically once cloned.
-- **RAGRoute is not wired up.** It's a multi-process system (HTTP coordinator +
-  routing process + Ollama for generation), not an importable router — see the
-  docstring in `backend/baselines/ragroute_adapter.py` for exactly what running
-  it for real requires.
-- Provenance for both is recorded in `experiments/reproduction_log.jsonl`
-  (commit hashes, licences, what's actually verified vs. not).
+Still required: semantic-model integration, comparable baseline runs, full
+attack evaluation, global evidence reranking, network/stage instrumentation,
+persistent authenticated identity/policies, and larger transport experiments.
+Profile signing is a placeholder; redaction is heuristic; consistency does not
+prove honesty. Do not use real private or patient data in this demo.
 
-## Documents
+## Documentation
 
-1. [Research gap](docs/01-research-gap.md)
-2. [Proposal](docs/02-proposal.md) — Chapter 1 format
+1. [Research gap hypotheses](docs/01-research-gap.md)
+2. [Proposal planning notes](docs/02-proposal.md)
 3. [Architecture](docs/03-architecture.md)
 4. [Router design](docs/04-router-design.md)
 5. [Experiments](docs/05-experiments.md)
-6. [Datasets](docs/06-datasets.md)
+6. [Dataset strategy](docs/06-datasets.md)
 7. [Roadmap](docs/07-roadmap.md)
-8. [Deployment](docs/08-deployment.md)
+8. [Deployment boundaries](docs/08-deployment.md)
 9. [Thesis mapping](docs/09-thesis-mapping.md)
 10. [Baseline selection](docs/10-baseline-selection.md)
-
-## Status
-
-**Backend:** implemented and tested — the `SourceRouter` contract and local
-controls, the full privacy/trust layer (registry, perturbation, exposure
-budget, topic-stable anonymity sets, bounded trust update), node simulation
-with per-node local embedders decoupled from the shared routing embedder,
-**real MCP node servers backed by real BEIR document data** (see "MCP nodes"
-above — this is genuine separate-process, real-protocol, real-data
-communication, not a simulation of it), A1/A2/A3 attack modules,
-evaluation/instrumentation, a real (not reimplemented) TASR adapter, and
-pluggable generation (OpenAI/Gemini, demo-only — see Generation above). 96
-tests passing, including live round trips against real spawned MCP
-subprocesses.
-
-**Frontend:** a working dashboard — a live React Flow diagram of the actual
-architecture with registered sources rendered as real nodes in it (add a
-source directly from the diagram), a table view with live trust scores and
-local model, a query panel with citations and (when a provider is configured)
-a generated answer, and the audit trail reveal. No auth, no persistence beyond
-the backend's in-memory state — a research demo, not a deployment target.
-
-**Not yet done, deliberately:**
-- `ragroute_adapter.py` is a stub — RAGRoute needs its own process (and Ollama)
-  running, which is a real resource commitment, not something to silently
-  trigger.
-- No local-model generation — only the external-API demo path exists so far.
-  The research design's local model is still unbuilt.
-- MCP nodes hold a small, fixed sample (40 docs each) from 2 of FeB4RAG's 16
-  BEIR corpora, not the full benchmark, and use the placeholder hashing
-  embedder, not a real sentence-embedding model. Real routing-quality numbers
-  need both scaled up.
-- A2 exists as a tested module but isn't wired into the API as a live observer.
+11. [Smart-router implementation and usage](docs/13-smart-router-implementation.md)

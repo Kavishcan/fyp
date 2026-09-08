@@ -128,7 +128,10 @@ async def activate_node(req: ActivateNodeRequest) -> NodeRegisterResponse:
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest) -> QueryResponse:
     result = state.run_query(
-        req.question, max_nodes=req.max_nodes, genuine_k=req.genuine_k, sigma=req.sigma
+        req.question, max_nodes=req.max_nodes, genuine_k=req.genuine_k, sigma=req.sigma,
+        routing_mode=req.routing_mode, exposure_budget=req.exposure_budget,
+        minimum_gain=req.minimum_gain, minimum_trust=req.minimum_trust,
+        aggregation=req.aggregation,
     )
     return QueryResponse(**result)
 
@@ -145,4 +148,5 @@ def audit(query_id: str) -> AuditResponse:
         genuine_source_ids=record["genuine_source_ids"],
         dispatched_source_ids=record["dispatched_source_ids"],
         decoy_source_ids=record["decoy_source_ids"],
+        routing_details=record.get("extra", {}).get("routing"),
     )

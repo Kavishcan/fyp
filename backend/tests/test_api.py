@@ -250,3 +250,110 @@ def test_remove_node_deregisters_it(client):
 def test_remove_node_404_for_unknown_node_id(client):
     resp = client.delete("/nodes/does-not-exist")
     assert resp.status_code == 404
+
+
+def test_smart_api_budget_trace_and_audit(client, fresh_state):
+    for node_id, document in [("a", "chemo tumour"), ("b", "heart treatment")]:
+        client.post("/nodes/register", json={"node_id": node_id, "documents": [document]})
+    response = client.post("/query", json={
+        "question": "chemo tumour heart treatment", "routing_mode": "smart",
+        "exposure_budget": 1, "max_nodes": 5,
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["nodes_contacted"]) == 1
+    details = body["routing_details"]
+    assert details["exposure_spent"] == 1
+    assert details["stop_reason"] == "exposure_budget"
+    audit = client.get(f"/audit/{body['query_id']}").json()
+    assert audit["routing_details"] == details
+    assert audit["decoy_source_ids"] == []
+    assert fresh_state.smart_trust.get(body["nodes_contacted"][0])[1] == 1
+
+
+def test_smart_zero_budget_does_not_retrieve_or_generate(client, fresh_state):
+    client.post("/nodes/register", json={"node_id": "a", "documents": ["chemo tumour"]})
+    with patch.object(fresh_state.nodes["a"], "retrieve") as retrieve:
+        with patch.object(fresh_state, "generator") as generator:
+            body = client.post("/query", json={
+                "question": "chemo tumour", "routing_mode": "smart", "exposure_budget": 0,
+            }).json()
+            retrieve.assert_not_called()
+            generator.generate.assert_not_called()
+    assert body["nodes_contacted"] == []
+    assert body["generation_status"] == "no_evidence"
+
+
+def test_smart_policy_denies_restricted_source_until_server_grants(client, fresh_state):
+    client.post("/nodes/register", json={
+        "node_id": "restricted", "documents": ["chemo tumour"], "policy_labels": ["hospital"],
+    })
+    request = {"question": "chemo tumour", "routing_mode": "smart"}
+    with patch.object(fresh_state.nodes["restricted"], "retrieve") as retrieve:
+        response = client.post("/query", json=request)
+        retrieve.assert_not_called()
+    assert response.json()["nodes_contacted"] == []
+    fresh_state.allowed_policy_labels.add("hospital")
+    assert client.post("/query", json=request).json()["nodes_contacted"] == ["restricted"]
+
+
+def test_smart_failure_consumes_budget_without_fallback_fanout(client, fresh_state):
+    client.post("/nodes/register", json={"node_id": "a", "documents": ["chemo tumour"]})
+    with patch.object(fresh_state.nodes["a"], "retrieve", side_effect=TimeoutError):
+        body = client.post("/query", json={
+            "question": "chemo tumour", "routing_mode": "smart", "exposure_budget": 1,
+        }).json()
+    assert body["routing_details"]["exposure_spent"] == 1
+    assert body["routing_details"]["retrieval_errors"] == {"a": "TimeoutError"}
+    assert body["generation_status"] == "no_evidence"
+
+
+def test_smart_mode_no_sources_returns_decision(client):
+    response = client.post("/query", json={"question": "anything", "routing_mode": "smart"})
+    assert response.status_code == 200
+    assert response.json()["routing_details"]["stop_reason"] == "no_eligible_sources"
+
+
+def test_smart_mode_retrieves_through_real_mcp(client, extra_mcp_node_file):
+    assert client.post("/nodes/activate", json={"node_id": "extra_test_node"}).status_code == 200
+    response = client.post("/query", json={
+        "question": "chemo protocol for tumour patients", "routing_mode": "smart",
+        "exposure_budget": 1,
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nodes_contacted"] == ["extra_test_node"]
+    assert body["citations"][0]["document"] == "chemo protocol for tumour patients"
+    assert body["routing_details"]["exposure_spent"] == 1
+    assert body["routing_details"]["retrieval_errors"] == {}
+
+
+def test_smart_api_enforces_coordinator_weighted_cost(client, fresh_state):
+    client.post("/nodes/register", json={"node_id": "a", "documents": ["chemo tumour"]})
+    fresh_state.source_exposure_costs["a"] = 2.0
+    with patch.object(fresh_state.nodes["a"], "retrieve") as retrieve:
+        body = client.post("/query", json={
+            "question": "chemo tumour", "routing_mode": "smart", "exposure_budget": 1,
+        }).json()
+        retrieve.assert_not_called()
+    assert body["nodes_contacted"] == []
+    assert body["routing_details"]["stop_reason"] == "exposure_budget"
+
+
+def test_smart_republication_cannot_keep_earned_trust(client, fresh_state):
+    node = {"node_id": "a", "documents": ["chemo tumour"]}
+    client.post("/nodes/register", json=node)
+    client.post("/query", json={"question": "chemo tumour", "routing_mode": "smart"})
+    assert fresh_state.smart_trust.get("a")[1] == 1
+    client.post("/nodes/register", json=node)
+    assert fresh_state.smart_trust.get("a") == (0.5, 0)
+
+
+@pytest.mark.parametrize("options", [
+    {"routing_mode": "smart", "exposure_budget": -1},
+    {"routing_mode": "smart", "sigma": 0.1},
+    {"routing_mode": "legacy", "exposure_budget": 1},
+    {"routing_mode": "other"}, {"max_nodes": -1}, {"minimum_gain": 2},
+])
+def test_invalid_smart_request_rejected(client, options):
+    assert client.post("/query", json={"question": "test", **options}).status_code == 422

@@ -1,211 +1,93 @@
-# Deployment
+# Deployment boundaries and API
 
-The target deployment for this system is a regional hospital network sharing
-clinical reference material without pooling it.
+This repository is local research infrastructure, not a secured hospital
+deployment or a clinical tool. Use public/synthetic data. Any real clinical
+deployment would need separate governance, security and regulatory assessment.
 
-## Scenario
+## Current process layout
 
-Six to twelve hospitals in a region. Each holds local clinical guidance: treatment
-protocols, formulary decisions, care pathways, departmental guidelines, anonymised
-case summaries. This material is institutionally owned and cannot be centralised,
-for reasons that are legal, contractual and political rather than technical.
+- A Next.js studio calls the FastAPI coordinator.
+- The coordinator holds profiles, source handles, raw questions, retrieved
+  passages, separate legacy/smart trust state and routing logs.
+- In-process sources keep documents inside that coordinator.
+- MCP sources are separate local stdio subprocesses started afresh per call.
+- Optional external generation sends questions/passages to the configured provider.
 
-A clinician at hospital A asks a question. The answer may exist in hospital D's
-protocols. Today that knowledge is unreachable. This system makes it reachable
-without moving the documents.
-
-## Why routing privacy matters here specifically
-
-In a generic federated setting, "an observer learns which node holds which topic"
-sounds mild. In healthcare it is concrete harm:
-
-- A query routed to the paediatric oncology silo reveals a patient's condition
-  class even if nobody reads the query text.
-- Selection patterns reveal which hospital treats rare condition X. In a small
-  population that is potentially re-identifying, and it is commercially useful to
-  competitors regardless.
-- Over months, routing logs expose one institution's case mix to anyone watching.
-
-None of this requires reading a single query. Protecting document content is not
-sufficient.
-
-## The audit-cost constraint
-
-This is the constraint that distinguishes healthcare from a generic deployment,
-and it feeds directly into the research.
-
-In a hospital network, **every node contact is an audit event**. Access is logged
-under data-sharing agreements. Contacting twenty hospitals when three hold
-relevant material is not merely bandwidth. It is seventeen logged accesses to
-institutions with no legitimate interest in that query, and under some agreements
-that is itself a violation.
-
-The decoy cost function therefore has three terms, not two:
-
-```
-cost(m) = latency(m) + bandwidth(m) + audit_cost(m)
-```
-
-Two design questions follow, both measurable:
-
-1. Should decoys be drawn only from nodes already inside the same data-sharing
-   agreement? This constrains the anonymity set and probably weakens it.
-2. Does a smaller, agreement-bounded anonymity set still defeat A2, or does the
-   constraint make the defence useless?
-
-No existing FedRAG work costs decoys this way.
-
-## What a node is
-
-One hospital runs one node. Concretely:
-
-- A container with a local document folder mounted read-only
-- A PII removal pass over documents before embedding
-- A local embedding index that never leaves the container
-- A k-means profile, noised, published to the coordinator
-- An MCP server exposing a single `retrieve` tool
-
-Onboarding is: run the container, point it at a folder, register with the
-coordinator. No model training, no data upload, no schema migration.
-
-## What the coordinator is
-
-One container running the router plus a local open-weight LLM. It holds:
-
-- The profile registry (noised centroids only, never documents)
-- The two-stage router
-- Trust state per node
-- The generation step, inside the trust boundary
-
-The coordinator never receives raw documents and never sees an unperturbed query.
+SmartRouter is an algorithm module inside the coordinator. It does not create
+cryptographic separation or hide the question from its host.
 
 ## API surface
 
-```
-POST /query          { question, max_nodes? }  -> { answer, citations, nodes_contacted }
-POST /nodes/register { node_id, profile, mcp_endpoint }
-GET  /nodes          -> registry status and trust scores
-GET  /audit/:query_id -> which nodes were contacted and why
-```
-
-The audit endpoint is not optional in this domain. An institution must be able to
-ask why it received a query, and the honest answer is sometimes "you were a
-decoy". Whether that answer can be given without undoing the privacy is an open
-design question and is discussed in the thesis.
-
-## Latency budget
-
-Clinical reference lookup is not real-time, but it competes with a web search.
-Target end to end under 5 seconds:
-
-| Stage | Budget |
+| Endpoint | Current purpose |
 |---|---|
-| Embed and perturb | 50 ms |
-| Coarse filter | 20 ms |
-| Rerank and decoy selection | 30 ms |
-| Node fan-out, slowest node | 1500 ms |
-| Merge and rerank | 200 ms |
-| Generation | 3000 ms |
+| GET /health | Health and registered-source count |
+| POST /nodes/register | Submit documents to create a simulated source |
+| GET /nodes | Source status; displayed trust is currently legacy trust |
+| DELETE /nodes/{node_id} | Remove a registered source |
+| GET /nodes/available | List locally prepared additional MCP node specifications |
+| POST /nodes/activate | Register a prepared MCP node |
+| POST /query | Execute legacy or opt-in smart routing |
+| GET /audit/{query_id} | Retrieve selection trace; includes smart routing_details |
 
-Fan-out dominates and scales with the slowest contacted node, not the average.
-This is another reason anonymity set size is a real cost and not a free parameter.
+POST /nodes/register does not onboard a remote institution from a profile-only
+request. mcp_endpoint is reserved, not a working remote enrollment mechanism.
+The actual schema is backend/api/schemas.py.
 
-## Out of scope for v1
+## Smart request
 
-Stated explicitly so the boundary is defensible:
+```json
+{
+  "question": "COVID treatment research",
+  "routing_mode": "smart",
+  "max_nodes": 5,
+  "exposure_budget": 2,
+  "minimum_gain": 0.05,
+  "minimum_trust": 0,
+  "aggregation": "mean"
+}
+```
 
-- Real patient records. The system is evaluated on public benchmarks and
-  synthetic data only.
-- Authentication beyond mTLS between coordinator and nodes.
-- Multi-tenancy, high availability, failover.
-- Clinical validation of answer quality.
-- Regulatory approval.
+max_nodes is a hard cap, not a target. Budget defaults to max_nodes if omitted;
+unit costs count recipients. genuine_k is legacy-only. Nonzero query sigma is
+rejected in smart mode. Zero budget dispatches nothing.
 
-## Regulatory position
+The response includes costs, selection scores, stopping reason and retrieval
+failures. Empty evidence skips generation. Use the
+[implementation guide](13-smart-router-implementation.md) for startup commands.
 
-Clinical decision support that influences patient care is a regulated medical
-device under EU MDR, UK MHRA and US FDA regimes. This system is **research
-infrastructure demonstrating a routing architecture**, not a clinical tool. It is
-evaluated on public exam benchmarks and synthetic data, never on patient records,
-and would require regulatory review before any clinical deployment.
+## What authorization currently means
 
-If real hospital data were ever involved, GDPR Article 9 applies (special
-category data), which is a substantially heavier regime than anything in scope
-here.
+A source with no policy labels is public under the demo convention. For smart
+mode, all its labels must be included in the coordinator's allowed_policy_labels.
+The query payload cannot grant itself those permissions or advertise source costs.
 
-State this position in the thesis rather than waiting to be asked.
+This is a selection hook, not per-user access control. Registration endpoints,
+profile identity, signatures, multi-tenancy and mTLS are not secured production
+features. An untrusted party must not be allowed to administer this demo.
 
-## Engineering standards from day one
+## Privacy limitations
 
-These cost almost nothing during research and prevent a rewrite in month 8:
+Raw queries reach selected nodes; returned passages reach the coordinator and
+possibly a generator provider. Regex redaction is not complete de-identification.
+Centroids can carry information about source contents. Public audit logs would
+expose the source identities and decisions being studied.
 
-- Configuration in files, not constants
-- Structured logging, not print statements
-- Type hints throughout
-- Unit tests on the router, integration test on a two-node setup
-- `docker compose up` working by month 2
-- Pinned dependencies
+A strict contact budget limits recipients under an explicit accounting rule.
+It does not establish query secrecy, anonymity, DP or protection of generated
+outputs. Do not call contact costs measured legal/compliance costs without a
+separately justified model.
 
-## Applicability to other domains
+## Before a real deployment
 
-Healthcare is the evaluated domain. The architecture is not medical.
+Implement authenticated source/user identities, signed profile verification,
+persistent trust and replay controls, node-side access enforcement, protected
+logs, secret management, measured timeouts/retries, and clear trust boundaries.
+Evaluate generation disclosure and document handling with appropriate domain
+experts. These are future requirements, not properties currently delivered.
 
-Nothing in the router, the node interface, or the privacy mechanism assumes
-clinical content. A node is any institution holding documents it cannot pool. The
-routing-leak argument transfers wherever the *identity* of the consulted source
-carries information independent of what was asked.
+## Performance
 
-| Domain | What the selection pattern reveals | Regime |
-|---|---|---|
-| Healthcare (evaluated) | A hospital's case mix; a patient's condition class | GDPR Art. 9, MDR/MHRA/FDA |
-| Legal | Which firm handles which client matter | Privilege, conflict-of-interest rules |
-| Financial services | Which institution is exposed to which sector or counterparty | Market-sensitive information, competition law |
-| Government | Which department holds which case or investigation | Freedom of information, national security exemptions |
-
-**Legal is arguably the sharpest case.** Under privilege and conflict rules, the
-fact that a firm was consulted on a matter is itself confidential, independent of
-the content of the consultation. That is the thesis argument restated in a
-profession's own vocabulary: protecting the documents is not sufficient when the
-routing decision is the disclosure.
-
-The audit-cost constraint transfers too, in altered form. In healthcare a decoy
-contact is a logged access under a data-sharing agreement. In law it is a
-potential conflict-check trigger. In finance it is an information barrier
-crossing. In each case decoys cost something beyond bandwidth, and the specific
-cost model would need re-deriving per domain.
-
-**This section is an argument, not a result.** No cross-domain evaluation is
-performed. Extending the audit-cost model and the anonymity-set design to legal
-and financial consortia is identified as future work, not claimed as demonstrated.
-Stating that boundary explicitly is the point: the architecture generalises, the
-evidence does not.
-
-## Two operating modes, one codebase
-
-**Research mode** sweeps noise sigma and anonymity set size m across the full
-grid and writes results for analysis.
-
-**Deployment mode** ships a single validated operating point, chosen from the
-research curve.
-
-This is the connection between the two halves of the project: the research is
-what justifies the default. Without the sweep, the deployed configuration would
-be an arbitrary guess.
-
-## Cross-domain applicability
-
-The architecture is domain-agnostic. The routing-leak argument transfers directly:
-
-| Domain | What the selection pattern reveals |
-|---|---|
-| Healthcare | A hospital's case mix; a patient's condition class |
-| Law | Which firm handles which client's matter, which under privilege and conflict rules is confidential independent of content |
-| Finance | Which institution is exposed to which sector or counterparty |
-
-Legal networks are arguably the sharpest case, because the fact of consultation is
-itself protected.
-
-Healthcare remains the evaluated domain. Generality is argued in the conclusion in
-roughly one page and is not claimed as an evaluated result. A thesis asserting
-three domains it cannot evaluate reads as unfocused; a thesis evaluating one and
-reasoning carefully about the others does not.
+Selection timing is logged. The live API retrieves sequentially, so latency can
+accumulate across sources; it is not simply the latency of the slowest node.
+Network byte counts and all-stage timings still need measurement. No clinical
+latency target is claimed as achieved.

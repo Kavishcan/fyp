@@ -1,165 +1,81 @@
-# Proposal
+# Proposal planning notes
 
-**Title:** Training-Free Exposure-Constrained and Trust-Aware Source Routing for
-Scalable Federated Retrieval-Augmented Generation
+**Working title:** Training-Free Exposure-Constrained and Trust-Aware Adaptive
+Source Routing for Scalable Federated Retrieval-Augmented Generation.
 
-This document follows the structure of Chapter 1 of the dissertation, so sections
-map directly onto the required subsections.
+These notes support design and supervisor discussion. They are not final
+student-authored dissertation prose or a verified literature review.
 
-## 1.3 Problem definition
+## Problem and aim
 
-Federated RAG lets institutions contribute knowledge to a shared question-answering
-system without surrendering their documents. Keeping documents local does not make
-the system private. Before retrieval happens, a router decides which of potentially
-thousands of nodes to contact. That decision is an exposed asset: the router
-observes the query, holds a map of which node knows what, and its selection pattern
-is readable across repeated queries.
+Distributed knowledge sources should not all receive every question.
+Source selection must balance relevant evidence, the cost of disclosing a query
+to additional recipients, and uncertain or misleading source profiles.
 
-In a hospital network this is concrete harm. A query routed to the paediatric
-oncology silo reveals a patient's condition class without anyone reading the query.
-Selection patterns over months expose one hospital's case mix to competitors.
+The aim is to design and evaluate an independent training-free router that
+selects a useful subset under an explicit exposure budget. Healthcare is the
+intended public-data case study, not a clinically validated deployment.
 
-## 1.6 Research gap
+## Intended contribution
 
-See `01-research-gap.md`. In brief: existing protections cover documents,
-embeddings and model updates. In the closest reviewed routing-security work,
-ranking-preserving homomorphic encryption hides the query from the router while
-leaving the selected node IDs unchanged.
+One coherent algorithmic contribution: adaptive, trust-aware source selection
+under a strict contact-exposure budget, supported by a reproducible evaluation.
+RAGRoute is a comparator, not a dependency of the proposed selection rule.
 
-## 1.7 Contribution to the body of knowledge
+The first implementation uses centroid similarity, profile-overlap penalties,
+uncertainty-adjusted consistency trust and greedy gain-per-cost selection.
+Each ingredient is established; novelty and benefit of the combined method
+must be checked against existing methods and simple ablations.
 
-### 1.7.1 Problem domain contribution
+## Research questions
 
-A federated retrieval system for hospital consortia that protects the routing
-decision as well as the documents. Nodes publish perturbed profiles rather than
-exact ones, queries are perturbed before the router sees them, and selected nodes
-are padded with decoys so the true set is hidden inside a larger anonymity set.
-
-The system introduces an **audit-cost model** for decoy selection. In a regulated
-network every node contact is a logged access under a data-sharing agreement, so
-contacting seventeen irrelevant hospitals is a compliance cost and not merely
-bandwidth. No existing federated RAG work prices decoys this way.
-
-### 1.7.2 Research domain contribution
-
-Three items, stated at the level of claim a reviewer can check.
-
-1. **Measurement of routing-stage leakage in FedRAG.** In the studies identified
-   by this review, routing decisions are described as a leakage channel but are
-   not quantified under a comparable source-routing benchmark. This work
-   formulates and implements a source-inference attack (A2) that reconstructs a
-   topic-to-node map from selection patterns and reports reproducible measurements.
-
-2. **A tunable, exposure-constrained privacy layer at source selection.** The primitives
-   (distance-preserving perturbation, k-anonymity, decoy selection) are
-   pre-existing and this is stated plainly. What is new is their composition into
-   a published source-routing baseline, together with two testable design choices:
-   max-over-centroid coarse scoring, which prevents recall loss across many
-   centroids per node; and topic-stable decoy sampling, without which an observer
-   intersects decoy sets across repeated queries and recovers the real nodes.
-
-3. **A privacy-security interference study.** Trust-based defence against
-   malicious nodes inspects returned evidence for query relevance. A decoy is a
-   node returning evidence poorly matched to the query. The two are behaviourally
-   identical, so anonymity-set privacy and evidence-feedback trust defence corrode
-   each other. This interaction has not been posed, because the only existing
-   routing privacy mechanism is ranking-preserving and therefore cannot produce it.
-
-## 1.8 Research challenges
-
-### 1.8.1 Research domain challenges
-
-**RC1: Calibrating perturbation without destroying routing.** Distance-preserving
-noise may degrade routing recall before it meaningfully reduces inversion success.
-Coarse-stage recall is a hard ceiling: if the correct node is not in the candidate
-set, no reranking recovers it. Establishing whether a usable operating region
-exists is a precondition for the rest of the work, not an outcome of it.
-
-**RC2: Constructing an adversary strong enough for a null result to mean
-something.** If A2 is under-powered, a small measured leakage is uninformative. The
-observer must be given many queries, a known topic taxonomy and the full selection
-sequence, so that low leakage is evidence of safety rather than of a weak attack.
-
-**RC3: Resolving the decoy-hijacker collision without leaking the resolution.**
-Exempting decoy-selected nodes from trust updates fixes the interference, but the
-exemption is itself observable and discloses which nodes were decoys, undoing the
-privacy it was meant to protect. Whether a resolution exists that is both effective
-and non-disclosing is an open design question.
-
-### 1.8.2 Problem domain challenges
-
-**RC4: Evaluating a privacy property rather than an output.** Answer quality is
-measurable with established metrics. Leakage is not. The evaluation must
-demonstrate that reduced leakage follows from the mechanism rather than from
-degraded routing, which requires isolating each protection in an ablation.
-
-**RC5: Simulated federation.** No public dataset contains real institutional silos.
-Nodes are constructed by partitioning public corpora, which are more homogeneous
-than real institutions. The construction must be stated plainly and its effect on
-routing difficulty measured, not assumed away.
-
-## 1.9 Research questions
-
-**RQ01:** What information does the routing stage leak in current federated RAG
-systems, to an honest-but-curious router and to an observer of selection patterns?
-
-**RQ02:** How can a privacy-aware source router be designed to reduce that leakage
-while selecting relevant nodes from a large pool?
-
-**RQ03:** How does such a router affect routing quality, communication and audit
-cost, and the effectiveness of existing trust-based defences against malicious
-nodes?
-
-RQ01 is the safety net: a measurement result publishable on its own. RQ03 carries
-the interference finding.
-
-## 1.10 Research aim
-
-To design, implement and evaluate a privacy-aware source router for federated RAG
-that selects a small set of relevant nodes from a large pool while reducing
-disclosure of query intent and the topic-to-node map, and to determine the cost of that protection
-in routing quality, communication, audit exposure and robustness to malicious
-nodes.
-
-## 1.11 Research objectives
-
-| Phase | Objectives | RQ |
+| ID | Question | Required evidence |
 |---|---|---|
-| Problem identification | RO1 Survey federated RAG routing and its threat models. RO2 Analyse which assets existing mechanisms protect and which they leave exposed. RO3 Formalise the routing-stage threat model. RO4 Produce project schedule and Gantt. | RQ01 |
-| Literature review | RO5 Review RAG and federated RAG foundations. RO6 Review privacy mechanisms for retrieval and routing. RO7 Review attacks on selection mechanisms. RO8 Review evaluation methodology for routing, privacy and robustness. | RQ01 |
-| Design | RO9 Select a runnable source-routing baseline and define its adapter contract. RO10 Design node-side profiling with perturbation and PII removal. RO11 Design exposure-constrained anonymity-set selection. RO12 Design the audit-cost model and decoy-aware trust layer. | RQ02 |
-| Implementation | RO13 Reproduce/adapt RAGRoute and the routing-hijacking/TASR implementation. RO14 Implement the privacy layer around the baseline rather than rebuilding ordinary routing. RO15 Implement instrumentation for all cost and leakage measurements. RO16 Implement attacks A1 and A2 and integrate A3. | RQ02 |
-| Testing and evaluation | RO17 Establish comparable baselines including plaintext, broadcast, random, cosine and HE routing. RO18 Measure leakage against the reproduced unprotected router. RO19 Sweep perturbation and anonymity-set size under the exposure budget. RO20 Measure interference with TASR. RO21 Validate on a second dataset and increasing node counts. | RQ03 |
-| Evaluation and dissemination | RO22 Conduct expert evaluation. RO23 Submit a research paper. RO24 Release the reference implementation. | RQ03 |
+| RQ01 | What retrieval/exposure trade-off does constrained adaptive selection achieve against fixed-k and published source routers? | Matched-query quality, coverage, recipient counts and budget curves |
+| RQ02 | How does profile-consistency trust affect manipulation resistance and honest-source access? | A3, bait/profile-change/cold-start tests and no-trust controls |
+| RQ03 | How do routing-pattern inference and system costs change with constraints and source scale? | A2, timing/communication measurements and explicit simulated/real transport splits |
 
-Map RO numbers to the module learning outcomes before the PPRS submission; the
-template requires an LO column alongside the RQ column.
+Reduced recipient exposure is not presumed to improve routing-pattern secrecy.
+An unfavorable or null result should be reported rather than hidden.
 
-## 1.12 Project scope
+## Objectives
 
-**In scope.** The routing stage: node profiling, query perturbation, candidate
-selection, anonymity-set construction, trust-weighted reranking, and the
-measurement of leakage and cost around all of it. Healthcare as the evaluated
-deployment domain.
+1. Verify the literature gap and define adversaries, protected assets and trust boundaries.
+2. Freeze query splits, source construction, embeddings, costs and evaluation labels.
+3. Implement and test the independent constrained selector.
+4. Reproduce comparable controls and the official RAGRoute baseline.
+5. Evaluate thresholds, trust uncertainty, centroid aggregation and overlap ablations.
+6. Measure attacks and costs separately from answer quality and unit-test correctness.
+7. Demonstrate the method through existing MCP/in-process retrieval and document limits.
 
-**Out of scope, by design.**
+Objective 3 has a first tested implementation. The others require evidence;
+do not mark them complete because modules or dataset files exist.
 
-- Prompt disclosure to an external LLM provider and output leakage evaluation.
-  Generation runs locally, reducing external-provider disclosure, but this does
-  not prove that generated answers cannot reveal sensitive source content.
-- Encrypted or TEE-based retrieval. Requires hardware or homomorphic ANN search.
-- Learned neural routing. The router uses clustering and a scoring function.
-- Real patient data. Public benchmarks and synthetic data only.
-- Clinical validation and regulatory approval.
-- Authentication beyond mTLS, multi-tenancy, high availability.
+## Scope
 
-These exclusions are carried into the requirements specification as Won't Have
-items and excluded from testing by design.
+Included: source profiling, pre-dispatch adaptive selection, exposure accounting,
+coordinator-observed trust, routing attacks, baseline comparison and a FedRAG
+demo. No task-specific ML training is required by the proposed router.
+Pretrained semantic embeddings remain compatible with that scope.
 
-## Cross-domain applicability
+Outside the current implementation: production authentication, signed identity,
+formal DP or encrypted retrieval, end-to-end query secrecy, clinical deployment,
+and a 1,000-server distributed deployment. Smart mode has no decoys or query
+perturbation; the old mechanisms remain separate legacy experiments.
 
-The architecture is domain-agnostic. The same problem exists in legal networks,
-where privilege rules make the fact of consultation confidential independent of
-content, and in financial consortia, where selection patterns reveal sectoral
-exposure. Healthcare is the evaluated domain; generality is argued in the
-conclusion and not claimed as an evaluated result.
+Generation is an optional downstream component, not the research contribution.
+The live external-provider option exposes its prompt; local generation for a
+controlled evaluation remains planned.
+
+## Main risks
+
+- Overlap can suppress distinct useful documents held by similar sources.
+- Low initial trust can exclude legitimate new sources.
+- Matching bait text can satisfy profile-consistency checks.
+- Re-registration resets reputation; identities are not bound cryptographically.
+- Budget reduction may hurt recall or make source identity easier to infer.
+- Cross-domain partitions may make routing unrealistically easy.
+- Existing routing work may already cover parts of the proposed combination.
+
+See [architecture](03-architecture.md), [algorithm](04-router-design.md),
+[experiments](05-experiments.md) and [roadmap](07-roadmap.md).

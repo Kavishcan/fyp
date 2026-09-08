@@ -1,87 +1,69 @@
-# Datasets
+# Dataset strategy
 
-Three datasets. Deliberately few.
+The independent smart router needs source documents for profiles, questions for
+routing, and relevance/evidence labels for evaluation. These are different
+assets; a list of search scores is not a document corpus.
 
-## Keep
+Inspect existing local files before downloading. The user disallowed downloads
+larger than 500 MB. Verify dataset licenses, release versions, counts and source
+mappings before freezing an experiment; totals below are experiment plans,
+not an inventory certification.
 
-### FeB4RAG — primary routing benchmark
+## Roles
 
-790 queries, 16 source clients, precomputed top-100 result pools and qrels.
-Apache-2.0 (underlying BEIR datasets carry separate terms).
+| Asset | What becomes a source/client | What it tests | Required files |
+|---|---|---|---|
+| FeB4RAG / underlying BEIR collections | One collection per source in the chosen baseline configuration | Cross-domain source routing and comparison with RAGRoute | Documents, queries, source map, relevance labels and compatible profiles/artifacts |
+| Same-domain BEIR partition | Disjoint documented shards of one corpus | Harder routing where topics overlap | Partition manifest and remapped document/source relevance |
+| MultiHop-RAG | Source-based partitions from verified article metadata | Whether selection covers complementary evidence across sources | Articles, question/evidence mappings and source manifest |
+| Synthetic privacy/attack set | Explicit artificial source policies and malicious/benign profiles | Budget, access, manipulation, cold-start and attacker controls | Generation seed, labels, attack settings and expected outcomes |
+| MedQA case-study subset | Document-backed sources defined separately from held-out questions | Healthcare query behaviour | Explicit knowledge corpus, query split and evidence labels if available |
 
-The precomputed pools support routing and merging evaluation, but they are not a
-replacement for the source corpora when constructing document-derived centroids.
-Official FeB4RAG instructions require the underlying BEIR collections. Use the
-published RAGRoute/FeB4RAG artifacts where available and document exactly which
-parts are reproduced versus reused.
+Medical multiple-choice QA alone does not define distributed knowledge sources
+or source-relevance ground truth. Do not use test answers to construct profiles
+or expose the answer key as routing features.
 
-Repo: https://github.com/ielab/FeB4RAG
+## Initial baseline condition
 
-**Caveat:** the 16 clients are cross-domain, making routing artificially easy.
-Add a same-domain hard split (see [experiments](05-experiments.md)).
+The inspected upstream RAGRoute FeB4RAG configuration lists 13 sources:
+arguana, climate-fever, dbpedia-entity, fever, fiqa, hotpotqa, msmarco, nq,
+nfcorpus, scidocs, scifact, trec-covid and webis-touche2020.
 
-### MultiHop-RAG — secondary, multi-node evidence
+Use that exact configuration and compatible artifacts for an initial faithful
+comparison if available. Do not equate it with every source in the original
+FeB4RAG release or every node currently loaded in this demo.
 
-2,556 questions, 609 articles, 49 source-based clients. ODC-BY 1.0 with
-attribution.
+FeB4RAG top-100 TREC result pools support replay/evaluation. They do not contain
+the full document text needed to construct new centroids or retrieve fresh
+passages. Obtain compatible source corpora or verified precomputed profiles;
+label a score-replay experiment separately from live retrieval.
 
-Genuine multi-source evidence: some questions need passages from more than one
-node. Tests whether the router selects several complementary nodes rather than
-one.
+## Planned larger conditions
 
-Dataset: https://huggingface.co/datasets/yixuantt/MultiHopRAG
+A 49-source MultiHop-RAG condition must be verified from the actual partition
+manifest, not assumed from a dataset name. Likewise 30+ sources are a target
+condition until their document membership and relevance mappings are frozen.
 
-### Synthetic privacy and attack set — primary privacy test
+For 100/300/1,000 logical clients, document the splitting/replication procedure.
+Replicated profiles are a stress test, not additional independent institutions.
+The existing 1,000-profile synthetic unit test is not a dataset benchmark.
 
-200 fictional privacy cases plus 60 attack cases. Project-generated, no real PII.
+## Freeze before comparing
 
-Assign across 6 to 8 simulated nodes with different access rules. Validate every
-required field, run an exact-text duplicate check, and freeze the random seed
-before experiments.
+Record dataset release/license, corpus/query/document IDs, source membership,
+train/validation/test separation, deduplication, routing/local embedding models,
+preprocessing, centroids/noise settings, source-policy labels, costs and seeds.
+No test qrels or future trust observations may enter routing or tuning.
 
-Repo: https://github.com/Kavishcan/fedrag-dataset
+The live hashing demo is for integration checks. Semantic-model quality results
+require consistent query/profile embeddings and documented model provenance.
 
-### MedQA-USMLE — healthcare case study
+## Reference locations
 
-Add a subset of roughly 150 questions. **Not** a primary benchmark.
+- [FeB4RAG](https://github.com/ielab/FeB4RAG)
+- [MultiHop-RAG](https://huggingface.co/datasets/yixuantt/MultiHopRAG)
+- [MedQA](https://huggingface.co/datasets/bigbio/med_qa)
+- [Project dataset repository](https://github.com/Kavishcan/fedrag-dataset)
 
-A project claiming healthcare that evaluates only on news and StackExchange-style
-data will be challenged. Mu and Li used 100 MedQA questions as a high-stakes case
-study and it carried the domain claim adequately. MedQA is small and easy to
-obtain, unlike the MedRAG corpora cut below.
-
-Reuse their node partition directly: 15 non-medical nodes, 3 honest medical nodes
-built from disjoint training shards, plus malicious nodes. Queries come from the
-test split, using the question stem only.
-
-Role: demonstrates that routing behaviour and leakage persist under a clinical
-query distribution. Not used for tuning.
-
-Dataset: https://huggingface.co/datasets/bigbio/med_qa
-
-## Cut
-
-| Dataset | Reason |
-|---|---|
-| MIRAGE and its 5 subsets | Multiple-choice medical exam QA does not test routing. Large licensing and storage cost for a metric that is not the contribution. |
-| MedRAG corpora | Terabyte-scale download, mixed licences, months of preprocessing. The single biggest scope risk in the original plan. |
-| BEIR (full) | Already marked optional. Cut, except for the same-domain hard split. |
-| MS MARCO | Not needed for the prototype. |
-| Natural Questions | Background benchmark only. |
-| FEVER | Useful for groundedness, not for routing. |
-| KILT | Not needed. |
-
-These papers stay in the literature review as background. Only the plan to
-download them is cut.
-
-## Node partitioning
-
-| Scale | Source | Transport |
-|---|---|---|
-| 8-16 | FeB4RAG clients | Real MCP demonstration and in-process research runs |
-| 49 | MultiHop-RAG source metadata | Logical clients; in-process by default |
-| 100 / 300 / 1000 | Synthetic sharding of the above | In-process, mocked |
-
-Synthetic shards from one corpus are more homogeneous than real institutions.
-State the construction plainly rather than implying 1000 real silos were
-deployed.
+Check these upstream sources directly when preparing data; this architecture
+update did not download datasets or verify their current licensing terms.

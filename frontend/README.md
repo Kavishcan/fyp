@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FedSafeRouter studio
 
-## Getting Started
+This Next.js frontend is a demonstration surface for the FastAPI backend.
 
-First, run the development server:
+## Run
 
-```bash
+```sh
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The API base defaults to http://localhost:8000; set NEXT_PUBLIC_API_BASE_URL
+when using another backend address. See the root README for backend startup.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Current routing mode
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The chat panel omits routing_mode, so the backend uses legacy mode. Its diagram,
+fixed genuine/decoy controls and node trust display are legacy-oriented.
 
-## Learn More
+lib/api.ts includes smart request/response types, but the studio does not yet
+offer a smart-mode selector or explain SmartDecision traces. Use the
+[smart API guide](../docs/13-smart-router-implementation.md) to run that algorithm
+now. Do not present the current visual diagram as the new algorithm.
 
-To learn more about Next.js, take a look at the following resources:
+A future UI change should distinguish mode, budget, maximum contacts, adaptive
+selected count and stop reason, and should not label the consistency score as
+verified source honesty.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scope
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This is not a secured multi-user deployment. It can display query text,
+passages, source identities and audits. Use public/synthetic data.
+The research contribution is the routing method and evaluation, not the studio.
 
-## Deploy on Vercel
+Keep lib/api.ts synchronized with backend/api/schemas.py. Check types with:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```sh
+./node_modules/.bin/tsc --noEmit --incremental false
+```

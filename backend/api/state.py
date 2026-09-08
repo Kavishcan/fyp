@@ -26,8 +26,9 @@ from generation import get_generator
 from nodes.mcp_client import MCPNodeHandle
 from nodes.simulator import InProcessNode, build_simulated_source
 from router.exposure import ExposureFactors
-from router.pipeline import PrivacyAwarePipeline, RerankFeatures, RerankWeights
+from router.pipeline import PipelineResult, PrivacyAwarePipeline, RerankFeatures, RerankWeights
 from router.registry import SourceRegistry
+from router.smart import EvidenceTrust, SmartConfig, SmartRouter, SourceEvidence
 from router.trust import BoundedTrustUpdate
 
 from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
@@ -59,6 +60,11 @@ class AppState:
         # backend/nodes/simulator.py module docstring).
         self.routing_embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
         self.trust_update = BoundedTrustUpdate(alpha=0.3, decoy_aware=False)
+        self.smart_trust = EvidenceTrust()
+        # Demo policy grants are configured by the coordinator, never by a
+        # query payload. Empty profile labels mean public in this demo only.
+        self.allowed_policy_labels: set[str] = set()
+        self.source_exposure_costs: dict[str, float] = {}
         self.instrumentation = Instrumentation(instrumentation_path)
         self._rng = np.random.default_rng()
         # Demo-only, external-API generation — see backend/generation/base.py
@@ -165,6 +171,7 @@ class AppState:
         existing = self.registry.get(node_id)
         if existing is not None:
             profile.profile_version = existing.profile_version + 1
+        self.smart_trust.reset(node_id)
         self.nodes[node_id] = node
         self.node_local_models[node_id] = local_model
         self.registry.publish(profile)
@@ -178,6 +185,8 @@ class AppState:
         removed = self.registry.remove(node_id)
         self.nodes.pop(node_id, None)
         self.node_local_models.pop(node_id, None)
+        self.smart_trust.reset(node_id)
+        self.source_exposure_costs.pop(node_id, None)
         return removed
 
     def node_status(self) -> list[dict]:
@@ -198,10 +207,26 @@ class AppState:
             )
         return statuses
 
-    def run_query(self, question: str, *, max_nodes: int, genuine_k: int, sigma: float) -> dict:
+    def run_query(
+        self, question: str, *, max_nodes: int, genuine_k: int, sigma: float,
+        routing_mode: str = "legacy", exposure_budget: float | None = None,
+        minimum_gain: float = 0.05, minimum_trust: float = 0.0,
+        aggregation: str = "mean",
+    ) -> dict:
+        if routing_mode not in {"legacy", "smart"}:
+            raise ValueError("routing_mode must be legacy or smart")
+        if routing_mode == "smart" and sigma != 0:
+            raise ValueError("smart mode does not apply embedding perturbation")
+        if routing_mode == "legacy" and exposure_budget is not None:
+            raise ValueError("strict exposure_budget requires smart mode")
+        smart_config = SmartConfig(
+            exposure_budget=float(max_nodes) if exposure_budget is None else exposure_budget,
+            max_sources=max_nodes, minimum_gain=minimum_gain,
+            minimum_trust=minimum_trust, aggregation=aggregation,
+        )
         profiles = self.registry.all_profiles()
         query_id = str(uuid.uuid4())
-        if not profiles:
+        if not profiles and routing_mode == "legacy":
             self.instrumentation.record(QueryLog(query_id=query_id, topic_key="no-sources"))
             return {
                 "query_id": query_id,
@@ -212,7 +237,99 @@ class AppState:
             }
 
         query_embedding = self.routing_embedder.embed([question])[0]
-        topic_key = assign_topic_key(query_embedding, profiles)
+        topic_key = "smart-no-decoys" if routing_mode == "smart" else assign_topic_key(query_embedding, profiles)
+
+        routing_details = None
+        if routing_mode == "smart":
+            evidence = {}
+            for profile in profiles:
+                trust, observations = self.smart_trust.get(profile.source_id)
+                evidence[profile.source_id] = SourceEvidence(
+                    trust=trust, observations=observations,
+                    authorized=set(profile.policy_labels).issubset(self.allowed_policy_labels),
+                    exposure_cost=self.source_exposure_costs.get(profile.source_id, 1.0),
+                )
+            decision = SmartRouter().route(query_embedding, profiles, evidence, smart_config)
+            routing_details = decision.to_dict()
+            routing_details["mode"] = "smart"
+            routing_details["exposure_unit"] = "coordinator_configured_contact_cost"
+            routing_details["embedding_model"] = self.routing_embedder.model_name
+            result = PipelineResult(
+                dispatched_source_ids=decision.selected_source_ids,
+                genuine_source_ids=decision.selected_source_ids,
+                coarse_candidate_ids=decision.candidate_source_ids,
+                baseline_latency_ms=decision.latency_ms,
+            )
+        else:
+            result = self._legacy_route(query_embedding, profiles, topic_key, max_nodes, genuine_k, sigma)
+
+        citations = []
+        retrieval_errors = {}
+        for node_id in result.dispatched_source_ids:
+            node = self.nodes.get(node_id)
+            if node is None:
+                continue
+            try:
+                if isinstance(node, MCPNodeHandle):
+                    raw_passages = node.retrieve_from_text(question, top_n=1)
+                    passages = [(p["document"], p["score"]) for p in raw_passages]
+                elif node.local_embedder is self.routing_embedder:
+                    passages = [(p.document, p.score) for p in node.retrieve(query_embedding, top_n=1)]
+                else:
+                    passages = [(p.document, p.score) for p in node.retrieve_from_text(question, top_n=1)]
+            except Exception as exc:
+                if routing_mode == "legacy":
+                    raise
+                # A failed contact still consumes the reserved exposure cost.
+                retrieval_errors[node_id] = type(exc).__name__
+                passages = []
+            for document, score in passages:
+                citations.append({"node_id": node_id, "document": document, "score": score})
+            if routing_mode == "smart":
+                documents = [document for document, _ in passages]
+                embeddings = self.routing_embedder.embed(documents) if documents else np.empty((0, 0))
+                self.smart_trust.observe(node_id, self.registry.get(node_id), embeddings)
+
+        if routing_mode == "legacy":
+            signals = {node_id: self._evidence_relevance(node_id, citations) for node_id in result.dispatched_source_ids}
+            self.trust_update.update(signals, decoy_ids=frozenset(result.decoy_source_ids))
+        else:
+            routing_details["retrieval_errors"] = retrieval_errors
+
+        self.instrumentation.record(
+            QueryLog(
+                query_id=query_id,
+                topic_key=topic_key,
+                coarse_candidate_ids=result.coarse_candidate_ids,
+                genuine_source_ids=result.genuine_source_ids,
+                dispatched_source_ids=result.dispatched_source_ids,
+                stage_latency_ms={"routing": result.baseline_latency_ms},
+                extra={"routing": routing_details} if routing_details is not None else {},
+            )
+        )
+
+        answer = None
+        generation_status = "not_implemented"
+        if routing_mode == "smart" and not citations:
+            generation_status = "no_evidence"
+        elif self.generator is not None:
+            try:
+                answer = self.generator.generate(question, [c["document"] for c in citations])
+                generation_status = self.generator.name
+            except Exception as exc:  # surfaced to the caller, not swallowed
+                generation_status = f"error:{type(exc).__name__}"
+
+        return {
+            "query_id": query_id,
+            "answer": answer,
+            "citations": citations,
+            "nodes_contacted": result.dispatched_source_ids,
+            "generation_status": generation_status,
+            "routing_details": routing_details,
+        }
+
+    def _legacy_route(self, query_embedding, profiles, topic_key, max_nodes, genuine_k, sigma):
+        """Preserve the original fixed-k/decoy pipeline as a separate control."""
 
         baseline = CosineRouter(aggregation="max")
         baseline.register_sources(profiles)
@@ -238,7 +355,7 @@ class AppState:
                 )
             return features
 
-        result = pipeline.route(
+        return pipeline.route(
             query_embedding,
             coarse_k=min(max_nodes * 3, len(profiles)) or 1,
             top_k=genuine_k,
@@ -248,60 +365,6 @@ class AppState:
             sigma=sigma,
             rng=self._rng,
         )
-
-        citations = []
-        for node_id in result.dispatched_source_ids:
-            node = self.nodes.get(node_id)
-            if node is None:
-                continue
-            if isinstance(node, MCPNodeHandle):
-                # Genuine MCP round trip to a separate process — always
-                # re-embeds the raw question in that node's own local space,
-                # inside that process, which the coordinator never sees.
-                raw_passages = node.retrieve_from_text(question, top_n=1)
-                passages = [(p["document"], p["score"]) for p in raw_passages]
-            elif node.local_embedder is self.routing_embedder:
-                # Same model object as routing — query_embedding is already
-                # the correct vector for this node's space, so reuse it
-                # instead of re-embedding identical text for no reason.
-                passages = [(p.document, p.score) for p in node.retrieve(query_embedding, top_n=1)]
-            else:
-                # Genuinely different model: must re-embed the raw question
-                # in THIS node's own space. See
-                # nodes/simulator.py::InProcessNode.retrieve_from_text.
-                passages = [(p.document, p.score) for p in node.retrieve_from_text(question, top_n=1)]
-            for document, score in passages:
-                citations.append({"node_id": node_id, "document": document, "score": score})
-
-        signals = {node_id: self._evidence_relevance(node_id, citations) for node_id in result.dispatched_source_ids}
-        self.trust_update.update(signals, decoy_ids=frozenset(result.decoy_source_ids))
-
-        self.instrumentation.record(
-            QueryLog(
-                query_id=query_id,
-                topic_key=topic_key,
-                coarse_candidate_ids=result.coarse_candidate_ids,
-                genuine_source_ids=result.genuine_source_ids,
-                dispatched_source_ids=result.dispatched_source_ids,
-            )
-        )
-
-        answer = None
-        generation_status = "not_implemented"
-        if self.generator is not None:
-            try:
-                answer = self.generator.generate(question, [c["document"] for c in citations])
-                generation_status = self.generator.name
-            except Exception as exc:  # surfaced to the caller, not swallowed
-                generation_status = f"error:{type(exc).__name__}"
-
-        return {
-            "query_id": query_id,
-            "answer": answer,
-            "citations": citations,
-            "nodes_contacted": result.dispatched_source_ids,
-            "generation_status": generation_status,
-        }
 
     def audit(self, query_id: str) -> dict | None:
         for record in self.instrumentation.read_all():

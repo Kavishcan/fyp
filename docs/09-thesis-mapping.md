@@ -1,84 +1,47 @@
-# Thesis mapping
+# Thesis planning map
 
-Where each repository document lands in the dissertation, and what is still
-missing. The structure follows the IIT / University of Westminster template.
+Repository documents are engineering/research planning notes, not final
+student-authored dissertation prose. Verify the university template and
+supervisor requirements; this file does not certify chapter completion or the
+state of an external literature spreadsheet.
 
-| Ch | Title | Source | Status |
-|---|---|---|---|
-| 1 | Introduction | `02-proposal.md`, `01-research-gap.md` | Drafted |
-| 2 | Literature Review | Google Sheets literature matrix (55 papers) | Matrix done, prose not written |
-| 3 | Methodology | — | **Missing** |
-| 4 | Software Requirement Specification | `08-deployment.md` as raw material | **Missing — this is the PPRS** |
-| 5 | Social, Legal, Ethical, Professional | `08-deployment.md` regulatory section | Partial |
-| 6 | Design | `03-architecture.md`, `04-router-design.md` | Drafted |
-| 7 | Implementation | — | Written as built |
-| 8 | Testing | `05-experiments.md` | Drafted |
-| 9 | Critical Evaluation | — | **Missing — needs external evaluators** |
-| 10 | Conclusion | — | Written last |
+| Chapter area | Repository material | Remaining student work |
+|---|---|---|
+| Introduction / problem | 01-research-gap.md, 02-proposal.md | Verify gap evidence, motivation and final scope |
+| Literature review | Literature matrix plus baseline references | Read original papers and write thematic critical synthesis independently |
+| Methodology | 05-experiments.md, 06-datasets.md, 10-baseline-selection.md | Justify splits, baselines, attackers and analysis |
+| Requirements | 08-deployment.md | Elicitation, stakeholders, use cases, priorities and learning-outcome mapping |
+| Ethics / professional practice | Deployment limitations and public-data strategy | Discuss exposure, misuse, licenses, governance and appropriate domain advice |
+| Design | 03-architecture.md, 04-router-design.md | Explain actual components, trust boundaries and design alternatives |
+| Implementation | 13-smart-router-implementation.md and source code | Explain the algorithm and deviations from the plan |
+| Testing | Unit/integration tests and 05-experiments.md | Separate software correctness from scientific validation |
+| Critical evaluation | Baseline/ablation/attack results once produced | Analyze uncertainty, failures and external feedback |
+| Conclusion | Completed evidence | Bound claims and identify unresolved work |
 
-Baseline selection and reproducibility evidence come from
-`10-baseline-selection.md` and support Chapters 2, 3, 7 and 8.
+## Core claim mapping
 
-## Chapter 1 subsection checklist
+- Constrained adaptive selection: exact rule, strict-budget tests, matched
+  retrieval/exposure curves and fixed-k comparisons.
+- Trust-aware selection: coordinator consistency mechanism, A3 and benign
+  cold-start tests, plus no-trust controls.
+- Scalability: measured source-count/latency/communication curves, distinguishing
+  local logical profiles from real MCP processes.
+- Privacy: explicit exposure definition and A2 measurements; never substitute
+  fewer contacts for proven secrecy or source anonymity.
 
-The template requires all of these. Present state:
+## Status discipline
 
-- 1.1 Chapter overview — missing
-- 1.2 Problem background — partial
-- 1.3 Problem definition — done
-- 1.4 Research motivation — partial
-- 1.5 Existing work — in literature matrix
-- 1.6 Research gap — done
-- 1.7 Contribution to body of knowledge, split problem / research domain — done
-- 1.8 Research challenges, split research / problem domain — done
-- 1.9 Research questions — done
-- 1.10 Research aim — done
-- 1.11 Research objectives, mapped to LOs and RQs — done except LO column
-- 1.12 Project scope — done
-- 1.13 Hardware and software requirements — missing
-- 1.14 Chapter summary — missing
+The independent selector and API integration are implemented and tested.
+The dashboard remains legacy-oriented; semantic integration and comparative
+research results remain pending. Unit-test success does not complete a
+research question or establish a publishable contribution.
 
-## Chapter 4 — the PPRS deliverable
+The earlier decoy/TASR interference narrative is an optional extension.
+Do not make it the central conclusion of the current decoy-free smart router.
 
-Required components, none yet written:
+## Supervisor discussion
 
-- Rich picture diagram
-- Stakeholder analysis
-- Selection of requirement elicitation methodologies
-- Discussion and summary of findings
-- Context diagram
-- Use case diagram and descriptions
-- Functional requirements, prioritised by MoSCoW
-- Non-functional requirements
-
-The out-of-scope list in `02-proposal.md` becomes the Won't Have requirements, and
-those are excluded from testing by design in Chapter 8. State that explicitly in
-both chapters so the exclusion is visible to the marker.
-
-## Chapter 5 — SLEP
-
-Healthcare gives this chapter real material rather than padding:
-
-- GDPR Article 9, special category data
-- Medical device regulation (EU MDR, UK MHRA, US FDA) and why this system sits
-  outside it
-- Data-sharing agreements and the audit-cost model
-- The decoy disclosure problem: a node can ask why it received a query, and the
-  honest answer is sometimes "you were a decoy". Whether that can be answered
-  without undoing the privacy is an unresolved tension and should be presented as
-  such.
-- Dual-use: A2 is an attack. Publishing it improves defences but also describes a
-  method. Address this directly.
-
-## Chapter 9 — critical evaluation
-
-Requires evaluation methodology, criteria, self-evaluation, **selection of
-evaluators**, results, and limitations. External expert evaluation is not optional
-in this template. Recruit from month 5.
-
-## Immediate priorities
-
-1. Chapter 4 requirements specification — blocks the PPRS
-2. Chapter 3 methodology — research methodology and development methodology
-3. Chapter 1 gaps: overview, background, hardware and software, summary
-4. LO column on the objectives table
+Confirm the revised independent-router scope, threat model, dataset manifests,
+required comparators and what counts as sufficient evidence. Agree the writing
+and review schedule against actual submission dates rather than an inferred
+nine-month calendar.
