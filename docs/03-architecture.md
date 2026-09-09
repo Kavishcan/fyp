@@ -48,6 +48,13 @@ This branch's measured gain concerns source selection, not adaptive quotas or
 trust defense. Defaults remain unchanged; live hashing and offline MiniLM
 embedding paths still differ.
 
+The evaluation-only `baselines/profile_fusion.py` adds tuned weighted RRF and
+min-max controls while reusing the existing charged equal allocator. It does not
+add API modes. `eval.prepare_answer_study` builds source-based chunk retrieval
+and separates generation prompts from references; `eval.answer_quality` accepts
+actual externally generated predictions for offline EM/F1 scoring. See the
+[audit/readiness report](29-strong-controls-results.md): generation remains pending.
+
 ## Components and boundaries
 
 | Component | Current role | Information visible |

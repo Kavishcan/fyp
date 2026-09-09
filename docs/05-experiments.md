@@ -21,6 +21,12 @@ budget violations. FiQA transfer improves over semantic16 but not conclusively
 over semantic21 in candidate recall; lexical ties on random layouts. This is not
 LLM answer evaluation, an official RAGRoute reproduction or a privacy result.
 
+The [stronger-control audit](29-strong-controls-results.md) completes development
+tuning of weighted RRF/min-max and their frozen FiQA comparisons, then an
+exploratory 49-source MultiHop evidence pilot. Hybrid is competitive but not
+uniformly superior; min-max wins MultiHop candidate recall. Prepared answer
+requests are not answer-quality results: actual generation remains pending.
+
 The [routing improvement protocol](16-routing-study-protocol.md) fixes the
 new clean, matched-profile and cloned-profile stress comparisons before their
 execution. It separates representation improvements from stopping behaviour.

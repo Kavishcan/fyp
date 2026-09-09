@@ -10,7 +10,7 @@ submission and dissertation requirements with the supervisor.
 - Strict budgets, adaptive stopping, exclusions and trace output are tested.
 - Smart API mode reaches in-process and real MCP sources.
 - Legacy remains the dashboard/API default.
-- The implementation was checked with 311 Python tests; the frontend contract
+- The implementation was checked with 328 Python tests; the frontend contract
   remains unchanged by the separate evidence endpoint.
 - Scientific benefit, formal privacy and hijacking resistance are not established.
 
@@ -33,6 +33,13 @@ the stronger byte-matched candidate-recall comparison remains inconclusive.
 Pending: official/tuned controls, another frozen transfer dataset, answer-quality
 evaluation and live semantic integration. No universal superiority, trustworthy
 profiles or end-to-end privacy milestone is established by this result.
+
+Completed [next audit](29-strong-controls-results.md): development-tuned RRF and
+min-max controls, frozen FiQA comparisons, and 49-source MultiHop retrieval.
+The hybrid does not win all metrics. A strict answer scorer and 192 prompts are
+ready, but genuine generation/answer scores and official RAGRoute reproduction
+remain pending. This completes stronger fusion controls, not every baseline or
+the end-to-end answer-quality milestone.
 
 The [development-selected ranking experiment](19-centered-routing-results.md)
 rejected positive centering strengths; retain raw cosine as the control.

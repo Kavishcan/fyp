@@ -25,6 +25,15 @@ allocation. Preserve the frozen protocol, code snapshots and prior negative
 results. Hash sketches provide no privacy or integrity guarantee. API defaults
 remain semantic, and the live hashing encoder is not the MiniLM benchmark.
 
+Docs/28-29 add development-tuned weighted RRF/min-max controls and a 49-source
+MultiHop-RAG evidence pilot. Hybrid does NOT win every metric: min-max has higher
+MultiHop candidate recall and nearly equal final document recall. Keep those
+findings. `eval.answer_quality` scores genuine supplied predictions with strict
+ID/provenance checks; the 192 prepared prompts are NOT generated-answer results.
+No generation model/key was configured and no API calls were made. The official
+RAGRoute adapter/checkpoint setup remains unreproduced. Do not present these
+same-information fusion controls as official RAGRoute.
+
 FedSafeRouter is a training-free, exposure-constrained and trust-aware adaptive
 source router for Federated RAG. The user explicitly chose to implement the
 smart router itself. RAGRoute is a comparison baseline, not its required engine.

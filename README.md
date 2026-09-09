@@ -42,6 +42,13 @@ candidate-recall superiority over byte-matched dense profiles is unresolved.
 This is a measured representation improvement, not proven global novelty or a
 successful adaptive quota policy. Defaults remain unchanged.
 
+The [stronger-control audit](docs/29-strong-controls-results.md) now tunes RRF and
+min-max fusion on development data and tests the frozen controls on FiQA and
+49-source MultiHop-RAG. Results are mixed: hybrid has slightly higher final
+MultiHop document recall, but min-max has higher candidate recall. The answer
+pipeline has 192 prepared prompts and a tested EM/F1 scorer; actual generated
+answer quality remains pending because no generator was configured.
+
 ## Current architecture
 
 The [routing improvement study](docs/17-routing-study-results.md) now compares
