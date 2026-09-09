@@ -1,5 +1,13 @@
 # Smart router design
 
+## Evidence-budget branch note
+
+The independent candidate-allocation experiment is specified in
+[docs/20](20-evidence-budget-protocol.md), implemented in
+`backend/router/evidence_budget.py`, and evaluated in
+[docs/21](21-evidence-budget-results.md). It does not change the legacy/smart
+rules below and must not be described as an empirically superior replacement.
+
 The current proposal is an independent training-free source-selection heuristic.
 Its implementation is [smart.py](../backend/router/smart.py). RAGRoute and other
 published methods remain separate comparison baselines.
@@ -157,6 +165,30 @@ penalty, and both four- and sixteen-centroid profiles. The live API retains its
 existing uncertainty penalty, hashing encoder and EvidenceTrust update.
 TASR integration in the study is an evaluation-only post-layer adapter.
 See [frozen protocol](16-routing-study-protocol.md).
+
+## Centering experiment and budget-filling control
+
+`relevance_mode="centered"` is experimental; `centering_strength` must lie in
+[0, 1]. Normalize each centroid, average within each source, and average those
+source means. Subtract strength times that background from both the normalized
+query and each centroid, renormalize, then use the configured max/mean aggregation.
+Zero vectors remain zero. Excluded sources cannot change the background.
+The source ordering and score ties remain deterministic. Audit steps preserve
+both raw_centroid_relevance and the transformed centroid_relevance.
+
+This is a known geometry correction, not a novelty claim. It does not protect
+published embeddings; malicious or Sybil sources can influence the background.
+The development experiment selected strength 0 rather than any positive value.
+It uses labelled development queries to choose a hyperparameter, but does not
+train an encoder or router model. Keep the option experimental and retain the
+negative result; do not promote its default strength of 1 for deployment.
+
+With relative_score_floor=0 and minimum_gain=0, relative selection becomes a
+positive-score, trust/cost-ranked budget-filling control. It still abstains on
+zero useful scores, applies authorization and trust gates, and obeys weighted
+cost and source caps. With unit costs and equal trust it reduces to positive-score
+top-k, not a new adaptive-coverage algorithm. Higher recall than early stopping
+can simply result from more contacts. See [development/transfer protocol](18-centered-routing-protocol.md).
 
 ## Legacy compatibility
 

@@ -13,6 +13,8 @@ import pytest
 
 from api.state import AppState
 from nodes.mcp_client import MCPNodeHandle
+from api.evidence import run_evidence_query
+from router.evidence_budget import AllocationConfig
 
 
 @pytest.fixture
@@ -49,6 +51,25 @@ def test_mcp_handle_retrieve_finds_the_relevant_document(node_data_file):
     results = handle.retrieve_from_text("chemo tumour treatment", top_n=1)
     assert len(results) == 1
     assert "chemo" in results[0]["document"].lower()
+
+
+def test_mcp_pagination_returns_only_requested_page(node_data_file):
+    handle = MCPNodeHandle(node_id="test_node", data_file=node_data_file)
+    full = handle.retrieve_from_text("chemo tumour treatment", top_n=3)
+    page = handle.retrieve_from_text("chemo tumour treatment", top_n=1, offset=1)
+    assert page == full[1:2]
+    assert handle.retrieve_from_text("chemo tumour treatment", top_n=1, offset=3) == []
+
+
+def test_evidence_allocator_uses_real_mcp_pagination(node_data_file, tmp_path):
+    state = AppState(str(tmp_path / "evidence-mcp.jsonl"))
+    state.generator = None
+    asyncio.run(state.register_mcp_node_async(node_data_file))
+    result = run_evidence_query(state, "chemo tumour protocol", AllocationConfig(1, 2, 2))
+    assert result["nodes_contacted"] == ["test_node"]
+    assert len(result["citations"]) == 2
+    assert [a["offset"] for a in result["routing_details"]["actions"]] == [0, 1]
+    assert result["routing_details"]["requests"] == 2
 
 
 def test_appstate_register_mcp_node_publishes_to_registry(node_data_file):
@@ -123,6 +144,20 @@ def test_relative_policy_dispatches_through_real_mcp(node_data_file, tmp_path):
     asyncio.run(state.register_mcp_node_async(node_data_file))
     result = state.run_query("chemo tumour protocol", max_nodes=3, genuine_k=1, sigma=0,
                              routing_mode="smart", selection_policy="relative", aggregation="max",
+                             minimum_gain=0, exposure_budget=1)
+    assert result["nodes_contacted"] == ["test_node"]
+    assert result["routing_details"]["exposure_spent"] == 1
+    assert result["citations"]
+    assert state.smart_trust.get("test_node")[1] == 1
+
+
+def test_centered_policy_dispatches_through_real_mcp(node_data_file, tmp_path):
+    state = AppState(instrumentation_path=str(tmp_path / "centered.jsonl"))
+    state.generator = None
+    asyncio.run(state.register_mcp_node_async(node_data_file))
+    result = state.run_query("chemo tumour protocol", max_nodes=3, genuine_k=1, sigma=0,
+                             routing_mode="smart", selection_policy="relative", relative_score_floor=0,
+                             relevance_mode="centered", centering_strength=.25, aggregation="max",
                              minimum_gain=0, exposure_budget=1)
     assert result["nodes_contacted"] == ["test_node"]
     assert result["routing_details"]["exposure_spent"] == 1

@@ -4,6 +4,25 @@ The proposed system is an independent, training-free smart source router.
 RAGRoute is a comparison baseline, not the engine beneath the smart router.
 This document describes the current code; future extensions are labelled.
 
+## Experimental evidence-budget path
+
+The new branch adds an independent opt-in `/query/evidence` path:
+
+```text
+query + cached authorized source profiles
+  -> evidence-budget allocator chooses (source, next local rank)
+  -> reserve one candidate slot, and a client slot if new
+  -> MCP / in-process retrieve(top_n=1, offset=rank)
+  -> coordinator embeds the returned text
+  -> update residual profile coverage and repeat within C/B caps
+  -> deduplicate -> common cosine top-K merger -> optional generator
+```
+
+There are no free query-time profile requests, uncharged candidate previews,
+trust updates or fallback broadcasts. This is a heuristic experiment, not a
+replacement for the paths below. Exact rule and limits: [protocol](20-evidence-budget-protocol.md).
+The [first results](21-evidence-budget-results.md) do not support superiority.
+
 ## Components and boundaries
 
 | Component | Current role | Information visible |
@@ -96,6 +115,20 @@ cached source profiles still arrive through registration/MCP, and retrieval,
 budget accounting and coordinator feedback retain the existing path.
 See [routing study protocol](16-routing-study-protocol.md). This is not a
 new MCP protocol or a switch of the live demo to semantic embeddings.
+
+An experimental `relevance_mode="centered"` subtracts a source-balanced
+background from normalized queries and centroids before scoring. Only authorized,
+valid, trust-eligible profiles enter that background. Raw profiles remain in the
+registry and are still used for consistency feedback. This uses no new MCP fields
+and sends no extra query probes. It is not a privacy or hijacking defence.
+Development selection chose strength zero (no transform); do not present
+centering as an improvement. See [the frozen study protocol](18-centered-routing-protocol.md).
+
+For a coverage-oriented control, use max aggregation, relative selection with
+relative_score_floor=0 and minimum_gain=0. This fills the affordable positive-score
+budget instead of applying the unvalidated 0.8 early-stop threshold. It is not
+an evidence-sufficiency detector and may increase contacts. All existing defaults
+remain unchanged for compatibility.
 
 | Mode | Selection | Status |
 |---|---|---|

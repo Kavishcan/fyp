@@ -13,6 +13,7 @@ from time import perf_counter
 import numpy as np
 
 from baselines.base import SourceProfile
+from router.centering import center_profiles, center_query
 
 
 @dataclass(frozen=True)
@@ -46,20 +47,21 @@ class SmartConfig:
     query_model: str | None = None
     selection_policy: str = "overlap"
     relative_score_floor: float = 0.8
+    centering_strength: float = 1.0
 
     def __post_init__(self):
         if not isfinite(self.exposure_budget) or self.exposure_budget < 0:
             raise ValueError("exposure_budget must be finite and nonnegative")
         if not isinstance(self.max_sources, int) or self.max_sources < 0:
             raise ValueError("max_sources must be a nonnegative integer")
-        for name in ("minimum_gain", "minimum_trust", "uncertainty_penalty", "redundancy_weight", "description_weight", "relative_score_floor"):
+        for name in ("minimum_gain", "minimum_trust", "uncertainty_penalty", "redundancy_weight", "description_weight", "relative_score_floor", "centering_strength"):
             value = getattr(self, name)
             if not isfinite(value) or not 0 <= value <= 1:
                 raise ValueError(f"{name} must be finite and in [0, 1]")
         if self.aggregation not in {"mean", "max"}:
             raise ValueError("aggregation must be mean or max")
-        if self.relevance_mode not in {"centroid", "description", "combined"}:
-            raise ValueError("relevance_mode must be centroid, description or combined")
+        if self.relevance_mode not in {"centroid", "description", "combined", "centered"}:
+            raise ValueError("relevance_mode must be centroid, description, combined or centered")
         if self.selection_policy not in {"overlap", "relative"}:
             raise ValueError("selection_policy must be overlap or relative")
 
@@ -135,7 +137,7 @@ class SmartRouter:
             scores = np.clip(centroids @ query, 0.0, 1.0)
             relevance = float(np.mean(scores) if config.aggregation == "mean" else np.max(scores))
             components = {"centroid_relevance": relevance, "description_relevance": None}
-            if config.relevance_mode != "centroid":
+            if config.relevance_mode in {"description", "combined"}:
                 if (profile.description_embedding is None or
                         (config.query_model is not None and profile.metadata_embedding_model != config.query_model)):
                     decision.excluded[sid] = "missing_or_incompatible_description"
@@ -150,6 +152,19 @@ class SmartRouter:
                              (1 - config.description_weight) * relevance + config.description_weight * description_score)
             relevance_components[sid] = components
             remaining[sid] = (centroids, relevance, effective_trust, entry)
+
+        if config.relevance_mode == "centered" and remaining:
+            # Excluded sources must not affect the shared background. Keep raw
+            # centroids for overlap/feedback; only the relevance score changes.
+            offset, centered = center_profiles({sid: row[0] for sid, row in remaining.items()},
+                                               config.centering_strength)
+            centered_query = center_query(query, offset)
+            for sid, (centroids, raw_score, trust, entry) in remaining.items():
+                scores = np.clip(centered[sid] @ centered_query, 0, 1)
+                score = float(scores.mean() if config.aggregation == "mean" else scores.max())
+                remaining[sid] = (centroids, score, trust, entry)
+                relevance_components[sid].update(raw_centroid_relevance=raw_score,
+                                                 centroid_relevance=score)
 
         decision.candidate_source_ids = list(remaining)
         redundancy = {sid: 0.0 for sid in remaining}

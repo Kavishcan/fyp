@@ -49,6 +49,22 @@ def test_health(client):
     assert resp.json()["status"] == "ok"
 
 
+def test_centered_config_reaches_router_and_audit(client):
+    for sid, document in (("oncology", "chemo tumour protocol"), ("cardiology", "heart attack protocol")):
+        client.post("/nodes/register", json={"node_id": sid, "documents": [document]})
+    response = client.post("/query", json=dict(question="chemo tumour protocol", routing_mode="smart",
+                           relevance_mode="centered", centering_strength=.25, selection_policy="relative",
+                           relative_score_floor=0, minimum_gain=0, aggregation="max", exposure_budget=1))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["nodes_contacted"] == ["oncology"]
+    details = body["routing_details"]
+    assert details["config"]["centering_strength"] == .25
+    assert details["config"]["relevance_mode"] == "centered"
+    assert details["exposure_spent"] == 1
+    assert "raw_centroid_relevance" in details["steps"][0]
+
+
 def test_register_node_then_appears_in_nodes_list(client):
     resp = client.post(
         "/nodes/register",

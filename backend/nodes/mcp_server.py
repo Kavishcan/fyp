@@ -94,9 +94,9 @@ def main() -> None:
         return json.dumps(serialisable)
 
     @server.tool()
-    def retrieve(query: str, top_n: int = 5) -> str:
-        """Retrieve the top-n locally-held passages for `query`."""
-        passages = node.retrieve_from_text(query, top_n=top_n)
+    def retrieve(query: str, top_n: int = 5, offset: int = 0) -> str:
+        """Retrieve a ranked page; offset skips already requested passages."""
+        passages = node.retrieve_from_text(query, top_n=top_n, offset=offset)
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
 
     server.run(transport="stdio")

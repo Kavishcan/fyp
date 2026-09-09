@@ -225,6 +225,7 @@ class AppState:
         aggregation: str = "mean",
         relevance_mode: str = "centroid", description_weight: float = 0.5,
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
+        centering_strength: float = 1.0,
     ) -> dict:
         if routing_mode not in {"legacy", "smart"}:
             raise ValueError("routing_mode must be legacy or smart")
@@ -243,6 +244,7 @@ class AppState:
             relevance_mode=relevance_mode, description_weight=description_weight,
             query_model=self.routing_embedder.model_name,
             selection_policy=selection_policy, relative_score_floor=relative_score_floor,
+            centering_strength=centering_strength,
         )
         profiles = self.registry.all_profiles()
         query_id = str(uuid.uuid4())

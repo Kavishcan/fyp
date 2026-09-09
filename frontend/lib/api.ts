@@ -53,7 +53,8 @@ export interface QueryRequest {
   minimum_gain?: number;
   minimum_trust?: number;
   aggregation?: "mean" | "max";
-  relevance_mode?: "centroid" | "description" | "combined";
+  relevance_mode?: "centroid" | "description" | "combined" | "centered";
+  centering_strength?: number;
   description_weight?: number;
   selection_policy?: "overlap" | "relative";
   relative_score_floor?: number;

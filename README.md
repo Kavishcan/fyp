@@ -12,6 +12,19 @@ The implementation is a research prototype. Novelty, privacy benefit, attack
 resilience and scalability must be established through comparative experiments.
 Healthcare is the intended case study, not a validated clinical deployment.
 
+## Experimental evidence-budget branch
+
+On `research/evidence-budget-routing`, a separate candidate-level router is
+available through `POST /query/evidence`. It chooses the next client and local
+retrieval depth under distinct client and passage-request caps, with paginated
+MCP retrieval and a common cosine result merger. Legacy and smart defaults
+are unchanged; the studio has not been switched to this experimental endpoint.
+
+The [48,690-decision pilot](docs/21-evidence-budget-results.md) found zero budget
+violations but **no improvement over the fixed allocation controls**. The
+method remains experimental. See the [algorithm and API protocol](docs/20-evidence-budget-protocol.md)
+and [prioritized reading list](docs/22-evidence-routing-reading-list.md).
+
 ## Current architecture
 
 The [routing improvement study](docs/17-routing-study-results.md) now compares
@@ -19,6 +32,13 @@ coarse/fine source profiles, an opt-in relative stopping policy, and cloned-prof
 attacks on SciFact and NFCorpus. Finer profiles improve retrieval; the stopping
 and trust trade-offs do not yet establish superiority over matched baselines.
 The old default remains unchanged. See the report for measurements and API usage.
+
+The follow-up [development-selected study](docs/19-centered-routing-results.md)
+tests a same-profile centering hypothesis and a budget-filling control.
+Development rejected centering: raw cosine won. The experimental option remains
+opt-in; do not claim it improves ranking. The usage guide now includes a
+[coverage-oriented request](docs/13-smart-router-implementation.md#coverage-oriented-request)
+that removes the earlier unvalidated stopping threshold while preserving budgets.
 
 ```text
 Source documents -> source index + shared-space profile -> registry
@@ -36,7 +56,8 @@ but is not isolated from the coordinator as a separate security boundary.
 
 The live API/MCP path still uses hashing embeddings. A semantic embedder exists
 but needs consistent integration before meaningful retrieval-quality results.
-The API currently collects passages without a global reranker.
+The legacy/smart API collects passages without a global reranker. The separate
+evidence endpoint performs coordinator-cosine merging over its paid candidates.
 
 MCP profiles now optionally include deterministic document-derived descriptions,
 topics and description embeddings. Smart requests can select relevance_mode
@@ -152,7 +173,7 @@ smart routing stops too aggressively on 30 random SciFact sources. It obeyed
 the budget but underperformed cosine top-3 on source/retrieval recall. Preserve
 this negative result; implementation correctness is not algorithmic benefit.
 
-The smart-router implementation was verified with 160 Python tests passing,
+The smart-router implementation was verified with 217 Python tests passing,
 including real MCP integration on a synthetic fixture, and TypeScript checking.
 The 1,000-profile test checks an in-memory invariant, not deployment scalability.
 Rerun these checks after changes:
@@ -184,3 +205,6 @@ prove honesty. Do not use real private or patient data in this demo.
 11. [Smart-router implementation and usage](docs/13-smart-router-implementation.md)
 12. [Measured smart-router pilot](docs/14-smart-router-pilot.md)
 13. [MCP metadata extension and comparison](docs/15-mcp-metadata-pilot.md)
+14. [Coarse/fine profiles and cloning results](docs/17-routing-study-results.md)
+15. [Frozen centering development/transfer protocol](docs/18-centered-routing-protocol.md)
+16. [Centering results and coverage-oriented configuration](docs/19-centered-routing-results.md)

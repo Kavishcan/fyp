@@ -1,5 +1,12 @@
 # Experiment plan
 
+The separate [candidate-budget protocol](20-evidence-budget-protocol.md) and
+[completed pilot](21-evidence-budget-results.md) cover the non-privacy routing
+branch. They compare joint selection/allocation against fixed controls and
+ablations with matched C/B caps. Across 48,690 decisions there were no budget
+violations, but the proposed policy did not improve retrieval. These historical
+test sets are exploratory; a new held-out QA study remains necessary.
+
 The [routing improvement protocol](16-routing-study-protocol.md) fixes the
 new clean, matched-profile and cloned-profile stress comparisons before their
 execution. It separates representation improvements from stopping behaviour.
@@ -120,3 +127,19 @@ tables. Include uncertainty intervals across repeated trials where appropriate.
 Useful figures: retrieval quality versus contact exposure, attack success versus
 budget, cold-start behaviour and latency versus source count. Do not prescribe
 the direction of a result before running it.
+
+## Development-selected ranking study
+
+The [centering protocol](18-centered-routing-protocol.md) separates official
+SciFact train / NFCorpus dev selection from a frozen additional SCIDOCS test.
+It reuses identical 16-centroid profiles, selects among five declared strengths,
+and removes exact normalized test-text overlaps from development queries.
+Selection chose zero centering: the baseline won on development.
+
+The frozen evaluation therefore checks budget-filling parity with cosine top-k
+and recovery relative to early stopping, not superiority of a new ranking.
+Previously inspected SciFact/NFCorpus test results are exploratory regressions.
+SCIDOCS is an additional one-pass benchmark, not an unaudited claim that nobody
+has ever examined these public data. Query-cluster bootstrap intervals average
+the three partition seeds before resampling. Online feedback streams remain
+descriptive because their decisions are history-dependent.

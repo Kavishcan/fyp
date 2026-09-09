@@ -25,7 +25,7 @@ BUDGETS = (1, 3, 5)
 MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-def load_corpus(path):
+def load_corpus(path, split="test"):
     with (path / "corpus.jsonl").open() as stream:
         docs = [json.loads(line) for line in stream]
     with (path / "queries.jsonl").open() as stream:
@@ -34,7 +34,7 @@ def load_corpus(path):
     if len(doc_index) != len(docs):
         raise ValueError("Duplicate document IDs")
     qrels = {}
-    with (path / "qrels/test.tsv").open() as stream:
+    with (path / f"qrels/{split}.tsv").open() as stream:
         for row in csv.DictReader(stream, delimiter="\t"):
             if float(row["score"]) > 0:
                 qrels.setdefault(row["query-id"], set()).add(doc_index[row["corpus-id"]])
@@ -91,7 +91,7 @@ def summarize(records):
     return result
 
 
-def paired_interval(records, dataset, budget, candidate, baseline, metric, resamples=10000):
+def paired_interval(records, dataset, budget, candidate, baseline, metric, resamples=10000, bootstrap_seed=20260909):
     groups = {}
     for row in records:
         if (row["dataset"] == dataset and row["scenario"] == "clean" and row["budget"] == budget
@@ -105,7 +105,7 @@ def paired_interval(records, dataset, budget, candidate, baseline, metric, resam
     d = np.asarray(differences)
     if not len(d):
         raise ValueError("Empty comparison")
-    bootstrap = np.random.default_rng(20260909).choice(d, (resamples, len(d)), replace=True).mean(axis=1)
+    bootstrap = np.random.default_rng(bootstrap_seed).choice(d, (resamples, len(d)), replace=True).mean(axis=1)
     return dict(dataset=dataset, budget=budget, candidate=candidate, baseline=baseline, metric=metric,
                 difference=float(d.mean()), ci95=np.quantile(bootstrap, [.025, .975]).tolist(),
                 query_clusters=len(d))
@@ -119,7 +119,8 @@ def load_tasr():
     return module.TrustAwareRouter
 
 
-def attack_stream(queries, query_ids, qrels, documents, assignment, profiles, seed, scenario, method):
+def attack_stream(queries, query_ids, qrels, documents, assignment, profiles, seed, scenario, method,
+                  routing_config=None):
     profiles = list(profiles)
     attacker = "source_030"
     if scenario != "online_clean":
@@ -148,7 +149,7 @@ def attack_stream(queries, query_ids, qrels, documents, assignment, profiles, se
         if method.startswith("fixed"):
             selected = fixed_rank({sid: value * evidence[sid].trust for sid, value in scores.items()}, 3)
         else:
-            trace = router.route(query, profiles, evidence, relative_config(3))
+            trace = router.route(query, profiles, evidence, routing_config or relative_config(3))
             selected = trace.selected_source_ids
         elapsed = (time.perf_counter() - start) * 1000
         # The simulator owns all corpora; only selected-source results enter

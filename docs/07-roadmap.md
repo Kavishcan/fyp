@@ -10,8 +10,22 @@ submission and dissertation requirements with the supervisor.
 - Strict budgets, adaptive stopping, exclusions and trace output are tested.
 - Smart API mode reaches in-process and real MCP sources.
 - Legacy remains the dashboard/API default.
-- The implementation was checked with 160 Python tests and TypeScript checking.
+- The implementation was checked with 261 Python tests; the frontend contract
+  remains unchanged by the separate evidence endpoint.
 - Scientific benefit, formal privacy and hijacking resistance are not established.
+
+The [evidence-budget branch](20-evidence-budget-protocol.md) adds sequential
+candidate allocation, paginated MCP reads, equal/proportional controls,
+ablation tests and offline oracle diagnostics. Its [first pilot](21-evidence-budget-results.md)
+did not establish an improvement. Pending: a justified better evidence signal,
+new development/held-out QA splits, realistic topic-skewed/overlapping sources,
+official routing baseline reproduction and matched-token generation results.
+
+The [development-selected ranking experiment](19-centered-routing-results.md)
+rejected positive centering strengths; retain raw cosine as the control.
+Coverage-oriented budget filling is not a new ranking algorithm. Preliminary
+quality/attack studies advance milestones 3, 5 and 6, but do not complete the
+official baseline reproduction, broader threat model or end-to-end evaluation.
 
 ## Next milestones
 

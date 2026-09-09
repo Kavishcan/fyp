@@ -35,8 +35,11 @@ from .schemas import (
     NodeStatus,
     QueryRequest,
     QueryResponse,
+    EvidenceQueryRequest,
 )
 from .state import AppState
+from .evidence import run_evidence_query
+from router.evidence_budget import AllocationConfig
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 MCP_NODES_DIR = DATA_DIR / "mcp_nodes"
@@ -135,6 +138,7 @@ def query(req: QueryRequest) -> QueryResponse:
         aggregation=req.aggregation,
         relevance_mode=req.relevance_mode, description_weight=req.description_weight,
         selection_policy=req.selection_policy, relative_score_floor=req.relative_score_floor,
+        centering_strength=req.centering_strength,
     )
     return QueryResponse(**result)
 
@@ -153,3 +157,10 @@ def audit(query_id: str) -> AuditResponse:
         decoy_source_ids=record["decoy_source_ids"],
         routing_details=record.get("extra", {}).get("routing"),
     )
+
+
+@app.post("/query/evidence", response_model=QueryResponse)
+def evidence_query(req: EvidenceQueryRequest) -> QueryResponse:
+    config = AllocationConfig(max_sources=req.max_sources, candidate_budget=req.candidate_budget,
+                              final_k=req.final_k, method=req.method)
+    return QueryResponse(**run_evidence_query(state, req.question, config))

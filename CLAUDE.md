@@ -2,6 +2,14 @@
 
 ## Current research direction
 
+On branch `research/evidence-budget-routing`, the opt-in experiment is
+`backend/router/evidence_budget.py` and `POST /query/evidence`; see docs/20-22.
+It jointly allocates client contacts and candidate requests without trust
+updates. The first pilot did NOT improve on fixed quotas. Preserve that
+negative result and the older defaults; do not describe this heuristic as
+proven novel, superior, private, or production-ready. Its bibliography is a
+reading guide, not student-authored literature summaries.
+
 FedSafeRouter is a training-free, exposure-constrained and trust-aware adaptive
 source router for Federated RAG. The user explicitly chose to implement the
 smart router itself. RAGRoute is a comparison baseline, not its required engine.

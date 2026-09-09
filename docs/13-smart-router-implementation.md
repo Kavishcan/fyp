@@ -137,6 +137,37 @@ logs expose route identities and must remain in a trusted environment.
 
 ## Files and tests
 
+### Coverage-oriented request
+
+The older overlap/relative stopping rules can sacrifice useful contacts. To
+spend the allowed budget on affordable positive-score candidates, use:
+
+```json
+{
+  "question": "COVID treatment research",
+  "routing_mode": "smart",
+  "aggregation": "max",
+  "relevance_mode": "centroid",
+  "selection_policy": "relative",
+  "relative_score_floor": 0,
+  "minimum_gain": 0,
+  "max_nodes": 3,
+  "exposure_budget": 3
+}
+```
+
+This is a budget-filling control, not a new evidence-based stopping algorithm.
+Zero useful scores and access/cost constraints can still produce fewer contacts.
+The live API retains consistency trust and uncertainty adjustment, unlike the
+equal-trust clean benchmark. It also retains hashing embeddings. Benchmark
+recall numbers must not be attributed to the live demo.
+
+The API also accepts experimental relevance_mode="centered" and
+centering_strength in [0, 1]. Development testing selected 0 (no centering), so
+the recommended control above keeps centroid mode and avoids that overhead.
+
+### Verification
+
 - `backend/router/smart.py`: pure selector plus coordinator trust observations.
 - `backend/api/state.py`: optional smart-mode execution before node dispatch.
 - `backend/api/schemas.py`: validated request parameters and audit response.

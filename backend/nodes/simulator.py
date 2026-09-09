@@ -66,12 +66,14 @@ class InProcessNode:
         # own space; optional so existing vector-based callers/tests still work.
         self.local_embedder = local_embedder
 
-    def retrieve(self, query_embedding: np.ndarray, top_n: int = 5) -> list[RetrievedPassage]:
+    def retrieve(self, query_embedding: np.ndarray, top_n: int = 5, offset: int = 0) -> list[RetrievedPassage]:
         """Vector-in retrieval. `query_embedding` MUST already be in this
         node's own local embedding space — never pass a routing-embedder
         vector here, it will produce meaningless scores rather than an error.
         Prefer `retrieve_from_text` unless you already have the right vector.
         """
+        if type(top_n) is not int or type(offset) is not int or min(top_n, offset) < 0:
+            raise ValueError("top_n and offset must be nonnegative integers")
         if not len(self.documents):
             return []
         q = np.asarray(query_embedding, dtype=np.float64)
@@ -79,13 +81,13 @@ class InProcessNode:
         doc_norms = np.linalg.norm(self.document_embeddings, axis=1)
         doc_norms = np.where(doc_norms == 0, 1.0, doc_norms)
         scores = (self.document_embeddings @ q) / (doc_norms * q_norm)
-        order = np.argsort(scores)[::-1][:top_n]
+        order = np.argsort(scores)[::-1][offset:offset + top_n]
         return [
             RetrievedPassage(source_id=self.source_id, document=self.documents[i], score=float(scores[i]))
             for i in order
         ]
 
-    def retrieve_from_text(self, query_text: str, top_n: int = 5) -> list[RetrievedPassage]:
+    def retrieve_from_text(self, query_text: str, top_n: int = 5, offset: int = 0) -> list[RetrievedPassage]:
         """Re-embeds `query_text` with THIS node's own local_embedder, then
         retrieves. This is the call a router/coordinator should make after
         selecting this node — it never needs to know which model the node
@@ -98,7 +100,7 @@ class InProcessNode:
                 "precomputed vector in this node's own space"
             )
         query_embedding = np.asarray(self.local_embedder([query_text])[0], dtype=np.float64)
-        return self.retrieve(query_embedding, top_n=top_n)
+        return self.retrieve(query_embedding, top_n=top_n, offset=offset)
 
 
 def build_simulated_source(

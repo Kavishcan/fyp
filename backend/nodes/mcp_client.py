@@ -54,13 +54,16 @@ class MCPNodeHandle:
     async def get_profile_async(self) -> dict:
         return json.loads(await self._call_tool("get_profile", {}))
 
-    async def retrieve_async(self, query: str, top_n: int = 5) -> list[dict]:
-        return json.loads(await self._call_tool("retrieve", {"query": query, "top_n": top_n}))
+    async def retrieve_async(self, query: str, top_n: int = 5, offset: int = 0) -> list[dict]:
+        arguments = {"query": query, "top_n": top_n}
+        if offset:
+            arguments["offset"] = offset
+        return json.loads(await self._call_tool("retrieve", arguments))
 
     def get_profile(self) -> dict:
         """Sync wrapper — safe to call from a plain `def` FastAPI handler."""
         return asyncio.run(self.get_profile_async())
 
-    def retrieve_from_text(self, query: str, top_n: int = 5) -> list[dict]:
+    def retrieve_from_text(self, query: str, top_n: int = 5, offset: int = 0) -> list[dict]:
         """Sync wrapper matching the shape AppState expects for citations."""
-        return asyncio.run(self.retrieve_async(query, top_n=top_n))
+        return asyncio.run(self.retrieve_async(query, top_n=top_n, offset=offset))

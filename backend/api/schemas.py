@@ -59,7 +59,8 @@ class QueryRequest(BaseModel):
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
     aggregation: Literal["mean", "max"] = "mean"
-    relevance_mode: Literal["centroid", "description", "combined"] = "centroid"
+    relevance_mode: Literal["centroid", "description", "combined", "centered"] = "centroid"
+    centering_strength: float = Field(default=1.0, ge=0, le=1, allow_inf_nan=False)
     description_weight: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
     selection_policy: Literal["overlap", "relative"] = "overlap"
     relative_score_floor: float = Field(default=0.8, ge=0, le=1, allow_inf_nan=False)
@@ -81,6 +82,14 @@ class Citation(BaseModel):
     node_id: str
     document: str
     score: float
+
+
+class EvidenceQueryRequest(BaseModel):
+    question: str = Field(min_length=1)
+    max_sources: int = Field(default=3, ge=0, le=1000, strict=True)
+    candidate_budget: int = Field(default=12, ge=0, le=4096, strict=True)
+    final_k: int = Field(default=5, ge=0, le=100, strict=True)
+    method: Literal["equal", "proportional", "profile_only", "allocation_only", "joint"] = "joint"
 
 
 class QueryResponse(BaseModel):
