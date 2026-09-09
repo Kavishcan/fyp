@@ -10,7 +10,7 @@ submission and dissertation requirements with the supervisor.
 - Strict budgets, adaptive stopping, exclusions and trace output are tested.
 - Smart API mode reaches in-process and real MCP sources.
 - Legacy remains the dashboard/API default.
-- The implementation was checked with 261 Python tests; the frontend contract
+- The implementation was checked with 311 Python tests; the frontend contract
   remains unchanged by the separate evidence endpoint.
 - Scientific benefit, formal privacy and hijacking resistance are not established.
 
@@ -20,6 +20,19 @@ ablation tests and offline oracle diagnostics. Its [first pilot](21-evidence-bud
 did not establish an improvement. Pending: a justified better evidence signal,
 new development/held-out QA splits, realistic topic-skewed/overlapping sources,
 official routing baseline reproduction and matched-token generation results.
+
+Completed next: [query/document-level diagnosis](23-query-failure-analysis.md),
+anchored-feedback implementation and separate development/frozen evaluation.
+The [result](25-feedback-routing-results.md) selected zero feedback. A better
+source signal and untouched QA evaluation were unresolved at that stage.
+
+The subsequent [rich-profile study](27-rich-profile-results.md) completed a
+development-selected lexical/semantic source representation and separate FiQA
+transfer test on random/topic sources. It improves over the 16-centroid control;
+the stronger byte-matched candidate-recall comparison remains inconclusive.
+Pending: official/tuned controls, another frozen transfer dataset, answer-quality
+evaluation and live semantic integration. No universal superiority, trustworthy
+profiles or end-to-end privacy milestone is established by this result.
 
 The [development-selected ranking experiment](19-centered-routing-results.md)
 rejected positive centering strengths; retain raw cosine as the control.

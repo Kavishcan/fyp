@@ -10,6 +10,21 @@ negative result and the older defaults; do not describe this heuristic as
 proven novel, superior, private, or production-ready. Its bibliography is a
 reading guide, not student-authored literature summaries.
 
+Docs/23-25 cover the query-level diagnosis and anchored feedback follow-up.
+Preserve both negative studies. `method=feedback` is an additional opt-in
+pseudo-relevance-feedback control, with a development-frozen strength. Reused
+historical test queries are exploratory, not genuinely held out. Do not tune
+against their results or silently promote a failed strength to the default.
+
+Docs/26-27 cover the frozen rich-profile study. Opt-in `profile_strategy=hybrid`
+with `method=equal` and explicit `lexical_weight=0.25` improves over semantic16
+on FiQA under matched contact/candidate caps. Do not claim universal superiority:
+lexical ties on random layouts and candidate-recall intervals against semantic21
+cross zero. This is profile/selection engineering, not validated adaptive quota
+allocation. Preserve the frozen protocol, code snapshots and prior negative
+results. Hash sketches provide no privacy or integrity guarantee. API defaults
+remain semantic, and the live hashing encoder is not the MiniLM benchmark.
+
 FedSafeRouter is a training-free, exposure-constrained and trust-aware adaptive
 source router for Federated RAG. The user explicitly chose to implement the
 smart router itself. RAGRoute is a comparison baseline, not its required engine.

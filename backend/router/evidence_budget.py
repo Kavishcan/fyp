@@ -15,6 +15,7 @@ import numpy as np
 from baselines.base import SourceProfile
 
 METHODS = ("equal", "proportional", "profile_only", "allocation_only", "joint")
+ALL_METHODS = METHODS + ("feedback",)
 
 
 @dataclass(frozen=True)
@@ -23,14 +24,26 @@ class AllocationConfig:
     candidate_budget: int = 12
     final_k: int = 5
     method: str = "joint"
+    feedback_strength: float = 0.25
+    profile_strategy: str = "semantic"
+    lexical_weight: float = 0.5
 
     def __post_init__(self):
         for name in ("max_sources", "candidate_budget", "final_k"):
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a nonnegative integer")
-        if self.method not in METHODS:
-            raise ValueError(f"method must be one of {METHODS}")
+        if self.method not in ALL_METHODS:
+            raise ValueError(f"method must be one of {ALL_METHODS}")
+        if (isinstance(self.feedback_strength, bool) or not math.isfinite(self.feedback_strength)
+                or not 0 <= self.feedback_strength <= 1):
+            raise ValueError("feedback_strength must be finite and in [0, 1]")
+        if self.profile_strategy not in {"semantic", "lexical", "hybrid", "rrf"}:
+            raise ValueError("invalid profile strategy")
+        if self.profile_strategy != "semantic" and self.method not in {"equal", "proportional"}:
+            raise ValueError("rich profiles require fixed allocation controls")
+        if isinstance(self.lexical_weight, bool) or not math.isfinite(self.lexical_weight) or not 0 <= self.lexical_weight <= 1:
+            raise ValueError("lexical_weight must be finite and in [0, 1]")
 
 
 @dataclass
@@ -120,8 +133,18 @@ def fixed_quotas(relevance, config):
     return quotas
 
 
+def feedback_query(query, passages, strength):
+    """Anchored pseudo-relevance feedback, not evidence/fact verification."""
+    if strength == 0 or not passages:
+        return query.copy()
+    vectors = unit_rows(np.asarray([p.embedding for p in passages]))
+    weights = np.clip(vectors @ query, 0, 1)
+    direction = unit_rows((weights @ vectors)[None])[0]
+    return unit_rows((query + strength * direction)[None])[0]
+
+
 def allocate(query, profiles: list[SourceProfile], retrieve: Callable[[str, int], Candidate | None],
-             config=AllocationConfig()) -> AllocationResult:
+             config=AllocationConfig(), *, question: str | None = None) -> AllocationResult:
     """Choose (source, next local rank) actions from profiles and observed text.
 
     Profiles must already be authorization-filtered by the coordinator. Returned
@@ -130,6 +153,12 @@ def allocate(query, profiles: list[SourceProfile], retrieve: Callable[[str, int]
     start = time.perf_counter()
     result = AllocationResult(config)
     q, matrices, relevance, weights, result.skipped_profiles = prepare_profiles(query, profiles)
+    if config.profile_strategy != "semantic":
+        from router.lexical_profile import lexical_scores, fuse_scores
+        if question is None:
+            raise ValueError("rich profile routing requires query text")
+        lexical = lexical_scores(question, [p for p in profiles if p.source_id in relevance])
+        relevance = fuse_scores(relevance, lexical, config.profile_strategy, config.lexical_weight)
     fixed = fixed_quotas(relevance, config)
     eligible = set(fixed) if config.method in {"equal", "proportional", "allocation_only"} else set(relevance)
     coverage = {sid: np.zeros(len(c)) for sid, c in matrices.items()}
@@ -137,12 +166,21 @@ def allocate(query, profiles: list[SourceProfile], retrieve: Callable[[str, int]
     blocked, seen = set(), set()
     for _ in range(config.candidate_budget):
         choices = {}
+        opening = (config.method == "feedback" and
+                   len(result.contacted) < min(config.max_sources, config.candidate_budget, len(eligible)))
+        if config.method == "feedback":
+            refined_query = feedback_query(q, result.candidates, config.feedback_strength) if opening else q
+            if not opening:
+                fixed = fixed_quotas({s: relevance[s] for s in result.contacted}, config)
         for sid in sorted(eligible - blocked):
             n = result.quotas.get(sid, 0)
             if n == 0 and len(result.contacted) >= config.max_sources:
                 continue
-            if config.method in {"equal", "proportional"}:
-                if n < fixed[sid]:
+            if config.method == "feedback" and opening:
+                if n == 0:
+                    choices[sid] = float(np.clip(matrices[sid] @ refined_query, 0, 1).max())
+            elif config.method in {"equal", "proportional", "feedback"}:
+                if sid in fixed and n < fixed[sid]:
                     # Round-robin execution of a fixed plan, no feedback adaptation.
                     choices[sid] = (fixed[sid] - n) / fixed[sid]
             else:

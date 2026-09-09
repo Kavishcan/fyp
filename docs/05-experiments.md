@@ -7,6 +7,20 @@ ablations with matched C/B caps. Across 48,690 decisions there were no budget
 violations, but the proposed policy did not improve retrieval. These historical
 test sets are exploratory; a new held-out QA study remains necessary.
 
+The [failure diagnosis](23-query-failure-analysis.md) and
+[anchored-feedback follow-up](25-feedback-routing-results.md) add stage-level
+attribution and a development-frozen source-refinement test. Positive strengths
+were rejected by macro development recall; alpha=0 exactly reproduces equal
+quotas. This is not a new successful algorithm or fresh held-out evidence.
+
+The [rich-profile protocol](26-rich-profile-protocol.md) and
+[completed results](27-rich-profile-results.md) add development-frozen hybrid
+source selection, topic/random partitions, a byte-matched dense control and
+same-information lexical/RRF controls. Across 80,460 decisions there were zero
+budget violations. FiQA transfer improves over semantic16 but not conclusively
+over semantic21 in candidate recall; lexical ties on random layouts. This is not
+LLM answer evaluation, an official RAGRoute reproduction or a privacy result.
+
 The [routing improvement protocol](16-routing-study-protocol.md) fixes the
 new clean, matched-profile and cloned-profile stress comparisons before their
 execution. It separates representation improvements from stopping behaviour.

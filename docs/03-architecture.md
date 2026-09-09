@@ -23,6 +23,31 @@ trust updates or fallback broadcasts. This is a heuristic experiment, not a
 replacement for the paths below. Exact rule and limits: [protocol](20-evidence-budget-protocol.md).
 The [first results](21-evidence-budget-results.md) do not support superiority.
 
+An additional `method=feedback` variant uses the first paid passage from each
+contacted node to refine the routing query for the next client, anchored to the
+original query. It keeps equal quotas and original-query local retrieval/final
+ranking. See [protocol](24-feedback-routing-protocol.md). This is a tested
+pseudo-relevance-feedback hypothesis, not a missing-fact detector or proof of
+novelty. It does not replace the old joint or fixed control methods.
+
+The opt-in rich-profile path uses `method=equal`, `profile_strategy=hybrid` and
+development-selected `lexical_weight=0.25`:
+
+```text
+source documents -> semantic centroids + lexical presence sketch -> registry
+query -> semantic score + inverse-source-frequency lexical match
+      -> fused top-C source selection -> equal passage quotas within B
+      -> paid local retrieval -> original-query cosine top-K -> optional generator
+```
+
+Sketches are published through simulator/MCP profiles when metadata is enabled.
+Invalid/missing sketches at any eligible source trigger semantic fallback for
+the query. No extra query-time discovery calls are hidden from the budget.
+See [protocol](26-rich-profile-protocol.md) and [results](27-rich-profile-results.md).
+This branch's measured gain concerns source selection, not adaptive quotas or
+trust defense. Defaults remain unchanged; live hashing and offline MiniLM
+embedding paths still differ.
+
 ## Components and boundaries
 
 | Component | Current role | Information visible |

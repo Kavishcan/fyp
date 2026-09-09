@@ -70,6 +70,10 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
         policy_labels=spec.get("policy_labels", []),
     )
     attach_metadata(profile, documents, routing_embedder, enabled=spec.get("publish_metadata", True))
+    if spec.get("publish_metadata", True):
+        from router.lexical_profile import build_sketch, VERSION
+        profile.lexical_sketch = build_sketch(documents)
+        profile.lexical_version = VERSION
     node = InProcessNode(node_id, documents, local_embeddings, local_embedder=local_embedder)
     return node, profile.__dict__, local_model
 

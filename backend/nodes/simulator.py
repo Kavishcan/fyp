@@ -139,6 +139,10 @@ def build_simulated_source(
         policy_labels=policy_labels,
     )
     attach_metadata(profile, documents, routing_embedder, enabled=publish_metadata)
+    if publish_metadata:
+        from router.lexical_profile import build_sketch, VERSION
+        profile.lexical_sketch = build_sketch(documents)
+        profile.lexical_version = VERSION
     node = InProcessNode(source_id, documents, local_embeddings, local_embedder=local_embedder)
     return node, profile
 

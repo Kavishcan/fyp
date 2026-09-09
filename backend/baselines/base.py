@@ -35,6 +35,8 @@ class SourceProfile:
     description_embedding: object | None = None
     metadata_method: str = ""
     metadata_embedding_model: str = ""
+    lexical_sketch: str = ""
+    lexical_version: str = ""
 
 
 @dataclass

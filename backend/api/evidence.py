@@ -32,7 +32,7 @@ def run_evidence_query(state, question, config: AllocationConfig):
         document_id = hashlib.sha256(" ".join(text.split()).encode()).hexdigest()
         return Candidate(sid, document_id, text, state.routing_embedder.embed([text])[0])
 
-    result = allocate(query, profiles, retrieve, config)
+    result = allocate(query, profiles, retrieve, config, question=question)
     details = result.to_dict()
     details.update(mode="evidence_budget", embedding_model=state.routing_embedder.model_name,
                    privacy_guarantee=False, generation_context_limit="final_k passages; not a token budget")

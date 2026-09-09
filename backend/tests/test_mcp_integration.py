@@ -72,6 +72,26 @@ def test_evidence_allocator_uses_real_mcp_pagination(node_data_file, tmp_path):
     assert result["routing_details"]["requests"] == 2
 
 
+def test_feedback_allocator_uses_paid_real_mcp_pages(node_data_file, tmp_path):
+    state = AppState(str(tmp_path / "feedback-mcp.jsonl"))
+    state.generator = None
+    asyncio.run(state.register_mcp_node_async(node_data_file))
+    spec = json.loads(node_data_file.read_text())
+    spec["node_id"] = "second"
+    spec["documents"] = ["chemo patient followup", "chemo dosage protocol"]
+    second = tmp_path / "second.json"
+    second.write_text(json.dumps(spec))
+    asyncio.run(state.register_mcp_node_async(second))
+    result = run_evidence_query(state, "chemo tumour protocol",
+                               AllocationConfig(2, 3, 3, "feedback", .25))
+    trace = result["routing_details"]
+    assert len(result["nodes_contacted"]) == 2
+    assert trace["requests"] == 3
+    assert all(a["error"] is None for a in trace["actions"])
+    assert [a["offset"] for a in trace["actions"]] == [0, 0, 1]
+    assert trace["returned"] == 3
+
+
 def test_appstate_register_mcp_node_publishes_to_registry(node_data_file):
     state = AppState(instrumentation_path=str(node_data_file.parent / "queries.jsonl"))
     profile = asyncio.run(state.register_mcp_node_async(node_data_file))

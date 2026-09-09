@@ -25,6 +25,23 @@ violations but **no improvement over the fixed allocation controls**. The
 method remains experimental. See the [algorithm and API protocol](docs/20-evidence-budget-protocol.md)
 and [prioritized reading list](docs/22-evidence-routing-reading-list.md).
 
+The [query-level failure analysis](docs/23-query-failure-analysis.md) now traces
+misses to source selection, retrieval depth or final ranking, with gold document
+IDs and local ranks. A separate [anchored-feedback experiment](docs/24-feedback-routing-protocol.md)
+adds opt-in `method=feedback`; its strength is selected on development data,
+then frozen before an exploratory test-set comparison. No defaults are changed.
+The [follow-up results](docs/25-feedback-routing-results.md) selected zero
+feedback: the new option reproduces equal quotas and does not improve them.
+
+The new [rich-profile study](docs/27-rich-profile-results.md) adds opt-in hybrid
+lexical/semantic source selection with fixed quotas. Development selected lexical
+weight .25. On FiQA, final Recall@5 improved from 8.573% to 9.804% on random sources
+and 31.499% to 32.299% on topic sources versus the 16-centroid control, at the same
+3-source/12-candidate budget. Lexical-only effectively ties on random sources;
+candidate-recall superiority over byte-matched dense profiles is unresolved.
+This is a measured representation improvement, not proven global novelty or a
+successful adaptive quota policy. Defaults remain unchanged.
+
 ## Current architecture
 
 The [routing improvement study](docs/17-routing-study-results.md) now compares

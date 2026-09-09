@@ -52,6 +52,8 @@ def _profile_from_dict(data: dict) -> SourceProfile:
                                if data.get("description_embedding") is not None else None),
         metadata_method=data.get("metadata_method", ""),
         metadata_embedding_model=data.get("metadata_embedding_model", ""),
+        lexical_sketch=data.get("lexical_sketch", ""),
+        lexical_version=data.get("lexical_version", ""),
     )
 
 

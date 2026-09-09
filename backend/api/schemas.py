@@ -89,7 +89,16 @@ class EvidenceQueryRequest(BaseModel):
     max_sources: int = Field(default=3, ge=0, le=1000, strict=True)
     candidate_budget: int = Field(default=12, ge=0, le=4096, strict=True)
     final_k: int = Field(default=5, ge=0, le=100, strict=True)
-    method: Literal["equal", "proportional", "profile_only", "allocation_only", "joint"] = "joint"
+    method: Literal["equal", "proportional", "profile_only", "allocation_only", "joint", "feedback"] = "joint"
+    feedback_strength: float = Field(default=0.25, ge=0, le=1, allow_inf_nan=False)
+    profile_strategy: Literal["semantic", "lexical", "hybrid", "rrf"] = "semantic"
+    lexical_weight: float = Field(default=0.5, ge=0, le=1, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def check_profile_strategy(self):
+        if self.profile_strategy != "semantic" and self.method not in {"equal", "proportional"}:
+            raise ValueError("rich profiles require equal or proportional allocation")
+        return self
 
 
 class QueryResponse(BaseModel):

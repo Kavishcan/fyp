@@ -162,5 +162,6 @@ def audit(query_id: str) -> AuditResponse:
 @app.post("/query/evidence", response_model=QueryResponse)
 def evidence_query(req: EvidenceQueryRequest) -> QueryResponse:
     config = AllocationConfig(max_sources=req.max_sources, candidate_budget=req.candidate_budget,
-                              final_k=req.final_k, method=req.method)
+                              final_k=req.final_k, method=req.method, feedback_strength=req.feedback_strength,
+                              profile_strategy=req.profile_strategy, lexical_weight=req.lexical_weight)
     return QueryResponse(**run_evidence_query(state, req.question, config))
