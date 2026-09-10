@@ -2,6 +2,18 @@
 
 ## Current research direction
 
+Docs/32 measures v2 under A1 and A3; both are negative and must be preserved.
+A1: vector dispatch gives NO inversion resistance (exact recovery 1.000 at
+sigma 0), and noise cannot fix it — at sigma 0.10 retrieval agreement is
+already 0.265 while recovery is still 0.997, so utility dies faster than the
+attack. Do not describe sigma as an A1 lever. A3: v2's trust is INERT because
+`select_dispatch` uses it only as an exclusion gate, and raising the gate above
+the 0.5 cold-start prior deadlocks the network entirely (honest recall 0.000) —
+a defect in v2, not a tuning result; do not adopt a fix without re-running the
+ablation. The plausibility check blocks the attacker only by rejecting 17.7 of
+24 honest sources; keep it off by default. A2 decoys remain the only measured
+defence.
+
 Docs/30-31 cover the opt-in `routing_mode="v2"` privacy pipeline: local
 routing, one exposure budget covering genuine AND decoy contacts with no
 exemption, shared-routing-space vector dispatch instead of raw query text, and
