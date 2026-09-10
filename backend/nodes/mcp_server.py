@@ -74,7 +74,10 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
         from router.lexical_profile import build_sketch, VERSION
         profile.lexical_sketch = build_sketch(documents)
         profile.lexical_version = VERSION
-    node = InProcessNode(node_id, documents, local_embeddings, local_embedder=local_embedder)
+    from nodes.document_retrieval import LocalRetrievalConfig
+    node = InProcessNode(node_id, documents, local_embeddings, local_embedder=local_embedder,
+                         parent_document_ids=spec.get("parent_document_ids"),
+                         local_retrieval=LocalRetrievalConfig(**spec.get("local_retrieval", {})))
     return node, profile.__dict__, local_model
 
 

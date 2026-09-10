@@ -56,6 +56,9 @@ class InProcessNode:
         documents: list[str],
         document_embeddings: np.ndarray,
         local_embedder: Callable[[list[str]], np.ndarray] | None = None,
+        *,
+        parent_document_ids: list[str] | None = None,
+        local_retrieval=None,
     ) -> None:
         if len(documents) != len(document_embeddings):
             raise ValueError("documents and document_embeddings must be the same length")
@@ -65,6 +68,16 @@ class InProcessNode:
         # Kept so retrieve_from_text can re-embed a raw query in this node's
         # own space; optional so existing vector-based callers/tests still work.
         self.local_embedder = local_embedder
+        from nodes.document_retrieval import LocalRetrievalConfig
+        self.local_retrieval = local_retrieval or LocalRetrievalConfig()
+        if not isinstance(self.local_retrieval, LocalRetrievalConfig):
+            raise ValueError("local_retrieval must be LocalRetrievalConfig")
+        if parent_document_ids is not None and (len(parent_document_ids) != len(documents) or
+                any(not isinstance(p, str) or not p for p in parent_document_ids)):
+            raise ValueError("invalid parent_document_ids")
+        if self.local_retrieval.method.startswith("parent_cap") and parent_document_ids is None:
+            raise ValueError("parent caps require parent_document_ids")
+        self.parent_document_ids = parent_document_ids
 
     def retrieve(self, query_embedding: np.ndarray, top_n: int = 5, offset: int = 0) -> list[RetrievedPassage]:
         """Vector-in retrieval. `query_embedding` MUST already be in this
@@ -81,7 +94,12 @@ class InProcessNode:
         doc_norms = np.linalg.norm(self.document_embeddings, axis=1)
         doc_norms = np.where(doc_norms == 0, 1.0, doc_norms)
         scores = (self.document_embeddings @ q) / (doc_norms * q_norm)
-        order = np.argsort(scores)[::-1][offset:offset + top_n]
+        order = np.argsort(scores)[::-1]
+        if self.local_retrieval.method != "cosine":
+            from nodes.document_retrieval import rerank_local
+            order = rerank_local(order, scores, self.document_embeddings,
+                                 self.parent_document_ids, self.local_retrieval)
+        order = order[offset:offset + top_n]
         return [
             RetrievedPassage(source_id=self.source_id, document=self.documents[i], score=float(scores[i]))
             for i in order

@@ -1,5 +1,12 @@
 # Repository guidance
 
+Read `docs/34-discovery-completion-results.md` first for the latest state;
+do not reconstruct the full chat. The new Python acquisition experiment did
+NOT beat cosine on literal fact coverage. Document diversification increased
+document recall but reduced literal fact coverage. Real answer quality remains
+unmeasured. Old answer prompts do not represent these policies. No new MCP/API
+path was enabled. Reading pointers: `docs/32-focused-reading-pack.md`.
+
 ## Current research direction
 
 On branch `research/evidence-budget-routing`, the opt-in experiment is

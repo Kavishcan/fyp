@@ -1,5 +1,9 @@
 # Roadmap
 
+Latest completed step: [local document-diversity experiment and next tasks](31-next-steps-handoff.md).
+341 Python tests pass. Next priority is supporting-fact coverage, followed by
+real answer evaluation; parent-document recall is not sufficient evidence.
+
 This roadmap follows the revised independent-router direction. It is ordered by
 remaining work, not an assumed academic calendar. Confirm formal meeting,
 submission and dissertation requirements with the supervisor.
@@ -10,7 +14,7 @@ submission and dissertation requirements with the supervisor.
 - Strict budgets, adaptive stopping, exclusions and trace output are tested.
 - Smart API mode reaches in-process and real MCP sources.
 - Legacy remains the dashboard/API default.
-- The implementation was checked with 328 Python tests; the frontend contract
+- The implementation was checked with 341 Python tests; the frontend contract
   remains unchanged by the separate evidence endpoint.
 - Scientific benefit, formal privacy and hijacking resistance are not established.
 

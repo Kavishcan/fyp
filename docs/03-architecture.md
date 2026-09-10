@@ -1,5 +1,10 @@
 # Architecture
 
+Latest opt-in source-side extension: [document-aware local retrieval](31-next-steps-handoff.md).
+Nodes can promote one/two chunks per parent document or use MMR over a fixed
+local pool, with stable pagination and unchanged router budgets. Parent IDs
+come from ingestion. Default cosine retrieval and MCP response shape remain.
+
 The proposed system is an independent, training-free smart source router.
 RAGRoute is a comparison baseline, not the engine beneath the smart router.
 This document describes the current code; future extensions are labelled.

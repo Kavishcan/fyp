@@ -1,5 +1,9 @@
 # FedSafeRouter
 
+For the latest measured experiment and a short continuation plan, start with
+[discovery/completion results](docs/34-discovery-completion-results.md). The [21-paper reading pack](docs/32-focused-reading-pack.md)
+is grouped by priority. Document-aware retrieval is opt-in; defaults are unchanged.
+
 **Training-Free Exposure-Constrained and Trust-Aware Adaptive Source Routing
 for Scalable Federated RAG.**
 
