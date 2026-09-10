@@ -2,6 +2,19 @@
 
 ## Current research direction
 
+Docs/30-31 cover the opt-in `routing_mode="v2"` privacy pipeline: local
+routing, one exposure budget covering genuine AND decoy contacts with no
+exemption, shared-routing-space vector dispatch instead of raw query text, and
+Ed25519 profile signing. Preserve these results. v2 TIES legacy at matched
+contacts (0.711 recall, 4.45 audit, A2 0.258 vs 0.259) — it is not a better
+router, and its benefit is that sigma becomes unnecessary. Two findings must
+not be quietly reversed: the E3 decoy-trust exemption identified decoys at
+precision/recall 1.00 and is therefore OFF in the API path, and low A2
+precision alone does not mean private (smart posts 0.072 only because its
+selections are poor). A routing-space vector is not query secrecy — it stays
+invertible. Signing proves integrity and key binding, never truthfulness; a
+signed forged profile verifies. Legacy remains the API/dashboard default.
+
 FedSafeRouter is a training-free, exposure-constrained and trust-aware adaptive
 source router for Federated RAG. The user explicitly chose to implement the
 smart router itself. RAGRoute is a comparison baseline, not its required engine.
@@ -48,6 +61,8 @@ The earlier instruction prohibiting a new router is superseded.
 | Path | Role |
 |---|---|
 | backend/router/smart.py | SmartConfig, SourceEvidence, SmartRouter, SmartDecision, EvidenceTrust |
+| backend/router/v2.py | V2Config, V2Decision, select_dispatch, dispatch_payload, DecoyAwareEvidenceTrust (exemption OFF by default, see docs/30) |
+| backend/nodes/signing.py | Ed25519 profile signing; integrity and key binding only, not truthfulness |
 | backend/router/pipeline.py | Preserved legacy baseline-plus-layer path |
 | backend/router/exposure.py | Legacy proxy accounting; genuine exemptions mean it is not smart budget enforcement |
 | backend/router/trust.py | Legacy BoundedTrustUpdate, not official TASR |

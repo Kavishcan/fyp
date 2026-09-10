@@ -70,7 +70,14 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
         policy_labels=spec.get("policy_labels", []),
     )
     attach_metadata(profile, documents, routing_embedder, enabled=spec.get("publish_metadata", True))
-    node = InProcessNode(node_id, documents, local_embeddings, local_embedder=local_embedder)
+    # v2 integrity (docs/30): this node's persistent Ed25519 key lives next to
+    # its data file so every fresh server process signs with the same identity.
+    from nodes.signing import load_or_create_key_file, sign_profile  # noqa: E402
+
+    sign_profile(profile, load_or_create_key_file(data_file.with_suffix(".key")))
+    node = InProcessNode(
+        node_id, documents, local_embeddings, local_embedder=local_embedder, routing_embeddings=routing_embeddings
+    )
     return node, profile.__dict__, local_model
 
 
@@ -88,6 +95,7 @@ def main() -> None:
         serialisable = dict(profile_dict)
         serialisable["centroids"] = np.asarray(serialisable["centroids"]).tolist()
         serialisable["profile_signature"] = serialisable["profile_signature"].hex()
+        serialisable["public_key"] = serialisable["public_key"].hex()
         if serialisable["description_embedding"] is not None:
             serialisable["description_embedding"] = np.asarray(serialisable["description_embedding"]).tolist()
         serialisable["local_model"] = local_model
@@ -95,8 +103,18 @@ def main() -> None:
 
     @server.tool()
     def retrieve(query: str, top_n: int = 5) -> str:
-        """Retrieve the top-n locally-held passages for `query`."""
+        """Retrieve the top-n locally-held passages for `query` (raw text; legacy/smart modes)."""
         passages = node.retrieve_from_text(query, top_n=top_n)
+        return json.dumps([{"document": p.document, "score": p.score} for p in passages])
+
+    @server.tool()
+    def retrieve_vector(vector: list[float], top_n: int = 5) -> str:
+        """v2 dispatch: retrieve by a shared-routing-space vector, never raw text.
+
+        This node never sees the query string in this mode. It is hardening,
+        not secrecy — the vector can still be inverted toward the query.
+        """
+        passages = node.retrieve_vector(np.asarray(vector, dtype=np.float64), top_n=top_n)
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
 
     server.run(transport="stdio")

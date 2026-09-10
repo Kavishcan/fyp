@@ -48,7 +48,12 @@ export interface QueryRequest {
   max_nodes?: number;
   genuine_k?: number;
   sigma?: number;
-  routing_mode?: "legacy" | "smart";
+  /** "v2" (docs/30) dispatches a shared-space vector instead of the query text
+   * and counts genuine + decoy contacts against one budget. Opt-in; "legacy"
+   * remains the default. */
+  routing_mode?: "legacy" | "smart" | "v2";
+  /** v2 only: candidate pool decoys are drawn from. */
+  coarse_k?: number;
   exposure_budget?: number;
   minimum_gain?: number;
   minimum_trust?: number;
@@ -57,6 +62,32 @@ export interface QueryRequest {
   description_weight?: number;
   selection_policy?: "overlap" | "relative";
   relative_score_floor?: number;
+}
+
+/** Returned when routing_mode="v2". Mirrors router/v2.V2Decision plus the
+ * fields api/state.py attaches. */
+export interface V2RoutingDetails {
+  mode: "v2";
+  genuine_source_ids: string[];
+  decoy_source_ids: string[];
+  /** Shuffled: order does not encode genuine vs decoy. */
+  dispatched_source_ids: string[];
+  coarse_candidate_ids: string[];
+  excluded: Record<string, string>;
+  steps: Array<{
+    source_id: string;
+    role: "genuine" | "decoy";
+    relevance: number | null;
+    exposure_cost: number;
+    cumulative_exposure: number;
+  }>;
+  exposure_spent: number;
+  stop_reason: string;
+  config: Record<string, number | string | null>;
+  exposure_unit: string;
+  embedding_model: string;
+  dispatch_payload_kind: "shared_routing_space_vector";
+  retrieval_errors: Record<string, string>;
 }
 
 export interface SmartRoutingDetails {
@@ -97,7 +128,7 @@ export interface QueryResponse {
   citations: Citation[];
   nodes_contacted: string[];
   generation_status: string;
-  routing_details?: SmartRoutingDetails | null;
+  routing_details?: SmartRoutingDetails | V2RoutingDetails | null;
 }
 
 export interface AuditResponse {
@@ -107,7 +138,7 @@ export interface AuditResponse {
   genuine_source_ids: string[];
   dispatched_source_ids: string[];
   decoy_source_ids: string[];
-  routing_details?: SmartRoutingDetails | null;
+  routing_details?: SmartRoutingDetails | V2RoutingDetails | null;
 }
 
 /** A real MCP node server prepared by data/prepare_beir_nodes.py but not

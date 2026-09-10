@@ -30,6 +30,7 @@ from router.pipeline import PipelineResult, PrivacyAwarePipeline, RerankFeatures
 from router.registry import SourceRegistry
 from router.smart import EvidenceTrust, SmartConfig, SmartRouter, SourceEvidence
 from router.trust import BoundedTrustUpdate
+from router.v2 import DecoyAwareEvidenceTrust, V2Config, dispatch_payload, dispatched_vector, select_dispatch
 
 from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
 from .topic import assign_topic_key
@@ -46,6 +47,7 @@ def _profile_from_dict(data: dict) -> SourceProfile:
         expected_latency_ms=data.get("expected_latency_ms", 0.0),
         profile_version=data.get("profile_version", 1),
         profile_signature=bytes.fromhex(data.get("profile_signature", "")),
+        public_key=bytes.fromhex(data.get("public_key", "")),
         description=data.get("description", ""),
         topics=data.get("topics", []),
         description_embedding=(np.asarray(data["description_embedding"], dtype=np.float64)
@@ -67,6 +69,9 @@ class AppState:
         self.routing_embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
         self.trust_update = BoundedTrustUpdate(alpha=0.3, decoy_aware=False)
         self.smart_trust = EvidenceTrust()
+        # v2 keeps its own trust state so its decoy exemption cannot alter the
+        # smart-mode control's numbers (docs/30).
+        self.v2_trust = DecoyAwareEvidenceTrust()
         # Demo policy grants are configured by the coordinator, never by a
         # query payload. Empty profile labels mean public in this demo only.
         self.allowed_policy_labels: set[str] = set()
@@ -180,6 +185,7 @@ class AppState:
         if existing is not None:
             profile.profile_version = existing.profile_version + 1
         self.smart_trust.reset(node_id)
+        self.v2_trust.reset(node_id)
         self.nodes[node_id] = node
         self.node_local_models[node_id] = local_model
         self.registry.publish(profile)
@@ -194,6 +200,7 @@ class AppState:
         self.nodes.pop(node_id, None)
         self.node_local_models.pop(node_id, None)
         self.smart_trust.reset(node_id)
+        self.v2_trust.reset(node_id)
         self.source_exposure_costs.pop(node_id, None)
         return removed
 
@@ -225,9 +232,10 @@ class AppState:
         aggregation: str = "mean",
         relevance_mode: str = "centroid", description_weight: float = 0.5,
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
+        coarse_k: int = 15,
     ) -> dict:
-        if routing_mode not in {"legacy", "smart"}:
-            raise ValueError("routing_mode must be legacy or smart")
+        if routing_mode not in {"legacy", "smart", "v2"}:
+            raise ValueError("routing_mode must be legacy, smart or v2")
         if routing_mode == "legacy" and selection_policy != "overlap":
             raise ValueError("relative selection requires smart mode")
         if routing_mode == "smart" and sigma != 0:
@@ -260,7 +268,33 @@ class AppState:
         topic_key = "smart-no-decoys" if routing_mode == "smart" else assign_topic_key(query_embedding, profiles)
 
         routing_details = None
-        if routing_mode == "smart":
+        # The single vector v2 dispatches; None in every other mode. Built once
+        # so every contacted node receives an identical payload.
+        v2_vector = None
+        if routing_mode == "v2":
+            v2_config = V2Config(
+                exposure_budget=float(max_nodes) if exposure_budget is None else exposure_budget,
+                max_sources=max_nodes, genuine_k=genuine_k, coarse_k=coarse_k,
+                aggregation=aggregation, minimum_trust=minimum_trust, sigma=sigma,
+            )
+            decision = select_dispatch(
+                query_embedding, profiles,
+                trust={p.source_id: self.v2_trust.get(p.source_id)[0] for p in profiles},
+                per_source_cost={p.source_id: self.source_exposure_costs.get(p.source_id, 1.0) for p in profiles},
+                topic_key=topic_key, config=v2_config,
+            )
+            v2_vector = dispatched_vector(query_embedding, sigma, self._rng)
+            routing_details = decision.to_dict()
+            routing_details["mode"] = "v2"
+            routing_details["exposure_unit"] = "coordinator_configured_contact_cost"
+            routing_details["embedding_model"] = self.routing_embedder.model_name
+            routing_details["dispatch_payload_kind"] = "shared_routing_space_vector"
+            result = PipelineResult(
+                dispatched_source_ids=decision.dispatched_source_ids,
+                genuine_source_ids=decision.genuine_source_ids,
+                coarse_candidate_ids=decision.coarse_candidate_ids,
+            )
+        elif routing_mode == "smart":
             evidence = {}
             for profile in profiles:
                 trust, observations = self.smart_trust.get(profile.source_id)
@@ -290,7 +324,18 @@ class AppState:
             if node is None:
                 continue
             try:
-                if isinstance(node, MCPNodeHandle):
+                if routing_mode == "v2":
+                    # Identical payload to every node, genuine or decoy, and never
+                    # the query text. Retrieval uses the SHARED routing space, so a
+                    # node's own local model is unused in this mode.
+                    payload = dispatch_payload(v2_vector, top_n=1)
+                    if isinstance(node, MCPNodeHandle):
+                        raw_passages = node.retrieve_vector(payload["vector"], top_n=payload["top_n"])
+                        passages = [(p["document"], p["score"]) for p in raw_passages]
+                    else:
+                        vector = np.asarray(payload["vector"], dtype=np.float64)
+                        passages = [(p.document, p.score) for p in node.retrieve_vector(vector, top_n=payload["top_n"])]
+                elif isinstance(node, MCPNodeHandle):
                     raw_passages = node.retrieve_from_text(question, top_n=1)
                     passages = [(p["document"], p["score"]) for p in raw_passages]
                 elif node.local_embedder is self.routing_embedder:
@@ -305,10 +350,18 @@ class AppState:
                 passages = []
             for document, score in passages:
                 citations.append({"node_id": node_id, "document": document, "score": score})
-            if routing_mode == "smart":
+            if routing_mode in {"smart", "v2"}:
                 documents = [document for document, _ in passages]
                 embeddings = self.routing_embedder.embed(documents) if documents else np.empty((0, 0))
-                self.smart_trust.observe(node_id, self.registry.get(node_id), embeddings)
+                if routing_mode == "v2":
+                    # Every contact updates trust, decoy or not. The E3 exemption
+                    # is deliberately NOT used here: it identified decoys at
+                    # precision/recall 1.00 via the "trust never moved" tell
+                    # (E4, docs/30), and this mechanism barely penalises decoys
+                    # anyway. See router/v2.DecoyAwareEvidenceTrust.
+                    self.v2_trust.observe(node_id, self.registry.get(node_id), embeddings)
+                else:
+                    self.smart_trust.observe(node_id, self.registry.get(node_id), embeddings)
 
         if routing_mode == "legacy":
             signals = {node_id: self._evidence_relevance(node_id, citations) for node_id in result.dispatched_source_ids}

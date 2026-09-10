@@ -169,3 +169,25 @@ def test_run_plain_baseline_with_real_tasr_adapter():
         tasr, "rung6_tasr_real", query_vectors, relevant_nodes, _NullInstrumentation(), top_k=1
     )
     assert summary["final_recall"] == 1.0
+
+
+def test_collect_documents_can_tolerate_missing_required_ids(tmp_path):
+    """Some BEIR qrels reference doc ids absent from corpus.jsonl, so a strict
+    run fails or passes depending on which queries a seed sampled. The tolerant
+    path returns what exists; the caller drops the affected queries.
+    """
+    import json as _json
+    import random as _random
+
+    from eval.sweep import collect_documents
+
+    corpus_dir = tmp_path / "toy"
+    corpus_dir.mkdir()
+    with (corpus_dir / "corpus.jsonl").open("w") as handle:
+        handle.write(_json.dumps({"_id": "d1", "title": "", "text": "present"}) + "\n")
+
+    with pytest.raises(ValueError, match="not found"):
+        collect_documents(corpus_dir, {"d1", "gone"}, 2, _random.Random(0))
+
+    documents = collect_documents(corpus_dir, {"d1", "gone"}, 2, _random.Random(0), allow_missing=True)
+    assert set(documents) == {"d1"}

@@ -128,3 +128,46 @@ def test_relative_policy_dispatches_through_real_mcp(node_data_file, tmp_path):
     assert result["routing_details"]["exposure_spent"] == 1
     assert result["citations"]
     assert state.smart_trust.get("test_node")[1] == 1
+
+
+def test_mcp_profile_is_signed_and_verifies_over_the_wire(node_data_file):
+    """The node signs with a key it keeps beside its data file; the profile
+    survives the JSON/hex round trip with the signature still valid.
+    """
+    from nodes.signing import verify_profile
+    from api.state import _profile_from_dict
+
+    handle = MCPNodeHandle(node_id="test_node", data_file=node_data_file)
+    raw = handle.get_profile()
+    assert raw["public_key"] and raw["profile_signature"]
+    assert verify_profile(_profile_from_dict(raw)) is True
+
+
+def test_mcp_node_keeps_the_same_signing_identity_across_processes(node_data_file):
+    """mcp_client spawns a fresh process per call, so the key must persist."""
+    handle = MCPNodeHandle(node_id="test_node", data_file=node_data_file)
+    assert handle.get_profile()["public_key"] == handle.get_profile()["public_key"]
+
+
+def test_mcp_retrieve_vector_returns_passages_without_the_query_text(node_data_file):
+    """v2 dispatch over real MCP stdio transport: the tool takes a vector."""
+    from nodes.embedding import SHARED_ROUTING_MODEL, HashingEmbedder
+
+    embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
+    vector = embedder.embed(["chemo tumour treatment"])[0]
+    handle = MCPNodeHandle(node_id="test_node", data_file=node_data_file)
+    results = handle.retrieve_vector(vector, top_n=1)
+    assert len(results) == 1
+    assert "chemo" in results[0]["document"].lower()
+
+
+def test_v2_mode_runs_end_to_end_over_real_mcp(node_data_file, tmp_path):
+    state = AppState(instrumentation_path=str(tmp_path / "v2.jsonl"))
+    state.generator = None
+    asyncio.run(state.register_mcp_node_async(node_data_file))
+    result = state.run_query("chemo tumour protocol", max_nodes=1, genuine_k=1, sigma=0.0,
+                             routing_mode="v2")
+    assert result["nodes_contacted"] == ["test_node"]
+    assert result["citations"]
+    assert "chemo" in result["citations"][0]["document"].lower()
+    assert result["routing_details"]["dispatch_payload_kind"] == "shared_routing_space_vector"

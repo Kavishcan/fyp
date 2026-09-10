@@ -30,6 +30,11 @@ class SourceProfile:
     expected_latency_ms: float = 0.0
     profile_version: int = 1
     profile_signature: bytes = b""
+    # Ed25519 public key of the publisher, delivered alongside the profile.
+    # Verifying against it proves the profile wasn't altered after signing and
+    # binds it to whoever holds the private key — it does NOT authenticate who
+    # that is (no PKI/trust anchor here) and cannot stop a node signing a lie.
+    public_key: bytes = b""
     description: str = ""
     topics: list[str] = field(default_factory=list)
     description_embedding: object | None = None

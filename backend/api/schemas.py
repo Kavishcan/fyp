@@ -54,7 +54,8 @@ class QueryRequest(BaseModel):
     max_nodes: int = Field(default=5, ge=0)  # hard fan-out cap in smart mode
     genuine_k: int = Field(default=2, ge=0)  # legacy mode only
     sigma: float = Field(default=0.0, ge=0, allow_inf_nan=False)
-    routing_mode: Literal["legacy", "smart"] = "legacy"
+    routing_mode: Literal["legacy", "smart", "v2"] = "legacy"
+    coarse_k: int = Field(default=15, ge=0)  # v2 only: candidate pool decoys are drawn from
     exposure_budget: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
@@ -74,6 +75,16 @@ class QueryRequest(BaseModel):
             raise ValueError("strict exposure_budget requires smart mode")
         if self.routing_mode == "legacy" and self.relevance_mode != "centroid":
             raise ValueError("metadata relevance requires smart mode")
+        # v2 (docs/30) reuses max_nodes/genuine_k/sigma/exposure_budget/minimum_trust
+        # and adds coarse_k. The smart-only knobs below have no v2 meaning, so
+        # reject them explicitly rather than accepting and ignoring them.
+        if self.routing_mode == "v2":
+            if self.selection_policy != "overlap":
+                raise ValueError("relative selection requires smart mode")
+            if self.relevance_mode != "centroid":
+                raise ValueError("metadata relevance requires smart mode")
+            if self.genuine_k > self.max_nodes:
+                raise ValueError("genuine_k cannot exceed max_nodes in v2 mode")
         return self
 
 

@@ -127,10 +127,20 @@ def collect_documents(
     required_doc_ids: set[str],
     target_total: int,
     rng: random.Random,
+    *,
+    allow_missing: bool = False,
 ) -> dict[str, str]:
     """doc_id -> text. Every id in `required_doc_ids` is guaranteed present;
     filler documents are added (up to `target_total`) so nodes have a
     realistic document count beyond just the qrels-referenced ones.
+
+    Some BEIR qrels reference doc ids absent from `corpus.jsonl`, so whether
+    this raises depends on which queries a seed happens to sample — a
+    multi-seed run can fail on one seed and pass on another.
+    `allow_missing=True` returns what it found instead of raising; the caller
+    then drops the affected queries through the usual empty-relevant-set path
+    and must report how many. Default stays False so every previously-run
+    experiment behaves exactly as before.
     """
     documents: dict[str, str] = {}
     filler_pool: list[tuple[str, str]] = []
@@ -147,7 +157,7 @@ def collect_documents(
                 filler_pool.append((doc_id, full_text))
 
     missing = required_doc_ids - documents.keys()
-    if missing:
+    if missing and not allow_missing:
         raise ValueError(f"{len(missing)} required doc ids not found in {corpus_dir}/corpus.jsonl")
 
     needed_filler = max(0, target_total - len(documents))
@@ -372,7 +382,13 @@ def _summarise(condition_name, rows, *, sigma, m, n_queries) -> dict:
 # --- top-level orchestration -------------------------------------------------
 
 
-def build_dataset(corpora: list[str], n_queries_per_corpus: int, docs_per_node: int, nodes_per_corpus: int, seed: int):
+def build_dataset(corpora: list[str], n_queries_per_corpus: int, docs_per_node: int, nodes_per_corpus: int, seed: int,
+                  *, allow_missing_docs: bool = False):
+    """`allow_missing_docs=True` tolerates qrels that reference doc ids absent
+    from corpus.jsonl (see collect_documents); the affected queries then fall
+    out through the existing empty-relevant-set drop and are counted in the
+    returned `dropped`. Default False keeps prior experiments byte-identical.
+    """
     rng = random.Random(seed)
     all_node_docs: dict[str, list[str]] = {}
     node_of_doc: dict[str, str] = {}
@@ -384,7 +400,8 @@ def build_dataset(corpora: list[str], n_queries_per_corpus: int, docs_per_node: 
         qrels = load_qrels(corpus_dir)
         queries = select_queries(corpus_dir, qrels, n_queries_per_corpus, rng)
         required_doc_ids = {did for qid in queries for did in qrels[qid]}
-        documents = collect_documents(corpus_dir, required_doc_ids, docs_per_node * nodes_per_corpus, rng)
+        documents = collect_documents(corpus_dir, required_doc_ids, docs_per_node * nodes_per_corpus, rng,
+                                      allow_missing=allow_missing_docs)
         node_docs, doc_to_node = partition_nodes(corpus_name, documents, nodes_per_corpus, rng)
 
         all_node_docs.update(node_docs)

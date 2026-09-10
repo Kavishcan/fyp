@@ -57,6 +57,11 @@ class MCPNodeHandle:
     async def retrieve_async(self, query: str, top_n: int = 5) -> list[dict]:
         return json.loads(await self._call_tool("retrieve", {"query": query, "top_n": top_n}))
 
+    async def retrieve_vector_async(self, vector, top_n: int = 5) -> list[dict]:
+        """v2 dispatch: send a shared-routing-space vector, never the query text."""
+        payload = {"vector": [float(x) for x in vector], "top_n": top_n}
+        return json.loads(await self._call_tool("retrieve_vector", payload))
+
     def get_profile(self) -> dict:
         """Sync wrapper — safe to call from a plain `def` FastAPI handler."""
         return asyncio.run(self.get_profile_async())
@@ -64,3 +69,6 @@ class MCPNodeHandle:
     def retrieve_from_text(self, query: str, top_n: int = 5) -> list[dict]:
         """Sync wrapper matching the shape AppState expects for citations."""
         return asyncio.run(self.retrieve_async(query, top_n=top_n))
+
+    def retrieve_vector(self, vector, top_n: int = 5) -> list[dict]:
+        return asyncio.run(self.retrieve_vector_async(vector, top_n=top_n))

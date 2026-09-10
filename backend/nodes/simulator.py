@@ -56,6 +56,7 @@ class InProcessNode:
         documents: list[str],
         document_embeddings: np.ndarray,
         local_embedder: Callable[[list[str]], np.ndarray] | None = None,
+        routing_embeddings: np.ndarray | None = None,
     ) -> None:
         if len(documents) != len(document_embeddings):
             raise ValueError("documents and document_embeddings must be the same length")
@@ -65,6 +66,34 @@ class InProcessNode:
         # Kept so retrieve_from_text can re-embed a raw query in this node's
         # own space; optional so existing vector-based callers/tests still work.
         self.local_embedder = local_embedder
+        # v2 (docs/30): a second index in the SHARED routing space so the
+        # coordinator can dispatch a vector instead of raw query text. Costs the
+        # node retrieval-model heterogeneity for that mode — the shared encoder,
+        # not the node's own local model, does v2 retrieval.
+        if routing_embeddings is not None and len(routing_embeddings) != len(documents):
+            raise ValueError("documents and routing_embeddings must be the same length")
+        self.routing_embeddings = None if routing_embeddings is None else np.asarray(routing_embeddings, dtype=np.float64)
+
+    def retrieve_vector(self, routing_vector: np.ndarray, top_n: int = 5) -> list[RetrievedPassage]:
+        """v2 dispatch: `routing_vector` is in the shared routing space, never
+        raw text. Not query secrecy — a routing-space vector can still be
+        inverted toward the query (attacks/a1_inversion.py); it removes the
+        plaintext, nothing more.
+        """
+        if self.routing_embeddings is None:
+            raise ValueError(f"node {self.source_id!r} has no routing-space index; build it with routing_embeddings")
+        if not len(self.documents):
+            return []
+        q = np.asarray(routing_vector, dtype=np.float64)
+        q_norm = np.linalg.norm(q) or 1.0
+        doc_norms = np.linalg.norm(self.routing_embeddings, axis=1)
+        doc_norms = np.where(doc_norms == 0, 1.0, doc_norms)
+        scores = (self.routing_embeddings @ q) / (doc_norms * q_norm)
+        order = np.argsort(scores)[::-1][:top_n]
+        return [
+            RetrievedPassage(source_id=self.source_id, document=self.documents[i], score=float(scores[i]))
+            for i in order
+        ]
 
     def retrieve(self, query_embedding: np.ndarray, top_n: int = 5) -> list[RetrievedPassage]:
         """Vector-in retrieval. `query_embedding` MUST already be in this
@@ -112,6 +141,7 @@ def build_simulated_source(
     rng: np.random.Generator,
     policy_labels: list | None = None,
     publish_metadata: bool = True,
+    signing_key=None,
 ) -> tuple[InProcessNode, SourceProfile]:
     """PII removal happens once per embedder call, on the same raw documents.
 
@@ -119,6 +149,13 @@ def build_simulated_source(
     heterogeneity unless the caller explicitly opts a node into a different
     local model. The published profile is always built from `routing_embedder`
     output; the node's own index is always built from `local_embedder` output.
+    The node also keeps the routing-space document embeddings as a second index
+    for v2 vector dispatch (InProcessNode.retrieve_vector).
+
+    `signing_key` (an Ed25519 private key, nodes/signing.py) signs the profile.
+    For a simulated node the coordinator holds this key itself, so the
+    signature exercises the verification path but proves nothing about a
+    remote party — state that wherever simulated results are reported.
     """
     local_embedder = local_embedder or routing_embedder
 
@@ -137,7 +174,13 @@ def build_simulated_source(
         policy_labels=policy_labels,
     )
     attach_metadata(profile, documents, routing_embedder, enabled=publish_metadata)
-    node = InProcessNode(source_id, documents, local_embeddings, local_embedder=local_embedder)
+    if signing_key is not None:
+        from nodes.signing import sign_profile
+
+        sign_profile(profile, signing_key)
+    node = InProcessNode(
+        source_id, documents, local_embeddings, local_embedder=local_embedder, routing_embeddings=routing_embeddings
+    )
     return node, profile
 
 
