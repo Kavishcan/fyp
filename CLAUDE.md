@@ -8,6 +8,16 @@ the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/38 is the first answer-level result: MIRAGE, 150 questions, local
+Qwen3.5-9B via Ollama. closed-book 0.547, psi (local routing + PSI
+dispatch, cap 4) 0.580, broadcast (PSI to all 8 nodes) 0.627. Retrieval
+without any node seeing the query helps; routing captures ~40% of the
+contact-everything gain at half the contacts; gains concentrate on
+literature questions (pubmedqa +13, bioasq +10) and knowledge MCQ do not
+benefit. ±8-point intervals at n=150 — do not describe psi vs closed-book
+as significant. Corpora are BEIR samples, not MedRAG, so absolute accuracy
+is not comparable to published MIRAGE numbers.
+
 Docs/37: on the project's 200 synthetic privacy cases, psi exposes 0 of 3
 sensitive values to nodes; legacy/smart/v2 expose 3 of 3 (v2 via
 nearest-neighbour inversion); regex redaction removes only the email. The
@@ -146,6 +156,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
 | backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
 | backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |
+| backend/eval/run_answer_quality.py | E10 MIRAGE answer quality, closed-book vs psi vs broadcast (docs/38) |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 
