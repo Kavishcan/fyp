@@ -75,20 +75,21 @@ def sample_queries(corpora: list[str], per_corpus: int) -> list[str]:
     return texts
 
 
-def register_nodes(state: AppState, files: list[Path]) -> list[float]:
+def register_nodes(state: AppState, files: list[Path], *, persistent: bool = False) -> list[float]:
     """Registers each node over MCP and returns per-node registration ms."""
     async def _go():
         timings = []
         for data_file in files:
             started = time.perf_counter()
-            await state.register_mcp_node_async(data_file)
+            await state.register_mcp_node_async(data_file, persistent=persistent)
             timings.append((time.perf_counter() - started) * 1000.0)
         return timings
 
     return asyncio.run(_go())
 
 
-def summarise(logs: list[dict], *, mode: str, registered: int, registration_ms: list[float]) -> dict:
+def summarise(logs: list[dict], *, mode: str, registered: int, registration_ms: list[float],
+              transport: str = "mcp-stdio-subprocess-per-call") -> dict:
     def stage(name: str) -> list[float]:
         return [log["stage_latency_ms"].get(name, float("nan")) for log in logs]
 
@@ -102,7 +103,7 @@ def summarise(logs: list[dict], *, mode: str, registered: int, registration_ms: 
         "mode": mode,
         "registered_nodes": registered,
         "queries": len(logs),
-        "transport": "mcp-stdio-subprocess-per-call",
+        "transport": transport,
         "registration_ms_per_node": float(np.mean(registration_ms)),
         "registration_total_ms": float(np.sum(registration_ms)),
         "contacts": float(np.mean(contacts)),
@@ -127,6 +128,7 @@ def main() -> None:
                         help="registered nodes per tier; 0 means every available node file")
     parser.add_argument("--modes", nargs="+", choices=["legacy", "smart", "v2", "psi"], default=["legacy", "v2", "psi"])
     parser.add_argument("--psi-fetch-set", type=int, default=None, help="psi: envelope anonymity set per node (None = all)")
+    parser.add_argument("--persistent", action="store_true", help="keep one server process + MCP session per node")
     parser.add_argument("--n-queries", type=int, default=20)
     parser.add_argument("--query-corpora", nargs="+", default=["arguana", "nfcorpus", "scifact", "fiqa"])
     parser.add_argument("--max-nodes", type=int, default=6)
@@ -156,14 +158,17 @@ def main() -> None:
             log_path = log_dir / f"{mode}_{len(chosen)}.jsonl"
             state = AppState(instrumentation_path=str(log_path))
             state.generator = None  # transport only; never call an external LLM here
-            registration_ms = register_nodes(state, chosen)
+            registration_ms = register_nodes(state, chosen, persistent=args.persistent)
             print(f"tier {len(chosen)} nodes, mode {mode}: registered in "
                   f"{sum(registration_ms) / 1000:.1f}s", flush=True)
             for question in questions:
                 state.run_query(question, max_nodes=args.max_nodes, genuine_k=args.genuine_k,
                                 sigma=0.0, routing_mode=mode, psi_fetch_set=args.psi_fetch_set)
             logs = state.instrumentation.read_all()
-            row = summarise(logs, mode=mode, registered=len(chosen), registration_ms=registration_ms)
+            row = summarise(logs, mode=mode, registered=len(chosen), registration_ms=registration_ms,
+                            transport="mcp-stdio-persistent-session" if args.persistent else "mcp-stdio-subprocess-per-call")
+            for node_id in list(state.nodes):
+                state.remove_node(node_id)  # closes persistent sessions
             rows.append(row)
             print(f"  total {row['total_ms']:.0f}ms/query, contact {row['contact_ms']:.0f}ms, "
                   f"request {row['request_bytes']:.0f}B, response {row['response_bytes']:.0f}B", flush=True)

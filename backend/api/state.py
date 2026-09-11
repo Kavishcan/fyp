@@ -24,7 +24,7 @@ from baselines.base import SourceProfile
 from baselines.cosine_router import CosineRouter, aggregate_scores
 from eval.instrument import Instrumentation, QueryLog
 from generation import get_generator
-from nodes.mcp_client import MCPNodeHandle
+from nodes.mcp_client import MCPNodeHandle, PersistentMCPNodeHandle
 from nodes.simulator import InProcessNode, build_simulated_source
 from router.exposure import ExposureFactors
 from router.pipeline import PipelineResult, PrivacyAwarePipeline, RerankFeatures, RerankWeights
@@ -119,7 +119,7 @@ class AppState:
         self._publish(node_id, node, profile, local_model or SHARED_ROUTING_MODEL)
         return profile
 
-    async def register_mcp_node_async(self, data_file: Path) -> SourceProfile:
+    async def register_mcp_node_async(self, data_file: Path, *, persistent: bool = False) -> SourceProfile:
         """Registers a node backed by a real, separate MCP server process.
 
         Fetches the profile via the `get_profile` MCP tool — the coordinator
@@ -130,14 +130,15 @@ class AppState:
         nest inside one, so this calls the `_async` methods directly instead.
         """
         node_id = Path(data_file).stem
-        handle = MCPNodeHandle(node_id=node_id, data_file=Path(data_file))
+        handle_cls = PersistentMCPNodeHandle if persistent else MCPNodeHandle
+        handle = handle_cls(node_id=node_id, data_file=Path(data_file))
         profile_data = await handle.get_profile_async()
         profile = _profile_from_dict(profile_data)
         local_model = profile_data.get("local_model") or SHARED_ROUTING_MODEL
         self._publish(profile.source_id, handle, profile, local_model)
         return profile
 
-    async def load_mcp_nodes_from_dir(self, directory: str | Path) -> list[str]:
+    async def load_mcp_nodes_from_dir(self, directory: str | Path, *, persistent: bool = False) -> list[str]:
         """Registers every `*.json` node spec in `directory`. Missing
         directory or individual bad files are skipped, not fatal — this runs
         at startup and a demo with zero MCP nodes should still boot.
@@ -148,7 +149,7 @@ class AppState:
             return loaded
         for data_file in sorted(directory.glob("*.json")):
             try:
-                profile = await self.register_mcp_node_async(data_file)
+                profile = await self.register_mcp_node_async(data_file, persistent=persistent)
                 loaded.append(profile.source_id)
             except Exception as exc:  # noqa: BLE001 - startup must not crash the app
                 print(f"[startup] skipping MCP node {data_file}: {exc}")
@@ -194,13 +195,13 @@ class AppState:
         self.registry.publish(profile)
 
     def remove_node(self, node_id: str) -> bool:
-        """Deregisters a node — simulated or MCP-backed alike. For an MCP node
-        this only forgets the handle; nodes/mcp_client.py spawns a fresh
-        subprocess per call rather than keeping one alive, so there is no
-        long-lived process to terminate here.
+        """Deregisters a node — simulated or MCP-backed alike. A spawn-per-call
+        MCP handle has no live process; a persistent one is closed here.
         """
         removed = self.registry.remove(node_id)
-        self.nodes.pop(node_id, None)
+        node = self.nodes.pop(node_id, None)
+        if isinstance(node, PersistentMCPNodeHandle):
+            node.close()  # the one case with a live process to terminate
         self.node_local_models.pop(node_id, None)
         self.smart_trust.reset(node_id)
         self.v2_trust.reset(node_id)

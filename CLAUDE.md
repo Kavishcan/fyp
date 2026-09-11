@@ -8,6 +8,21 @@ the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/37: on the project's 200 synthetic privacy cases, psi exposes 0 of 3
+sensitive values to nodes; legacy/smart/v2 expose 3 of 3 (v2 via
+nearest-neighbour inversion); regex redaction removes only the email. The
+PII preamble itself lowers routing (allowed client reached 0.540 vs 0.620
+without it) — redaction before embedding and PSI are complementary. All 60
+attack cases succeed in every mode (attacker selected and cited 1.000):
+there is no A3 defence and no cross-node evidence filter; encryption does
+not change that. Enumeration: an authorised client opens a node's whole
+table in ⌈clusters/nprobe⌉ queries (75 for 150 clusters) — the OPRF makes
+it rate-limitable, not impossible. Persistent MCP sessions
+(PersistentMCPNodeHandle) bring legacy/v2/psi to 10/9/61 ms per query on
+30 real nodes; psi's real per-contact cost is ~10 ms and ~170 KB per
+40-document node. Ollama local generation exists (localhost only) and has
+produced no answer-quality number; Ollama is not installed here.
+
 Docs/36: `routing_mode="psi"` is the first dispatch stage in which a node
 receives neither the query nor a vector — blinded cluster ids over an
 OPRF/labeled-PSI exchange (privacy/psi.py, ed25519 group via PyNaCl, no
@@ -129,6 +144,8 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_bucket_recall.py | SimHash vs cluster-id bucket recall for PSI retrieval (docs/35) |
 | backend/privacy/psi.py, cluster_index.py | OPRF/labeled-PSI dispatch and the node's cluster table (docs/36) |
 | backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
+| backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
+| backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 
