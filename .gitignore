@@ -24,7 +24,10 @@ data/eval_results/
 *.pkl
 
 experiments/runs/
+backend/experiments/runs/
 experiments/logs/
+experiments/cache/
+backend/experiments/cache/
 # Reproducible pilot artifacts (embeddings, raw decisions and partitions).
 # The measured summary and command are documented in docs/14-smart-router-pilot.md.
 experiments/smart-pilot-scifact-30-v1/

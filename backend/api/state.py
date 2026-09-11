@@ -14,6 +14,7 @@ the same registry/pipeline:
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from pathlib import Path
 
@@ -264,7 +265,14 @@ class AppState:
                 "generation_status": "no_sources_registered",
             }
 
+        # Per-stage wall-clock timing and per-contact payload sizes are recorded
+        # for every query (eval/instrument.QueryLog) so latency and bytes can be
+        # reported without a rerun. Bytes are UTF-8 JSON payload lengths — the
+        # application-level request/response, not MCP framing or transport.
+        started = time.perf_counter()
         query_embedding = self.routing_embedder.embed([question])[0]
+        embed_ms = (time.perf_counter() - started) * 1000.0
+        routing_started = time.perf_counter()
         topic_key = "smart-no-decoys" if routing_mode == "smart" else assign_topic_key(query_embedding, profiles)
 
         routing_details = None
@@ -317,37 +325,53 @@ class AppState:
         else:
             result = self._legacy_route(query_embedding, profiles, topic_key, max_nodes, genuine_k, sigma)
 
+        routing_ms = (time.perf_counter() - routing_started) * 1000.0
+
         citations = []
         retrieval_errors = {}
+        retrieval_ms: dict[str, float] = {}
+        request_bytes: dict[str, int] = {}
+        response_bytes: dict[str, int] = {}
+        retrieval_started = time.perf_counter()
         for node_id in result.dispatched_source_ids:
             node = self.nodes.get(node_id)
             if node is None:
                 continue
+            contact_started = time.perf_counter()
             try:
                 if routing_mode == "v2":
                     # Identical payload to every node, genuine or decoy, and never
                     # the query text. Retrieval uses the SHARED routing space, so a
                     # node's own local model is unused in this mode.
                     payload = dispatch_payload(v2_vector, top_n=1)
+                    request_bytes[node_id] = len(json.dumps(payload).encode("utf-8"))
                     if isinstance(node, MCPNodeHandle):
                         raw_passages = node.retrieve_vector(payload["vector"], top_n=payload["top_n"])
                         passages = [(p["document"], p["score"]) for p in raw_passages]
                     else:
                         vector = np.asarray(payload["vector"], dtype=np.float64)
                         passages = [(p.document, p.score) for p in node.retrieve_vector(vector, top_n=payload["top_n"])]
-                elif isinstance(node, MCPNodeHandle):
-                    raw_passages = node.retrieve_from_text(question, top_n=1)
-                    passages = [(p["document"], p["score"]) for p in raw_passages]
-                elif node.local_embedder is self.routing_embedder:
-                    passages = [(p.document, p.score) for p in node.retrieve(query_embedding, top_n=1)]
                 else:
-                    passages = [(p.document, p.score) for p in node.retrieve_from_text(question, top_n=1)]
+                    # Text modes: the node receives the raw question (CLAUDE.md).
+                    request_bytes[node_id] = len(json.dumps({"query": question, "top_n": 1}).encode("utf-8"))
+                    if isinstance(node, MCPNodeHandle):
+                        raw_passages = node.retrieve_from_text(question, top_n=1)
+                        passages = [(p["document"], p["score"]) for p in raw_passages]
+                    elif node.local_embedder is self.routing_embedder:
+                        passages = [(p.document, p.score) for p in node.retrieve(query_embedding, top_n=1)]
+                    else:
+                        passages = [(p.document, p.score) for p in node.retrieve_from_text(question, top_n=1)]
+                response_bytes[node_id] = len(
+                    json.dumps([{"document": d, "score": float(sc)} for d, sc in passages]).encode("utf-8")
+                )
             except Exception as exc:
                 if routing_mode == "legacy":
                     raise
                 # A failed contact still consumes the reserved exposure cost.
                 retrieval_errors[node_id] = type(exc).__name__
                 passages = []
+            finally:
+                retrieval_ms[node_id] = (time.perf_counter() - contact_started) * 1000.0
             for document, score in passages:
                 citations.append({"node_id": node_id, "document": document, "score": score})
             if routing_mode in {"smart", "v2"}:
@@ -376,7 +400,19 @@ class AppState:
                 coarse_candidate_ids=result.coarse_candidate_ids,
                 genuine_source_ids=result.genuine_source_ids,
                 dispatched_source_ids=result.dispatched_source_ids,
-                stage_latency_ms={"routing": result.baseline_latency_ms},
+                stage_latency_ms={
+                    "embed": embed_ms,
+                    "routing": routing_ms,
+                    "retrieval_total": (time.perf_counter() - retrieval_started) * 1000.0,
+                    "retrieval_per_node": retrieval_ms,
+                    "total": (time.perf_counter() - started) * 1000.0,
+                },
+                bytes_transferred={
+                    "request_per_node": request_bytes,
+                    "response_per_node": response_bytes,
+                    "request_total": sum(request_bytes.values()),
+                    "response_total": sum(response_bytes.values()),
+                },
                 extra={"routing": routing_details} if routing_details is not None else {},
             )
         )

@@ -2,6 +2,18 @@
 
 ## Current research direction
 
+Docs/33 measures scaling and transport. At a 6-contact cap, v2/legacy source
+recall falls 0.872 → 0.707 → 0.518 from 30 to 100 to 300 sources (smart 0.692
+→ 0.429 → 0.273); v2 and legacy stay identical at every N. v2's 768-d vector
+dispatch costs ~102 KB per query, ~55x a text request and more than
+broadcasting text to 100 sources — do not describe the plaintext-free wire as
+free. Routing latency is O(N) because every mode rebuilds its index per query
+(v2 2.6 ms at 300). With 30 real MCP subprocesses a query takes ~2.7–2.9 s,
+>99.9% of it the spawn-per-call node contacts (~450–490 ms each). 1,000
+sources was NOT run; the 300 tier has two seeds. A2 precision falling with N
+is a topic-repetition artefact, not privacy. api/state.py now logs per-stage
+latency and per-contact bytes on every query.
+
 Docs/32 measures v2 under A1 and A3; both are negative and must be preserved.
 A1: vector dispatch gives NO inversion resistance (exact recovery 1.000 at
 sigma 0), and noise cannot fix it — at sigma 0.10 retrieval agreement is
@@ -82,6 +94,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/nodes/ | Profile/index construction, MCP client/server, simulator and embedders |
 | backend/api/ | Stateful demo coordinator; smart/legacy routing selection |
 | backend/attacks/, backend/eval/ | Existing attack/evaluation building blocks |
+| backend/eval/run_scaling.py, run_mcp_transport.py, embed_cache.py | Scaling / transport harnesses (docs/33); cache changes no embedding |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 
