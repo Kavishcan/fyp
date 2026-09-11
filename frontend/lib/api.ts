@@ -51,9 +51,13 @@ export interface QueryRequest {
   /** "v2" (docs/30) dispatches a shared-space vector instead of the query text
    * and counts genuine + decoy contacts against one budget. Opt-in; "legacy"
    * remains the default. */
-  routing_mode?: "legacy" | "smart" | "v2";
-  /** v2 only: candidate pool decoys are drawn from. */
+  routing_mode?: "legacy" | "smart" | "v2" | "psi";
+  /** v2/psi: candidate pool decoys are drawn from. */
   coarse_k?: number;
+  /** psi only: nearest published centroids probed per node (default 2). */
+  psi_nprobe?: number;
+  /** psi only: envelope anonymity-set size per node; omit for all envelopes. */
+  psi_fetch_set?: number;
   exposure_budget?: number;
   minimum_gain?: number;
   minimum_trust?: number;

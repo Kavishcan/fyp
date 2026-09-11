@@ -66,6 +66,9 @@ class InProcessNode:
         # Kept so retrieve_from_text can re-embed a raw query in this node's
         # own space; optional so existing vector-based callers/tests still work.
         self.local_embedder = local_embedder
+        # PSI dispatch (privacy/psi.py): set by attach_psi_index. The node
+        # answers OPRF evaluations and serves envelopes; it never sees a query.
+        self.psi = None
         # v2 (docs/30): a second index in the SHARED routing space so the
         # coordinator can dispatch a vector instead of raw query text. Costs the
         # node retrieval-model heterogeneity for that mode — the shared encoder,
@@ -142,6 +145,7 @@ def build_simulated_source(
     policy_labels: list | None = None,
     publish_metadata: bool = True,
     signing_key=None,
+    psi: bool = True,
 ) -> tuple[InProcessNode, SourceProfile]:
     """PII removal happens once per embedder call, on the same raw documents.
 
@@ -181,7 +185,27 @@ def build_simulated_source(
     node = InProcessNode(
         source_id, documents, local_embeddings, local_embedder=local_embedder, routing_embeddings=routing_embeddings
     )
+    if psi:
+        attach_psi_index(node, profile, seed=int(rng.integers(0, 2**31 - 1)))
+        if signing_key is not None:
+            from nodes.signing import sign_profile
+
+            sign_profile(profile, signing_key)  # re-sign: cluster centroids are covered
     return node, profile
+
+
+def attach_psi_index(node: InProcessNode, profile: SourceProfile, *, seed: int, psi_key: bytes | None = None) -> None:
+    """Build the node's cluster table and OPRF state, publish the centroids.
+    Documents stay inside the node; only centroids (≥ min-size documents
+    each) and encrypted envelopes ever leave."""
+    from privacy.cluster_index import build_cluster_index
+    from privacy.psi import PSINode
+
+    centroids, clusters = build_cluster_index(node.documents, node.routing_embeddings, seed=seed)
+    psi_node = PSINode(node.source_id, key=psi_key)
+    psi_node.build_table(clusters)
+    node.psi = psi_node
+    profile.cluster_centroids = centroids
 
 
 def forge_profile(profile: SourceProfile, target_centroids: np.ndarray) -> SourceProfile:

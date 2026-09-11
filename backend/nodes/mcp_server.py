@@ -74,11 +74,26 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     # its data file so every fresh server process signs with the same identity.
     from nodes.signing import load_or_create_key_file, sign_profile  # noqa: E402
 
-    sign_profile(profile, load_or_create_key_file(data_file.with_suffix(".key")))
     node = InProcessNode(
         node_id, documents, local_embeddings, local_embedder=local_embedder, routing_embeddings=routing_embeddings
     )
+    # PSI dispatch (docs/03 target): the OPRF key persists next to the data
+    # file so every fresh server process serves the same table; the cluster
+    # index is deterministic in `seed`, so centroids and ids match too.
+    from nodes.simulator import attach_psi_index  # noqa: E402
+    from privacy.psi import random_scalar  # noqa: E402
+
+    attach_psi_index(node, profile, seed=seed, psi_key=_load_or_create_psi_key(data_file.with_suffix(".psi.key"), random_scalar))
+    sign_profile(profile, load_or_create_key_file(data_file.with_suffix(".key")))
     return node, profile.__dict__, local_model
+
+
+def _load_or_create_psi_key(path: Path, generate) -> bytes:
+    if path.exists():
+        return bytes.fromhex(path.read_text().strip())
+    key = generate()
+    path.write_text(key.hex())
+    return key
 
 
 def main() -> None:
@@ -96,6 +111,8 @@ def main() -> None:
         serialisable["centroids"] = np.asarray(serialisable["centroids"]).tolist()
         serialisable["profile_signature"] = serialisable["profile_signature"].hex()
         serialisable["public_key"] = serialisable["public_key"].hex()
+        if serialisable.get("cluster_centroids") is not None:
+            serialisable["cluster_centroids"] = np.asarray(serialisable["cluster_centroids"]).tolist()
         if serialisable["description_embedding"] is not None:
             serialisable["description_embedding"] = np.asarray(serialisable["description_embedding"]).tolist()
         serialisable["local_model"] = local_model
@@ -123,6 +140,22 @@ def main() -> None:
         """
         passages = node.retrieve_vector(np.asarray(vector, dtype=np.float64), top_n=top_n)
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
+
+    @server.tool()
+    def psi_evaluate(blinded: list[str]) -> str:
+        """PSI dispatch step 1: OPRF-evaluate blinded points (hex). The node
+        learns nothing about the query — the points are uniform in the group.
+        Authorization belongs in front of this call."""
+        evaluated = node.psi.evaluate([bytes.fromhex(b) for b in blinded])
+        return json.dumps([e.hex() for e in evaluated])
+
+    @server.tool()
+    def psi_envelopes(fetch_set: list[int] | None = None) -> str:
+        """PSI dispatch step 2: encrypted envelopes for an anonymity set of
+        cluster ids (None = all). The node learns the set, never the match;
+        only envelopes the client holds the OPRF output for will open."""
+        envelopes = node.psi.envelopes_for(fetch_set)
+        return json.dumps({token: env.hex() for token, env in envelopes.items()})
 
     server.run(transport="stdio")
 

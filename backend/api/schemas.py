@@ -54,8 +54,13 @@ class QueryRequest(BaseModel):
     max_nodes: int = Field(default=5, ge=0)  # hard fan-out cap in smart mode
     genuine_k: int = Field(default=2, ge=0)  # legacy mode only
     sigma: float = Field(default=0.0, ge=0, allow_inf_nan=False)
-    routing_mode: Literal["legacy", "smart", "v2"] = "legacy"
-    coarse_k: int = Field(default=15, ge=0)  # v2 only: candidate pool decoys are drawn from
+    routing_mode: Literal["legacy", "smart", "v2", "psi"] = "legacy"
+    coarse_k: int = Field(default=15, ge=0)  # v2/psi: candidate pool decoys are drawn from
+    # psi only (docs/03 target, docs/35): nearest published centroids probed,
+    # and the size of the envelope anonymity set fetched per node (None = all
+    # envelopes, i.e. plain labeled PSI; the node learns nothing about the match).
+    psi_nprobe: int = Field(default=2, ge=1)
+    psi_fetch_set: Optional[int] = Field(default=None, ge=1)
     exposure_budget: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
@@ -78,13 +83,15 @@ class QueryRequest(BaseModel):
         # v2 (docs/30) reuses max_nodes/genuine_k/sigma/exposure_budget/minimum_trust
         # and adds coarse_k. The smart-only knobs below have no v2 meaning, so
         # reject them explicitly rather than accepting and ignoring them.
-        if self.routing_mode == "v2":
+        if self.routing_mode in {"v2", "psi"}:
             if self.selection_policy != "overlap":
                 raise ValueError("relative selection requires smart mode")
             if self.relevance_mode != "centroid":
                 raise ValueError("metadata relevance requires smart mode")
             if self.genuine_k > self.max_nodes:
                 raise ValueError("genuine_k cannot exceed max_nodes in v2 mode")
+        if self.routing_mode == "psi" and self.sigma != 0:
+            raise ValueError("psi mode dispatches no vector to perturb")
         return self
 
 

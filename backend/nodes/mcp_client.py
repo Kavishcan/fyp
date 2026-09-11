@@ -62,6 +62,22 @@ class MCPNodeHandle:
         payload = {"vector": [float(x) for x in vector], "top_n": top_n}
         return json.loads(await self._call_tool("retrieve_vector", payload))
 
+    async def psi_evaluate_async(self, blinded: list[bytes]) -> list[bytes]:
+        """PSI dispatch: blinded group elements out, evaluated elements back.
+        Neither the query text nor its vector is ever an argument here."""
+        result = json.loads(await self._call_tool("psi_evaluate", {"blinded": [b.hex() for b in blinded]}))
+        return [bytes.fromhex(e) for e in result]
+
+    async def psi_envelopes_async(self, fetch_set: list[int] | None = None) -> dict[str, bytes]:
+        result = json.loads(await self._call_tool("psi_envelopes", {"fetch_set": fetch_set}))
+        return {token: bytes.fromhex(env) for token, env in result.items()}
+
+    def psi_evaluate(self, blinded: list[bytes]) -> list[bytes]:
+        return asyncio.run(self.psi_evaluate_async(blinded))
+
+    def psi_envelopes(self, fetch_set: list[int] | None = None) -> dict[str, bytes]:
+        return asyncio.run(self.psi_envelopes_async(fetch_set))
+
     def get_profile(self) -> dict:
         """Sync wrapper — safe to call from a plain `def` FastAPI handler."""
         return asyncio.run(self.get_profile_async())

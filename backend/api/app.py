@@ -148,7 +148,7 @@ def query(req: QueryRequest) -> QueryResponse:
         aggregation=req.aggregation,
         relevance_mode=req.relevance_mode, description_weight=req.description_weight,
         selection_policy=req.selection_policy, relative_score_floor=req.relative_score_floor,
-        coarse_k=req.coarse_k,
+        coarse_k=req.coarse_k, psi_nprobe=req.psi_nprobe, psi_fetch_set=req.psi_fetch_set,
     )
     return QueryResponse(**result)
 

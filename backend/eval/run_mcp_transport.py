@@ -26,6 +26,12 @@ Per (registered node count, mode):
                              api/state.py instrumentation.
 - contact_ms                 mean per contacted node (one MCP round trip).
 - request_bytes / response_bytes   application JSON payloads per query.
+- psi_envelopes_delivered / psi_passages_disclosed   psi mode only: mean per
+                             contacted node (docs/35 disclosure axis).
+
+Mode `psi` (docs/03 target): blinded cluster ids out, OPRF outputs and an
+envelope set back, two MCP round trips per contact in this client. The node
+never receives the query or a vector.
 
 Run: python -m eval.run_mcp_transport
 """
@@ -87,6 +93,7 @@ def summarise(logs: list[dict], *, mode: str, registered: int, registration_ms: 
         return [log["stage_latency_ms"].get(name, float("nan")) for log in logs]
 
     contact_ms = [ms for log in logs for ms in log["stage_latency_ms"].get("retrieval_per_node", {}).values()]
+    psi_nodes = [info for log in logs for info in (log.get("extra", {}).get("routing", {}).get("psi", {}) or {}).get("per_node", {}).values()]
     contacts = [len(log["dispatched_source_ids"]) for log in logs]
     req = [log["bytes_transferred"].get("request_total", 0) for log in logs]
     resp = [log["bytes_transferred"].get("response_total", 0) for log in logs]
@@ -109,6 +116,8 @@ def summarise(logs: list[dict], *, mode: str, registered: int, registration_ms: 
         "request_bytes": float(np.mean(req)),
         "response_bytes": float(np.mean(resp)),
         "retrieval_errors": errors,
+        "psi_envelopes_delivered": float(np.mean([i["envelopes_delivered"] for i in psi_nodes])) if psi_nodes else float("nan"),
+        "psi_passages_disclosed": float(np.mean([i["passages_disclosed"] for i in psi_nodes])) if psi_nodes else float("nan"),
     }
 
 
@@ -116,7 +125,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--node-counts", nargs="+", type=int, default=[10, 30, 0],
                         help="registered nodes per tier; 0 means every available node file")
-    parser.add_argument("--modes", nargs="+", choices=["legacy", "smart", "v2"], default=["legacy", "v2"])
+    parser.add_argument("--modes", nargs="+", choices=["legacy", "smart", "v2", "psi"], default=["legacy", "v2", "psi"])
+    parser.add_argument("--psi-fetch-set", type=int, default=None, help="psi: envelope anonymity set per node (None = all)")
     parser.add_argument("--n-queries", type=int, default=20)
     parser.add_argument("--query-corpora", nargs="+", default=["arguana", "nfcorpus", "scifact", "fiqa"])
     parser.add_argument("--max-nodes", type=int, default=6)
@@ -151,7 +161,7 @@ def main() -> None:
                   f"{sum(registration_ms) / 1000:.1f}s", flush=True)
             for question in questions:
                 state.run_query(question, max_nodes=args.max_nodes, genuine_k=args.genuine_k,
-                                sigma=0.0, routing_mode=mode)
+                                sigma=0.0, routing_mode=mode, psi_fetch_set=args.psi_fetch_set)
             logs = state.instrumentation.read_all()
             row = summarise(logs, mode=mode, registered=len(chosen), registration_ms=registration_ms)
             rows.append(row)

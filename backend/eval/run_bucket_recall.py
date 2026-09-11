@@ -46,6 +46,7 @@ from math import comb
 import numpy as np
 
 from eval.embed_cache import CachedEmbedder
+from privacy.cluster_index import enforce_min_cluster_size, kmeans_unit  # noqa: F401 (re-exported for tests)
 from eval.sweep import (
     BEIR_DIR,
     RESULTS_DIR,
@@ -94,54 +95,6 @@ def probes_per_query(bits: int, radius: int, tables: int) -> int:
 
 
 # --- cluster ids --------------------------------------------------------------
-
-
-def kmeans_unit(vectors: np.ndarray, k: int, seed: int, iters: int = 25) -> tuple[np.ndarray, np.ndarray]:
-    """Spherical k-means. Returns unit centroids and per-vector assignments."""
-    rng = np.random.default_rng(seed)
-    k = min(k, len(vectors))
-    centroids = vectors[rng.choice(len(vectors), k, replace=False)].copy()
-    assign = np.argmax(vectors @ centroids.T, axis=1)
-    for _ in range(iters):
-        for j in range(k):
-            members = vectors[assign == j]
-            if len(members):
-                centroids[j] = members.mean(axis=0)
-        centroids /= np.maximum(np.linalg.norm(centroids, axis=1, keepdims=True), 1e-12)
-        new_assign = np.argmax(vectors @ centroids.T, axis=1)
-        if (new_assign == assign).all():
-            break
-        assign = new_assign
-    return centroids, assign
-
-
-def enforce_min_cluster_size(
-    vectors: np.ndarray, centroids: np.ndarray, assign: np.ndarray, min_size: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Merge every cluster smaller than `min_size` into its nearest other
-    cluster until none remain, recomputing centroids. A published centroid
-    then never stands for fewer than `min_size` documents — k-anonymity on
-    the centroid, so it cannot be a single document's embedding in disguise.
-    """
-    if min_size <= 1:
-        return centroids, assign
-    assign = assign.copy()
-    while True:
-        ids, sizes = np.unique(assign, return_counts=True)
-        small = ids[sizes < min_size]
-        if len(small) == 0 or len(ids) == 1:
-            break
-        j = small[np.argmin(sizes[sizes < min_size])]  # smallest first
-        others = ids[ids != j]
-        target = others[np.argmax(centroids[others] @ centroids[j])]
-        assign[assign == j] = target
-        members = vectors[assign == target]
-        centroids[target] = members.mean(axis=0)
-        centroids[target] /= max(float(np.linalg.norm(centroids[target])), 1e-12)
-    # Compact ids so downstream can index centroids densely.
-    live = np.unique(assign)
-    remap = {old: new for new, old in enumerate(live.tolist())}
-    return centroids[live], np.vectorize(remap.get)(assign)
 
 
 def centroid_leak(doc_vectors: np.ndarray, centroids: np.ndarray, assign: np.ndarray, threshold: float = 0.95) -> dict:

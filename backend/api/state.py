@@ -55,6 +55,8 @@ def _profile_from_dict(data: dict) -> SourceProfile:
                                if data.get("description_embedding") is not None else None),
         metadata_method=data.get("metadata_method", ""),
         metadata_embedding_model=data.get("metadata_embedding_model", ""),
+        cluster_centroids=(np.asarray(data["cluster_centroids"], dtype=np.float64)
+                           if data.get("cluster_centroids") is not None else None),
     )
 
 
@@ -233,10 +235,12 @@ class AppState:
         aggregation: str = "mean",
         relevance_mode: str = "centroid", description_weight: float = 0.5,
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
-        coarse_k: int = 15,
+        coarse_k: int = 15, psi_nprobe: int = 2, psi_fetch_set: int | None = None,
     ) -> dict:
-        if routing_mode not in {"legacy", "smart", "v2"}:
-            raise ValueError("routing_mode must be legacy, smart or v2")
+        if routing_mode not in {"legacy", "smart", "v2", "psi"}:
+            raise ValueError("routing_mode must be legacy, smart, v2 or psi")
+        if routing_mode == "psi" and sigma != 0:
+            raise ValueError("psi mode dispatches no vector to perturb")
         if routing_mode == "legacy" and selection_policy != "overlap":
             raise ValueError("relative selection requires smart mode")
         if routing_mode == "smart" and sigma != 0:
@@ -279,7 +283,13 @@ class AppState:
         # The single vector v2 dispatches; None in every other mode. Built once
         # so every contacted node receives an identical payload.
         v2_vector = None
-        if routing_mode == "v2":
+        if routing_mode in {"v2", "psi"}:
+            # psi (docs/03 target): identical LOCAL routing to v2, but the
+            # dispatch stage is the OPRF/labeled-PSI protocol in privacy/psi.py
+            # — no query text and no query vector ever reaches a node. In this
+            # demo the API process plays the user's device: it embeds, routes,
+            # blinds, decrypts and reranks. A deployment moves this code to the
+            # client; the coordinator becomes a relay.
             v2_config = V2Config(
                 exposure_budget=float(max_nodes) if exposure_budget is None else exposure_budget,
                 max_sources=max_nodes, genuine_k=genuine_k, coarse_k=coarse_k,
@@ -291,12 +301,16 @@ class AppState:
                 per_source_cost={p.source_id: self.source_exposure_costs.get(p.source_id, 1.0) for p in profiles},
                 topic_key=topic_key, config=v2_config,
             )
-            v2_vector = dispatched_vector(query_embedding, sigma, self._rng)
+            v2_vector = dispatched_vector(query_embedding, sigma, self._rng) if routing_mode == "v2" else None
             routing_details = decision.to_dict()
-            routing_details["mode"] = "v2"
+            routing_details["mode"] = routing_mode
             routing_details["exposure_unit"] = "coordinator_configured_contact_cost"
             routing_details["embedding_model"] = self.routing_embedder.model_name
-            routing_details["dispatch_payload_kind"] = "shared_routing_space_vector"
+            routing_details["dispatch_payload_kind"] = (
+                "shared_routing_space_vector" if routing_mode == "v2" else "blinded_cluster_ids_oprf_psi"
+            )
+            if routing_mode == "psi":
+                routing_details["psi"] = {"nprobe": psi_nprobe, "fetch_set": psi_fetch_set, "per_node": {}}
             result = PipelineResult(
                 dispatched_source_ids=decision.dispatched_source_ids,
                 genuine_source_ids=decision.genuine_source_ids,
@@ -339,7 +353,14 @@ class AppState:
                 continue
             contact_started = time.perf_counter()
             try:
-                if routing_mode == "v2":
+                if routing_mode == "psi":
+                    passages, req_b, resp_b, psi_info = self._psi_retrieve(
+                        node, self.registry.get(node_id), query_embedding,
+                        top_n=1, nprobe=psi_nprobe, fetch_set_size=psi_fetch_set,
+                    )
+                    request_bytes[node_id], response_bytes[node_id] = req_b, resp_b
+                    routing_details["psi"]["per_node"][node_id] = psi_info
+                elif routing_mode == "v2":
                     # Identical payload to every node, genuine or decoy, and never
                     # the query text. Retrieval uses the SHARED routing space, so a
                     # node's own local model is unused in this mode.
@@ -361,9 +382,10 @@ class AppState:
                         passages = [(p.document, p.score) for p in node.retrieve(query_embedding, top_n=1)]
                     else:
                         passages = [(p.document, p.score) for p in node.retrieve_from_text(question, top_n=1)]
-                response_bytes[node_id] = len(
-                    json.dumps([{"document": d, "score": float(sc)} for d, sc in passages]).encode("utf-8")
-                )
+                if routing_mode != "psi":
+                    response_bytes[node_id] = len(
+                        json.dumps([{"document": d, "score": float(sc)} for d, sc in passages]).encode("utf-8")
+                    )
             except Exception as exc:
                 if routing_mode == "legacy":
                     raise
@@ -374,10 +396,10 @@ class AppState:
                 retrieval_ms[node_id] = (time.perf_counter() - contact_started) * 1000.0
             for document, score in passages:
                 citations.append({"node_id": node_id, "document": document, "score": score})
-            if routing_mode in {"smart", "v2"}:
+            if routing_mode in {"smart", "v2", "psi"}:
                 documents = [document for document, _ in passages]
                 embeddings = self.routing_embedder.embed(documents) if documents else np.empty((0, 0))
-                if routing_mode == "v2":
+                if routing_mode in {"v2", "psi"}:
                     # Every contact updates trust, decoy or not. The E3 exemption
                     # is deliberately NOT used here: it identified decoys at
                     # precision/recall 1.00 via the "trust never moved" tell
@@ -436,6 +458,57 @@ class AppState:
             "generation_status": generation_status,
             "routing_details": routing_details,
         }
+
+    def _psi_retrieve(self, node, profile, query_embedding, *, top_n: int, nprobe: int, fetch_set_size: int | None):
+        """One PSI contact, playing the device role (privacy/psi.py):
+        assign → blind → node evaluates → unblind → node serves an envelope
+        anonymity set → open matches → exact rerank locally.
+
+        Returns (passages, request_bytes, response_bytes, info). The node
+        receives blinded points and a fetch set of cluster ids; it never
+        receives the query, its vector, or which cluster matched.
+        """
+        from privacy.cluster_index import assign_clusters, rerank_passages
+        from privacy.psi import PSIClient
+
+        centroids = getattr(profile, "cluster_centroids", None)
+        if centroids is None or len(centroids) == 0:
+            raise RuntimeError(f"node {profile.source_id!r} published no cluster centroids; cannot serve psi")
+        wanted = assign_clusters(query_embedding, centroids, nprobe=nprobe)
+        fetch_set = None
+        if fetch_set_size is not None:
+            # Hide the wanted ids among random others. The node learns the set,
+            # not the member; the client cannot open the others anyway.
+            pool = [c for c in range(len(centroids)) if c not in wanted]
+            extra = self._rng.choice(pool, size=min(max(0, fetch_set_size - len(wanted)), len(pool)),
+                                     replace=False).tolist() if pool else []
+            fetch_set = sorted(int(c) for c in [*wanted, *extra])
+            self._rng.shuffle(fetch_set)
+
+        query = PSIClient.blind(wanted)
+        if isinstance(node, MCPNodeHandle):
+            evaluated = node.psi_evaluate(query.blinded)
+            envelopes = node.psi_envelopes(fetch_set)
+        else:
+            if node.psi is None:
+                raise RuntimeError(f"node {profile.source_id!r} has no PSI table")
+            evaluated = node.psi.evaluate(query.blinded)
+            envelopes = node.psi.envelopes_for(fetch_set)
+        outputs = PSIClient.unblind(query, evaluated)
+        matches = PSIClient.open_matches(query, outputs, profile.source_id, envelopes)
+
+        candidates = [p for cid in wanted for p in matches.get(cid, [])]
+        passages = rerank_passages(query_embedding, candidates, top_n=top_n)
+        request_bytes = len(json.dumps({"blinded": [b.hex() for b in query.blinded]}).encode("utf-8")) + \
+            len(json.dumps({"fetch_set": fetch_set}).encode("utf-8"))
+        response_bytes = len(json.dumps([e.hex() for e in evaluated]).encode("utf-8")) + \
+            len(json.dumps({t: e.hex() for t, e in envelopes.items()}).encode("utf-8"))
+        info = {
+            "clusters_probed": len(wanted), "envelopes_delivered": len(envelopes),
+            "envelopes_opened": len(matches), "passages_disclosed": len(candidates),
+            "fetch_set_size": len(envelopes) if fetch_set is None else len(fetch_set),
+        }
+        return passages, request_bytes, response_bytes, info
 
     def _legacy_route(self, query_embedding, profiles, topic_key, max_nodes, genuine_k, sigma):
         """Preserve the original fixed-k/decoy pipeline as a separate control."""

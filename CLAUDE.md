@@ -8,6 +8,20 @@ the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/36: `routing_mode="psi"` is the first dispatch stage in which a node
+receives neither the query nor a vector — blinded cluster ids over an
+OPRF/labeled-PSI exchange (privacy/psi.py, ed25519 group via PyNaCl, no
+ristretto in this build), envelopes opened and reranked on the device.
+Verified over real MCP with text/vector tools patched to fail. Cost on 30
+real nodes: 4.85 s/query (two spawn-per-call round trips per contact) and
+~1 MB response per query because full labeled PSI ships every envelope a
+node holds — communication is linear in the node table; do not describe it
+as cheap at large nodes. FeB4RAG (13 of 16 engines, 785 requests, graded
+qrels): the local profile ranking scores nDCG@1 0.734, MRR 0.578, top-1
+0.399; legacy = v2 = psi capture 0.662 of the best graded gain at 6
+contacts, smart 0.538. The API process plays the device in psi mode; a
+deployment must move that code to the client. Legacy remains the default.
+
 Docs/35 measures bucket recall for PSI-based private retrieval, with no
 cryptography. SimHash on bge-base embeddings is unusable for query→passage
 matching (relevant pairs at cosine 0.70 vs random 0.51): the only recalling
@@ -113,6 +127,8 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/attacks/, backend/eval/ | Existing attack/evaluation building blocks |
 | backend/eval/run_scaling.py, run_mcp_transport.py, embed_cache.py | Scaling / transport harnesses (docs/33); cache changes no embedding |
 | backend/eval/run_bucket_recall.py | SimHash vs cluster-id bucket recall for PSI retrieval (docs/35) |
+| backend/privacy/psi.py, cluster_index.py | OPRF/labeled-PSI dispatch and the node's cluster table (docs/36) |
+| backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 

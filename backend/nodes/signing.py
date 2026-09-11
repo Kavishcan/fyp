@@ -82,9 +82,15 @@ def signing_payload(profile: SourceProfile) -> bytes:
         if profile.description_embedding is None
         else np.round(np.asarray(profile.description_embedding, dtype=np.float64), _CENTROID_DECIMALS).tolist()
     )
+    cluster_centroids = (
+        None
+        if profile.cluster_centroids is None
+        else np.round(np.asarray(profile.cluster_centroids, dtype=np.float64), _CENTROID_DECIMALS).tolist()
+    )
     body = {
         "source_id": profile.source_id,
         "centroids": centroids,
+        "cluster_centroids": cluster_centroids,
         "profile_version": profile.profile_version,
         "document_count_bucket": profile.document_count_bucket,
         "policy_labels": list(profile.policy_labels),

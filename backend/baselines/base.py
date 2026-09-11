@@ -40,6 +40,11 @@ class SourceProfile:
     description_embedding: object | None = None
     metadata_method: str = ""
     metadata_embedding_model: str = ""
+    # PSI dispatch (docs/35, docs/03 target): centroids of the node's cluster
+    # index, ≥ min-cluster-size documents each. Public; the client assigns a
+    # query to its nearest few and the cluster id is the PSI item. None when
+    # the node does not serve PSI.
+    cluster_centroids: object | None = None
 
 
 @dataclass
