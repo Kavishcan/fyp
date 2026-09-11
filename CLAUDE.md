@@ -1,6 +1,23 @@
 # Repository guidance
 
+Latest milestone: docs/34-encrypted-query-scoring.md. On main, an opt-in
+`POST /query/private-score` uses Paillier encrypted scoring over MCP with a
+trusted coordinator. Disabled by default. NO passage fetch or generation;
+NO end-to-end query privacy claim. Contact patterns remain exposed. Preserve
+the negative v2 results. Do not resume the evidence-budget direction.
+
 ## Current research direction
+
+Docs/35 measures bucket recall for PSI-based private retrieval, with no
+cryptography. SimHash on bge-base embeddings is unusable for query→passage
+matching (relevant pairs at cosine 0.70 vs random 0.51): the only recalling
+configuration delivers 45% of the node's corpus per query. Published k-means
+cluster ids work: at k=200, nprobe=2, minimum cluster size 5, recall is 0.89
+of dense@10 with ~36 passages delivered per contacted node (~3.6x a top-10
+fetch). Raising k without a minimum cluster size publishes document
+embeddings as centroids (28% at k=500, 60% at k=1000) — never do that. Do
+not report disclosure as "x relevant docs" (corpus-dependent); report it
+against a dense top-k fetch. No PSI cost has been measured.
 
 Docs/33 measures scaling and transport. At a 6-contact cap, v2/legacy source
 recall falls 0.872 → 0.707 → 0.518 from 30 to 100 to 300 sources (smart 0.692
@@ -95,6 +112,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/api/ | Stateful demo coordinator; smart/legacy routing selection |
 | backend/attacks/, backend/eval/ | Existing attack/evaluation building blocks |
 | backend/eval/run_scaling.py, run_mcp_transport.py, embed_cache.py | Scaling / transport harnesses (docs/33); cache changes no embedding |
+| backend/eval/run_bucket_recall.py | SimHash vs cluster-id bucket recall for PSI retrieval (docs/35) |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 

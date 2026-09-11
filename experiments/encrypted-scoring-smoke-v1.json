@@ -1,0 +1,45 @@
+{
+  "setting": "synthetic 3 documents, 3 queries, 1 real MCP process per call",
+  "key_bits": 2048,
+  "dimensions": 256,
+  "scale": 1000000,
+  "rows": [
+    {
+      "query_number": 1,
+      "fixed_point_error": 0.0,
+      "float_cosine_error": 1.2802772608733193e-07,
+      "top1_matches_cosine": true,
+      "keygen_embed_encrypt_ms": 18374.938082997687,
+      "mcp_roundtrip_ms": 1071.1219589866232,
+      "total_ms": 19502.057499979855,
+      "request_bytes": 263784,
+      "response_bytes": 3252
+    },
+    {
+      "query_number": 2,
+      "fixed_point_error": 0.0,
+      "float_cosine_error": 1.2802772608733193e-07,
+      "top1_matches_cosine": true,
+      "keygen_embed_encrypt_ms": 17738.30608301796,
+      "mcp_roundtrip_ms": 1348.3397079980932,
+      "total_ms": 19138.61866600928,
+      "request_bytes": 263784,
+      "response_bytes": 3252
+    },
+    {
+      "query_number": 3,
+      "fixed_point_error": 0.0,
+      "float_cosine_error": 6.188980000709776e-07,
+      "top1_matches_cosine": true,
+      "keygen_embed_encrypt_ms": 17418.123750016093,
+      "mcp_roundtrip_ms": 1118.918958993163,
+      "total_ms": 18598.53175000171,
+      "request_bytes": 263784,
+      "response_bytes": 3252
+    }
+  ],
+  "security_proof": false,
+  "attack_evaluation_performed": false,
+  "fetch_performed": false,
+  "generation_performed": false
+}

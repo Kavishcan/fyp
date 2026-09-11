@@ -146,3 +146,10 @@ Smart routing logs config, candidate/selected IDs, exclusions, selection scores,
 costs, stop reason, routing latency and retrieval errors. Network byte counts,
 full stage timings and answer-quality metrics are not automatically measured
 just because logging fields or MCP transport exist.
+# Encrypted-scoring extension
+
+The opt-in query-privacy milestone is documented in
+[doc 34](34-encrypted-query-scoring.md). It routes locally, encrypts the query
+vector, scores all rows at contacted nodes and ranks decrypted scores at the
+trusted coordinator. It intentionally stops before document fetch/generation.
+Existing paths below are unchanged and are not made private by this extension.

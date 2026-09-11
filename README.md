@@ -1,5 +1,10 @@
 # FedSafeRouter
 
+Latest query-privacy milestone: [encrypted scoring over MCP](docs/34-encrypted-query-scoring.md).
+This opt-in endpoint encrypts query vectors for source-side scoring, but stops
+before document fetch and generation. Existing UI/query modes are unchanged;
+end-to-end query privacy is not established.
+
 **Training-Free Exposure-Constrained and Trust-Aware Adaptive Source Routing
 for Scalable Federated RAG.**
 

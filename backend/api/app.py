@@ -37,6 +37,7 @@ from .schemas import (
     QueryResponse,
 )
 from .state import AppState
+from .private_scoring import PrivateScoreRequest, run_private_scoring
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 MCP_NODES_DIR = DATA_DIR / "mcp_nodes"
@@ -68,6 +69,18 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "nodes_registered": len(state.registry)}
+
+
+@app.post("/query/private-score")
+def private_score(req: PrivateScoreRequest) -> dict:
+    import os
+
+    if os.environ.get("ENABLE_PRIVATE_SCORING") != "1":
+        raise HTTPException(status_code=403, detail="experimental private scoring is disabled")
+    try:
+        return run_private_scoring(state, req)
+    except ImportError:
+        raise HTTPException(status_code=503, detail="install backend/requirements-private.txt")
 
 
 @app.post("/nodes/register", response_model=NodeRegisterResponse)

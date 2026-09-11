@@ -108,6 +108,13 @@ def main() -> None:
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
 
     @server.tool()
+    def score_encrypted_query(request: dict) -> str:
+        """Experimental full-index encrypted scoring; no document fetch."""
+        from privacy.encrypted_scoring import score_encrypted
+
+        return json.dumps(score_encrypted(request, node.routing_embeddings, SHARED_ROUTING_MODEL))
+
+    @server.tool()
     def retrieve_vector(vector: list[float], top_n: int = 5) -> str:
         """v2 dispatch: retrieve by a shared-routing-space vector, never raw text.
 

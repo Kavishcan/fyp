@@ -72,3 +72,7 @@ class MCPNodeHandle:
 
     def retrieve_vector(self, vector, top_n: int = 5) -> list[dict]:
         return asyncio.run(self.retrieve_vector_async(vector, top_n=top_n))
+
+    def score_encrypted_query(self, request: dict) -> dict:
+        """Separate protocol: never falls back to plaintext/vector retrieval."""
+        return json.loads(asyncio.run(self._call_tool("score_encrypted_query", {"request": request})))
