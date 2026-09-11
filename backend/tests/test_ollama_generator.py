@@ -31,6 +31,7 @@ def test_generate_posts_the_fixed_prompt_to_localhost(monkeypatch):
     assert gen.generate("what?", ["passage one"]) == "forty-two"
     assert captured["url"] == "http://localhost:11434/api/generate"
     assert captured["body"]["model"] == "tiny" and captured["body"]["stream"] is False
+    assert captured["body"]["think"] is False
     assert "passage one" in captured["body"]["prompt"] and "what?" in captured["body"]["prompt"]
 
 

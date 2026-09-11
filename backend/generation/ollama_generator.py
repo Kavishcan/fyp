@@ -37,6 +37,10 @@ class OllamaGenerator(Generator):
     def generate(self, question: str, passages: list[str]) -> str:
         body = json.dumps({
             "model": self.model, "prompt": build_prompt(question, passages), "stream": False,
+            # Qwen3-family "thinking" traces off: the fixed prompt stays the whole
+            # prompt and the response is only the answer. Ignored by models
+            # without a thinking mode.
+            "think": False,
             "options": {"temperature": 0.0},
         }).encode("utf-8")
         request = urllib.request.Request(f"{self.host}/api/generate", data=body,
