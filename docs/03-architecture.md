@@ -52,7 +52,8 @@ collection details and are neither private nor authenticated by this extension.
 See [implementation and results](15-mcp-metadata-pilot.md).
 
 Redaction is a regex heuristic, not validated de-identification. Version checks
-exist, but signature verification is a placeholder. Profile noise is not DP.
+exist; Ed25519 profile signatures are verified when present and can be required
+(docs/30) — they prove integrity and key binding, not truthfulness. Profile noise is not DP.
 No exact centroid count or noise setting should be assumed across all node files.
 
 For MCP nodes, get_profile and retrieve are tools on the same server
@@ -143,9 +144,10 @@ test is synthetic, in-memory validation, not a distributed scalability result.
 Run separate real-MCP and logical-client benchmarks and report both clearly.
 
 Smart routing logs config, candidate/selected IDs, exclusions, selection scores,
-costs, stop reason, routing latency and retrieval errors. Network byte counts,
-full stage timings and answer-quality metrics are not automatically measured
-just because logging fields or MCP transport exist.
+costs, stop reason, routing latency and retrieval errors. Every query also logs
+per-stage wall time (embed, routing, retrieval, per contact) and application
+JSON request/response bytes per contact (docs/33). Those are payload bytes,
+not network bytes. Answer quality is not measured anywhere.
 # Encrypted-scoring extension
 
 The opt-in query-privacy milestone is documented in
@@ -153,3 +155,87 @@ The opt-in query-privacy milestone is documented in
 vector, scores all rows at contacted nodes and ranks decrypted scores at the
 trusted coordinator. It intentionally stops before document fetch/generation.
 Existing paths below are unchanged and are not made private by this extension.
+
+# Target end-to-end architecture (planned; not the current code)
+
+Measurement (docs/31–35) fixed the shape of the next design. Nothing cheaper
+than cryptography protects the query from a contacted node (docs/32), a
+routing-space vector is invertible and 55x heavier than text (docs/33), and
+semantic hashing cannot bucket questions with their passages while published
+cluster ids can (docs/35). The target below composes off-the-shelf primitives
+around the routing layer that has already been measured; it invents no
+cryptography. Everything in this section is a specification to build and
+measure against, not a description of implemented behaviour.
+
+## Zones
+
+| Zone | Trust | Holds |
+|---|---|---|
+| User device | Trusted; the only party that ever sees the query or the answer | embedder, router, cluster assigner, PSI receiver, envelope keys, reranker, evidence trust, local generator |
+| Relay | Untrusted; may collude with nodes | signed profile registry, ciphertext forwarding, rate limiting. No keys. |
+| Node ×N | Untrusted for the query (honest-but-curious); may be malicious about content (A3) | redacted chunks, shared-model embeddings, k-means clusters, OPRF key, labeled-PSI table, AEAD envelopes, authorization, disclosure audit |
+| Key authority | Honest for issuance only; no path to data | credentials and envelope decryption keys per policy |
+
+The current FastAPI coordinator becomes the relay. Routing, decryption,
+reranking, trust and generation move to the device.
+
+## Stages
+
+| Stage | Where | Mechanism | Untrusted side sees | Residual leak (metric) |
+|---|---|---|---|---|
+| Embed | device | shared model, local | nothing | — |
+| Route | device | v2 `select_dispatch` over signed public profiles: genuine_k + topic-stable decoys within budget | nothing | — |
+| Bucket | device | nearest `nprobe` of the node's published cluster centroids (docs/35: k≈docs/10, nprobe 2, min cluster size 5) | nothing | centroid_near_doc_fraction, published per node |
+| Dispatch | device → relay → node | blind cluster ids with secret r (OPRF / DH-PSI); identical payload to genuine and decoy nodes | blinded group elements | none under DDH |
+| Match | node | OPRF with node key k; labeled PSI over the cluster table | which credential contacted it, item count | none about the query |
+| Deliver | node → device | AEAD envelopes for matched clusters only | that envelopes were served | passages delivered per contact (~36 at the recommended point, ~3.6x a top-10 fetch) |
+| Rerank | device | exact cosine on decrypted passages; decoy results dropped | nothing | — |
+| Trust | device | evidence trust on decrypted passages (the docs/32 gate defect still applies) | nothing | A3 attacker rate, honest recall |
+| Generate | device | local LLM | nothing | — |
+| Pattern | relay | — | which nodes were contacted, sizes, timing | A2 precision; decoys are the control |
+
+### Optional tier: encrypted scoring inside the probed clusters
+
+The Paillier scoring in docs/34 scores every row a node holds and returns
+an encrypted score per row (≤128 rows, ~264 KB request at 256-d, ~1 s per
+contact plus ~18 s per-query keygen in the smoke run). Over a whole corpus
+that is too slow and too large; over the ~36 passages of a probed cluster it
+is the mechanism that would bring delivery down from ~36 passages to the
+selected few without the node learning which. In the target design it sits
+between Match and Deliver as an opt-in tier, with the coordinator role it
+assumes today moved to the device. Its cost is a row in the same table as
+plaintext and PSI dispatch; it is not a default.
+
+## What each party learns
+
+| Party | Learns | Does not learn |
+|---|---|---|
+| User | authorized matched passages, answer | non-matching documents, node OPRF keys |
+| Relay | contacted node ids, payload sizes, timing, credential id | query, cluster ids, matches, passages, answer |
+| Node | a credential contacted it; how many blinded items; that some envelopes were served | the query, the cluster ids, genuine vs decoy, what was done with the envelopes |
+| Relay + nodes colluding | contact pattern | still not the query |
+
+## Assumptions
+
+1. The user's device is uncompromised.
+2. Relay and nodes are honest-but-curious about the query; nodes may lie about content.
+3. Non-collusion is not required for query confidentiality.
+4. The key authority issues keys honestly and has no path to traffic or data.
+5. DDH on ristretto255 for OPRF/PSI; AEAD for envelopes; Ed25519 for profiles; TLS on every hop.
+6. Shared routing model and cluster parameters are public and identical everywhere; embeddings never leave the device.
+7. Published centroids stand for ≥5 documents each (docs/35 minimum cluster size).
+8. Node-side PII redaction is a preprocessing assumption whose quality is not evaluated here.
+
+## What the target does not provide
+
+- Metadata privacy: that a query happened, when, how large, from which credential.
+- A security proof beyond reduction to the primitives' standard assumptions.
+- Protection against a node that forges centroids or profiles to attract queries (A3); that remains the trust layer's problem and its measured defect stands.
+- Any answer-quality result until measured.
+
+## Claim shape
+
+End-to-end confidentiality of query and evidence content under DDH and an
+uncompromised client, with routing-metadata leakage bounded by decoys and
+node-side passage disclosure measured rather than eliminated. Not "zero
+leakage", not "provably private", not a new primitive.
