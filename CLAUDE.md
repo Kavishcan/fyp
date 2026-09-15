@@ -8,6 +8,22 @@ the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/39 proves the routing-pattern leak and reverses the docs/30–31 decoy
+verdict. On FeB4RAG (13 engines, 640 requests, topic = origin engine) an
+observer seeing only contacted ids names the topic 0.496 of the time under
+a cosine router (chance 0.077; top-3 0.841). Topic-stable decoys leave
+topic inference unchanged (0.495) while cutting the source attack (0.744 →
+0.564); random decoys do the reverse (topic 0.336–0.380, source 0.667–
+0.692). No decoy strategy measured reduces both; broadcast alone does. Do
+not describe sticky decoys as "the working defence" without saying which
+attack; the docs/31 result was the source attack only. "Topic-stable"
+decoys share only Jaccard 0.23 across same-origin queries because the live
+topic key is the nearest of 39 centroids. PSI (docs/36–37) fixes query
+content, not the pattern. Hygiene: BroadcastRouter now ignores top_k; PSI
+key files are 0600; psi catches only CryptoError; MMLU answer letters are
+no longer written into node documents; /nodes reports mode-specific trust;
+requirements-lock.txt records the evaluation environment.
+
 Docs/38 is the first answer-level result: MIRAGE, 150 questions, local
 Qwen3.5-9B via Ollama. closed-book 0.547, psi (local routing + PSI
 dispatch, cap 4) 0.580, broadcast (PSI to all 8 nodes) 0.627. Retrieval
@@ -119,8 +135,13 @@ The earlier instruction prohibiting a new router is superseded.
 - Source trust starts at 0.5 with an uncertainty penalty. Smart EvidenceTrust
   uses coordinator-embedded passage consistency, not self-advertised trust or
   remote retrieval scores. It is not TASR.
-- The coordinator sees raw queries and returned passages; contacted MCP nodes
-  receive raw queries. Do not describe the live implementation as query-secret.
+- The coordinator (the API process) sees raw queries and returned passages in
+  every mode; in the demo it plays the user's device. What a contacted node
+  receives depends on the mode: raw query text (legacy, smart), an invertible
+  routing-space vector (v2), or blinded cluster ids over OPRF/PSI (psi, docs/36).
+  Privacy claims are against contacted nodes and a routing-pattern observer,
+  never against the coordinator; moving the device-side code to the client is
+  the docs/03 target, not the implementation. Do not say "end-to-end".
 - Signature validation, production authentication and complete de-identification
   are not implemented. Policy labels are only a demo selection hook.
 - Hashing is still the live demo encoder. Semantic-model evaluation must use
@@ -157,6 +178,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
 | backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |
 | backend/eval/run_answer_quality.py | E10 MIRAGE answer quality, closed-book vs psi vs broadcast (docs/38) |
+| backend/attacks/a2_topic_inference.py, backend/eval/run_leakage.py | Contacted-set → query-topic attack and the decoy ablation (docs/39) |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 

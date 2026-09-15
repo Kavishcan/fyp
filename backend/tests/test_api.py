@@ -401,3 +401,31 @@ def test_smart_republication_cannot_keep_earned_trust(client, fresh_state):
 ])
 def test_invalid_smart_request_rejected(client, options):
     assert client.post("/query", json={"question": "test", **options}).status_code == 422
+
+
+def test_node_status_reports_trust_for_the_requested_mode(tmp_path):
+    """docs/39 hygiene: the UI must not show legacy trust while another mode
+    is active; each mode reports its own trust and runtime observation count."""
+    from api.state import AppState
+
+    state = AppState(instrumentation_path=str(tmp_path / "q.jsonl"))
+    state.generator = None
+    state.register_node(node_id="n0", documents=["topic0 a", "topic0 b", "topic0 c"], policy_labels=[], k=1, sigma=0.0)
+    state.register_node(node_id="n1", documents=["topic1 a", "topic1 b", "topic1 c"], policy_labels=[], k=1, sigma=0.0)
+    state.run_query("topic0 a", max_nodes=1, genuine_k=1, sigma=0.0, routing_mode="v2")
+    legacy = {r["node_id"]: r for r in state.node_status("legacy")}
+    v2 = {r["node_id"]: r for r in state.node_status("v2")}
+    assert legacy["n0"]["trust_mode"] == "legacy" and v2["n0"]["trust_mode"] == "v2"
+    assert legacy["n0"]["trust_observations"] == 0          # profile metadata, never updated by v2
+    assert v2["n0"]["trust_observations"] >= 1               # runtime count from the v2 contact
+    assert all(r["trust_observations"] == 0 for r in state.node_status("smart").__iter__())
+
+
+def test_broadcast_router_ignores_top_k():
+    from baselines.broadcast import BroadcastRouter
+    from baselines.base import SourceProfile
+    import numpy as np
+
+    router = BroadcastRouter()
+    router.register_sources([SourceProfile(source_id=f"s{i}", centroids=np.ones((1, 2))) for i in range(5)])
+    assert len(router.rank(np.ones(2), top_k=2).ranked_source_ids) == 5

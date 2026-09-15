@@ -44,6 +44,7 @@ class NodeStatus(BaseModel):
     profile_version: int
     local_model: str
     transport: str  # "mcp" (real, separate process) or "simulated" (in-process)
+    trust_mode: str = "legacy"  # which mode's trust state this row reports
     description: str = ""
     topics: List[str] = Field(default_factory=list)
     metadata_method: str = ""

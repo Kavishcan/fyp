@@ -103,8 +103,10 @@ def prepare_mmlu() -> None:
         documents = []
         for _, row in rows.iterrows():
             choice_lines = "; ".join(f"{letters[j]}) {c}" for j, c in enumerate(row["choices"]))
-            answer_letter = letters[row["answer"]]
-            documents.append(f"{row['question']} Choices: {choice_lines}. Answer: {answer_letter}")
+            # The answer letter is deliberately NOT written into the document:
+            # a node that stores "Answer: C" next to the question would hand
+            # any MMLU-based answer-quality run its labels (leakage).
+            documents.append(f"{row['question']} Choices: {choice_lines}.")
         node_id = f"mmlu_{subject}"
         local_model = LOCAL_MODELS[i % len(LOCAL_MODELS)]
         _write_spec(EXTRA_DIR, node_id, local_model, documents)

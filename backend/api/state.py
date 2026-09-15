@@ -208,16 +208,27 @@ class AppState:
         self.source_exposure_costs.pop(node_id, None)
         return removed
 
-    def node_status(self) -> list[dict]:
+    def node_status(self, routing_mode: str = "legacy") -> list[dict]:
+        """Trust is per routing mode (legacy BoundedTrustUpdate, smart
+        EvidenceTrust, v2/psi DecoyAwareEvidenceTrust); report the state the
+        requested mode actually uses, with its runtime observation count,
+        rather than the legacy value under every mode."""
         statuses = []
         for profile in self.registry.all_profiles():
-            trust = self.trust_update.get(profile.source_id, default=profile.trust_mean)
+            if routing_mode == "smart":
+                trust, observations = self.smart_trust.get(profile.source_id)
+            elif routing_mode in {"v2", "psi"}:
+                trust, observations = self.v2_trust.get(profile.source_id)
+            else:
+                trust = self.trust_update.get(profile.source_id, default=profile.trust_mean)
+                observations = profile.trust_observations
             node = self.nodes.get(profile.source_id)
             statuses.append(
                 {
                     "node_id": profile.source_id,
                     "trust": trust,
-                    "trust_observations": profile.trust_observations,
+                    "trust_observations": observations,
+                    "trust_mode": routing_mode,
                     "document_count_bucket": profile.document_count_bucket,
                     "profile_version": profile.profile_version,
                     "local_model": self.node_local_models.get(profile.source_id, SHARED_ROUTING_MODEL),

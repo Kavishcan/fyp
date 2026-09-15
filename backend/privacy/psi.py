@@ -41,6 +41,7 @@ import os
 from dataclasses import dataclass, field
 
 import nacl.bindings as sodium
+from nacl.exceptions import CryptoError
 
 SCALAR_BYTES = sodium.crypto_core_ed25519_SCALARBYTES
 POINT_BYTES = sodium.crypto_core_ed25519_BYTES
@@ -142,7 +143,7 @@ class PSIClient:
                 try:
                     found[cid] = json.loads(open_envelope(key, envelope))
                     break
-                except Exception:  # nacl CryptoError: not ours
+                except CryptoError:  # wrong key or tampered: not ours
                     continue
         return found
 

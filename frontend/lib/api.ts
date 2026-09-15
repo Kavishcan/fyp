@@ -38,6 +38,8 @@ export interface NodeStatus {
   /** "mcp" — a real, separate server process reached over MCP. "simulated" —
    * documents held in the coordinator's own process. */
   transport: "mcp" | "simulated";
+  /** Which routing mode's trust state this row reports (legacy | smart | v2 | psi). */
+  trust_mode: string;
   description: string;
   topics: string[];
   metadata_method: string;

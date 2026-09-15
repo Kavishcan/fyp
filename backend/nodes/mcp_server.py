@@ -93,6 +93,7 @@ def _load_or_create_psi_key(path: Path, generate) -> bytes:
         return bytes.fromhex(path.read_text().strip())
     key = generate()
     path.write_text(key.hex())
+    path.chmod(0o600)  # secret OPRF key: owner-only, same as the signing key
     return key
 
 

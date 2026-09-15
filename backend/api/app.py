@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
@@ -104,8 +104,9 @@ def register_node(req: NodeRegisterRequest) -> NodeRegisterResponse:
 
 
 @app.get("/nodes", response_model=list[NodeStatus])
-def list_nodes() -> list[NodeStatus]:
-    return [NodeStatus(**s) for s in state.node_status()]
+def list_nodes(routing_mode: str = Query(default="legacy", pattern="^(legacy|smart|v2|psi)$")) -> list[NodeStatus]:
+    """Trust columns reflect `routing_mode`'s own trust state (see AppState.node_status)."""
+    return [NodeStatus(**s) for s in state.node_status(routing_mode)]
 
 
 @app.delete("/nodes/{node_id}")
