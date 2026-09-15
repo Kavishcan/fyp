@@ -58,7 +58,10 @@ contact-everything gain at half the contacts; gains concentrate on
 literature questions (pubmedqa +13, bioasq +10) and knowledge MCQ do not
 benefit. ±8-point intervals at n=150 — do not describe psi vs closed-book
 as significant. Corpora are BEIR samples, not MedRAG, so absolute accuracy
-is not comparable to published MIRAGE numbers.
+is not comparable to published MIRAGE numbers. Addendum: psi + cross-node
+rerank (top-2) 0.587 at 2 passages; psi + cells + rerank (the docs/41
+configuration) 0.580 at 1.76 medical contacts — the privacy configuration
+answers as well as the leaky one at half the passages.
 
 Docs/37: on the project's 200 synthetic privacy cases, psi exposes 0 of 3
 sensitive values to nodes; legacy/smart/v2 expose 3 of 3 (v2 via
