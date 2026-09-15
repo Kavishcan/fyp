@@ -1,5 +1,7 @@
 # Deployment boundaries and API
 
+> **Status:** Historical boundary note. Current boundaries: docs/03 (target) and docs/41 (implemented).
+
 This repository is local research infrastructure, not a secured hospital
 deployment or a clinical tool. Use public/synthetic data. Any real clinical
 deployment would need separate governance, security and regulatory assessment.

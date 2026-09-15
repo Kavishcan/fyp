@@ -150,7 +150,7 @@ def query(req: QueryRequest) -> QueryResponse:
         relevance_mode=req.relevance_mode, description_weight=req.description_weight,
         selection_policy=req.selection_policy, relative_score_floor=req.relative_score_floor,
         coarse_k=req.coarse_k, psi_nprobe=req.psi_nprobe, psi_fetch_set=req.psi_fetch_set,
-        evidence_top_k=req.evidence_top_k,
+        evidence_top_k=req.evidence_top_k, decoy_policy=req.decoy_policy, cell_size=req.cell_size,
     )
     return QueryResponse(**result)
 

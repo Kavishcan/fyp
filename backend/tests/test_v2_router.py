@@ -164,3 +164,64 @@ def test_no_profiles_returns_empty_decision():
     decision = select_dispatch(_query(), [], trust={}, per_source_cost={}, topic_key="t1")
     assert decision.dispatched_source_ids == []
     assert decision.stop_reason == "no_candidates"
+
+
+# --- decoy_policy="cells" (docs/40) --------------------------------------------
+
+
+def _cell_fixture(n: int = 8):
+    import numpy as np
+    from baselines.base import SourceProfile
+    from router.anonymity import build_cells
+
+    rng = np.random.default_rng(1)
+    profiles = [SourceProfile(source_id=f"s{i}", centroids=rng.standard_normal((1, 8))) for i in range(n)]
+    cells = build_cells([p.source_id for p in profiles], {p.source_id: str(i % 4) for i, p in enumerate(profiles)}, 4)
+    return profiles, cells, rng.standard_normal(8)
+
+
+def test_cells_policy_dispatches_the_whole_cell_of_the_top_source():
+    from router.v2 import V2Config, select_dispatch
+
+    profiles, cells, q = _cell_fixture()
+    decision = select_dispatch(q, profiles, trust={}, per_source_cost={}, topic_key="t",
+                               config=V2Config(exposure_budget=4.0, max_sources=4, genuine_k=1, coarse_k=8,
+                                               decoy_policy="cells"), cells=cells)
+    assert sorted(decision.dispatched_source_ids) in [sorted(c) for c in cells]
+    assert len(decision.genuine_source_ids) == 1 and len(decision.decoy_source_ids) == 3
+    assert decision.exposure_spent == 4.0 and decision.stop_reason == "max_sources"
+
+
+def test_cells_policy_is_stable_for_every_query_landing_on_the_cell():
+    import numpy as np
+    from router.v2 import V2Config, select_dispatch
+
+    profiles, cells, _ = _cell_fixture()
+    cfg = V2Config(exposure_budget=4.0, max_sources=4, genuine_k=1, coarse_k=8, decoy_policy="cells")
+    seen = {}
+    for i, p in enumerate(profiles):
+        q = np.asarray(p.centroids)[0]  # lands on source i
+        d = select_dispatch(q, profiles, trust={}, per_source_cost={}, topic_key=f"t{i}", config=cfg, cells=cells)
+        seen.setdefault(tuple(sorted(d.dispatched_source_ids)), set()).add(p.source_id)
+    assert len(seen) == len(cells)   # exactly one dispatch set per cell
+
+
+def test_cells_policy_respects_budget_by_dropping_the_source_not_the_cell():
+    from router.v2 import V2Config, select_dispatch
+
+    profiles, cells, q = _cell_fixture()
+    decision = select_dispatch(q, profiles, trust={}, per_source_cost={}, topic_key="t",
+                               config=V2Config(exposure_budget=3.0, max_sources=4, genuine_k=1, coarse_k=8,
+                                               decoy_policy="cells"), cells=cells)
+    assert decision.dispatched_source_ids == []
+    assert "exposure_budget" in decision.excluded.values()
+
+
+def test_cells_policy_requires_cells():
+    import pytest
+    from router.v2 import V2Config, select_dispatch
+
+    profiles, _, q = _cell_fixture()
+    with pytest.raises(ValueError):
+        select_dispatch(q, profiles, trust={}, per_source_cost={}, topic_key="t",
+                        config=V2Config(decoy_policy="cells"))

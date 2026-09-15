@@ -1,5 +1,7 @@
 # Routing improvement: protocol fixed before execution
 
+> **Status:** Historical protocol. Current protocols are in each results note docs/31–40.
+
 This is an implementation experiment, not a promise of novelty or improvement.
 The design is motivated by the already-inspected SciFact pilot. No parameter
 search will be run on the evaluation results below.

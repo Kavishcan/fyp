@@ -182,3 +182,14 @@ def test_evidence_rerank_drops_a_planted_off_topic_passage(tmp_path):
     state.registry.publish(forged)
     result = state.run_query("topic2 subject 2", max_nodes=4, genuine_k=2, sigma=0.0, routing_mode="psi", evidence_top_k=2)
     assert not any("TEST ATTACK" in c["document"] for c in result["citations"])
+
+
+def test_psi_with_cells_policy_contacts_a_fixed_cell(tmp_path):
+    state = _state(tmp_path, n_nodes=8)
+    a = state.run_query("topic3 subject 3", max_nodes=4, genuine_k=1, sigma=0.0, routing_mode="psi",
+                        decoy_policy="cells", cell_size=4)
+    b = state.run_query("topic3 subject 3 detail", max_nodes=4, genuine_k=1, sigma=0.0, routing_mode="psi",
+                        decoy_policy="cells", cell_size=4)
+    cells = [sorted(c) for c in state.anonymity_cells(4)]
+    assert sorted(a["nodes_contacted"]) in cells and sorted(b["nodes_contacted"]) in cells
+    assert a["citations"]

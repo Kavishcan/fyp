@@ -1,5 +1,7 @@
 # Smart router: first implementation
 
+> **Status:** Historical implementation note for smart mode. Smart mode is preserved as a control; the current pipeline is docs/41.
+
 This is an implementation specification, not a literature summary or a claim
 of proven novelty. It follows the user's revised direction: build an independent
 router and compare it with published routing systems.

@@ -1,5 +1,7 @@
 # Measured smart-router pilot
 
+> **Status:** Historical pilot result (preserved negative finding). Current measurements: docs/36–40.
+
 ## Verdict
 
 The current default smart-router heuristic is not yet a useful improvement over

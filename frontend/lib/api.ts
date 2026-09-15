@@ -62,6 +62,9 @@ export interface QueryRequest {
   psi_fetch_set?: number;
   /** Keep only the top-k passages across all contacted nodes (cross-node rerank) before generation. */
   evidence_top_k?: number;
+  /** v2/psi: "topic_stable" hides which contact is genuine; "cells" also hides the topic (docs/40). */
+  decoy_policy?: "topic_stable" | "cells";
+  cell_size?: number;
   exposure_budget?: number;
   minimum_gain?: number;
   minimum_trust?: number;

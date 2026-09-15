@@ -1,10 +1,12 @@
 # Repository guidance
 
-Latest milestone: docs/34-encrypted-query-scoring.md. On main, an opt-in
-`POST /query/private-score` uses Paillier encrypted scoring over MCP with a
-trusted coordinator. Disabled by default. NO passage fetch or generation;
-NO end-to-end query privacy claim. Contact patterns remain exposed. Preserve
-the negative v2 results. Do not resume the evidence-budget direction.
+The authoritative statement of what is implemented, measured and claimed is
+docs/41-current-system-specification.md; docs 04, 07–08 and 13–17 are
+historical and carry a status line. `decoy_policy="cells"` (docs/40) is now
+a select_dispatch option and a QueryRequest field alongside "topic_stable";
+legacy remains the API default. Paillier encrypted scoring (docs/34) is an
+experimental in-cluster tier, disabled by default, not the mechanism.
+Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
@@ -177,7 +179,7 @@ The earlier instruction prohibiting a new router is superseded.
 | Path | Role |
 |---|---|
 | backend/router/smart.py | SmartConfig, SourceEvidence, SmartRouter, SmartDecision, EvidenceTrust |
-| backend/router/v2.py | V2Config, V2Decision, select_dispatch, dispatch_payload, DecoyAwareEvidenceTrust (exemption OFF by default, see docs/30) |
+| backend/router/v2.py | V2Config (decoy_policy topic_stable/cells), select_dispatch, dispatch_payload, DecoyAwareEvidenceTrust (exemption OFF by default, see docs/30) |
 | backend/nodes/signing.py | Ed25519 profile signing; integrity and key binding only, not truthfulness |
 | backend/router/pipeline.py | Preserved legacy baseline-plus-layer path |
 | backend/router/exposure.py | Legacy proxy accounting; genuine exemptions mean it is not smart budget enforcement |

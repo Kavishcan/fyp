@@ -66,6 +66,11 @@ class QueryRequest(BaseModel):
     # cosine to the query in the shared routing space, across all contacted
     # nodes, before generation. None = keep all (every node's passage).
     evidence_top_k: Optional[int] = Field(default=None, ge=1)
+    # v2/psi decoy policy (docs/39–40): "topic_stable" hides which contact is
+    # genuine; "cells" dispatches fixed vertical-diverse cells and hides the
+    # topic as well, at one fewer genuine contact.
+    decoy_policy: Literal["topic_stable", "cells"] = "topic_stable"
+    cell_size: int = Field(default=4, ge=2)
     exposure_budget: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)

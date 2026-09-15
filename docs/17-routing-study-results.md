@@ -1,5 +1,7 @@
 # Routing improvement and profile-cloning results
 
+> **Status:** Historical result (preserved). Current measurements: docs/36–40.
+
 ## Verdict
 
 The implementation is improved over the old default, but the proposed research

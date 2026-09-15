@@ -1,70 +1,71 @@
 # FedSafeRouter
 
-Latest query-privacy milestone: [encrypted scoring over MCP](docs/34-encrypted-query-scoring.md).
-This opt-in endpoint encrypts query vectors for source-side scoring, but stops
-before document fetch and generation. Existing UI/query modes are unchanged;
-end-to-end query privacy is not established.
+**Privacy-aware source routing for Federated Retrieval-Augmented Generation:
+mitigating query and access-pattern leakage.**
 
-**Training-Free Exposure-Constrained and Trust-Aware Adaptive Source Routing
-for Scalable Federated RAG.**
+A federated RAG system routes each question to a few of many independently
+owned knowledge sources. That routing leaks twice: the contacted sources see
+the question, and anyone watching *which* sources were contacted can infer
+what it was about. This repository measures both leaks on a standard
+federated-search benchmark, shows that the cheap fixes do not close them,
+and implements and measures two that do:
 
-This FYP investigates an independent source-selection algorithm. It combines
-profile relevance, coordinator-observed trust, overlap-aware adaptive selection
-and a strict contact-exposure budget. RAGRoute is a comparison baseline, not
-the required engine underneath the proposed router.
+- **Query content** never reaches a source: dispatch is an OPRF / labeled
+  private-set-intersection exchange over cluster ids (`backend/privacy/psi.py`).
+  On 200 synthetic privacy cases, 0 of 3 sensitive values are exposed to
+  contacted nodes, against 3 of 3 for text or vector dispatch.
+- **Query topic** is hidden from a pattern observer by fixed anonymity cells
+  (`backend/router/anonymity.py`): topic inference falls from 0.454 to 0.201
+  and source inference from 0.744 to 0.231 at the same fan-out.
 
-The implementation is a research prototype. Novelty, privacy benefit, attack
-resilience and scalability must be established through comparative experiments.
-Healthcare is the intended case study, not a validated clinical deployment.
+Everything is measured, including what did not work: Gaussian perturbation,
+semantic hashing, topic-stable decoys against the topic attack, hard trust
+gates. The authoritative description of the system, threat model and claims
+is [docs/41 — current system specification](docs/41-current-system-specification.md).
 
-## Current architecture
+This is a final-year research prototype. Claims are routing-stage privacy
+against contacted sources and a pattern observer under a trusted
+coordinator; not end-to-end privacy, not differential privacy, not a proof.
 
-The [routing improvement study](docs/17-routing-study-results.md) now compares
-coarse/fine source profiles, an opt-in relative stopping policy, and cloned-profile
-attacks on SciFact and NFCorpus. Finer profiles improve retrieval; the stopping
-and trust trade-offs do not yet establish superiority over matched baselines.
-The old default remains unchanged. See the report for measurements and API usage.
+## Pipeline (`routing_mode="psi"`, `decoy_policy="cells"`)
 
 ```text
-Source documents -> source index + shared-space profile -> registry
-
-Question -> coordinator embedding
-         -> SMART ROUTER: relevance + trust + overlap + strict budget
-         -> selected MCP / in-process nodes
-         -> returned passages -> coordinator consistency-trust update
-         -> optional configured generator -> answer and citations
+question
+  → shared routing embedder                      (device side)
+  → local ranking over signed source profiles
+  → dispatch set: the fixed cell of the top source, one exposure budget
+  → per node: nearest public cluster centroids → blinded ids
+       → node OPRF-evaluates and serves encrypted envelopes   (real MCP process)
+       → only matched envelopes open on the device
+  → rerank inside and across nodes, evidence trust update
+  → local generation (Ollama, localhost only) → answer + citations
+  → per-stage latency and per-contact bytes logged
 ```
 
-The coordinator sees the raw question and returned passages. Contacted MCP
-nodes receive raw questions. The pure routing module uses embeddings/profiles,
-but is not isolated from the coordinator as a separate security boundary.
+Legacy (cosine + rerank + decoys) remains the API/dashboard default; `smart`,
+`v2` and `psi` are opt-in per request.
 
-The live API/MCP path still uses hashing embeddings. A semantic embedder exists
-but needs consistent integration before meaningful retrieval-quality results.
-The API currently collects passages without a global reranker.
+## Results index
 
-MCP profiles now optionally include deterministic document-derived descriptions,
-topics and description embeddings. Smart requests can select relevance_mode
-centroid, description or combined; centroid remains the default. The
-[metadata comparison](docs/15-mcp-metadata-pilot.md) found a small, statistically
-uncertain fixed-contact gain and no improvement to default adaptive stopping.
-
-## Modes
-
-| Mode | Purpose | Current status |
+| Question | Note | Headline |
 |---|---|---|
-| smart | Independent constrained adaptive router | Implemented; opt in through the API |
-| legacy | Earlier cosine/rerank/decoy pipeline | Preserved; API and dashboard default |
-| Published/local baselines | Research comparisons | Separate experiment adapters; not smart-router dependencies |
+| Does routing leak the topic? | [39](docs/39-routing-pattern-leakage.md) | cosine router: 0.496 topic accuracy (chance 0.077); sticky decoys do not reduce it |
+| A decoy policy that works | [40](docs/40-cells-rerank-healthcare.md) | cells: 0.201 topic / 0.231 source; same-domain healthcare: 0.272 / 0.250 |
+| Query content to sources | [37](docs/37-privacy-cases-and-transport.md) | psi 0 of 3 values exposed; ~10 ms, ~170 KB per contact |
+| PSI stage and FeB4RAG routing | [36](docs/36-psi-dispatch-and-feb4rag.md) | nDCG@1 0.734, MRR 0.578; privacy modes cost nothing in routing |
+| Answer quality | [38](docs/38-answer-quality.md) | MIRAGE, local Qwen3.5-9B: closed 0.547 / psi 0.580 / broadcast 0.627 |
+| Bucketing for PSI | [35](docs/35-bucket-recall.md) | SimHash fails (0.001); cluster ids 0.89 of dense recall |
+| Scaling and transport | [33](docs/33-scaling-and-transport.md) | 30–300 sources; 30 real MCP processes |
+| Cheap defences fail | [32](docs/32-v2-attack-results.md) | inversion 1.000; noise kills utility first; trust gate deadlocks |
+| v2 vs legacy | [30](docs/30-privacy-pipeline-v2.md), [31](docs/31-mode-comparison-results.md) | v2 ties legacy; exemption leaks decoys |
+| Encrypted scoring PoC | [34](docs/34-encrypted-query-scoring.md) | Paillier, correct, ~18 s/query — experimental |
 
-Smart mode has no decoys and no query-embedding perturbation. Default cost is one
-unit per recipient; every contact must fit the budget. It can select fewer than
-the source cap, or no sources. A smaller contact set is not a formal privacy
-guarantee and may still reveal routing patterns.
+Each note records its command, seeds and what it does not establish.
 
 ## Run locally
 
-Use Python 3.10+ and the existing environment when available:
+Python 3.10+. Exact versions used for every reported number are in
+`backend/requirements-lock.txt`.
 
 ```sh
 python3.12 -m venv .venv
@@ -72,120 +73,78 @@ python3.12 -m venv .venv
 .venv/bin/uvicorn api.app:app --reload --app-dir backend --port 8000
 ```
 
-Prepared node files in data/mcp_nodes are registered at startup. Without them,
-register harmless simulated sources through the UI or API. Inspect existing
-datasets before downloading; do not download a dataset larger than 500 MB
-without revisiting the user's limit.
+Prepared node files in `data/mcp_nodes` are registered at startup as real MCP
+subprocesses. For local generation install [Ollama](https://ollama.com), pull
+a model, and set `LLM_PROVIDER=ollama OLLAMA_MODEL=qwen3.5:9b`. Hosted
+providers (OpenAI/Gemini) work but send the question and passages off-device;
+they are a quality reference, not a private configuration.
 
-In a second terminal:
+Frontend:
 
 ```sh
-cd frontend
-npm install
-npm run dev
+cd frontend && npm install && npm run dev
 ```
 
-Open [the studio](http://localhost:3000). Its diagram, controls and source trust
-display still describe legacy mode. The TypeScript API contract supports smart
-requests, but there is not yet a studio mode selector.
-
-## Try the smart router
-
-After registering suitable sources:
+## Try the private path
 
 ```sh
 curl -X POST http://localhost:8000/query \
   -H 'Content-Type: application/json' \
-  -d '{"question":"COVID treatment research","routing_mode":"smart","max_nodes":5,"exposure_budget":2,"minimum_gain":0.05}'
+  -d '{"question":"Is milk good for our bones?","routing_mode":"psi","max_nodes":4,"genuine_k":1,"decoy_policy":"cells","cell_size":4,"evidence_top_k":2}'
 ```
 
-Smart mode treats max_nodes as a ceiling; genuine_k is legacy-only.
-routing_details in the response and audit endpoint explains selection features,
-costs, exclusions and stopping. See the
-[step-by-step implementation guide](docs/13-smart-router-implementation.md).
+`routing_details` shows the cell dispatched, per-node envelopes delivered
+and opened, and `GET /audit/{query_id}` the full trace. `GET /nodes?routing_mode=psi`
+reports that mode's trust state.
+
+## Reproduce a result
+
+```sh
+cd backend
+../.venv/bin/python -m eval.run_leakage            # docs/39–40 pattern leakage table
+../.venv/bin/python -m eval.run_privacy_cases      # docs/37 sensitive values, attack cases
+../.venv/bin/python -m eval.run_feb4rag            # docs/36 routing quality
+../.venv/bin/python -m eval.run_mcp_transport --persistent --modes legacy v2 psi
+LLM_PROVIDER=ollama OLLAMA_MODEL=qwen3.5:9b ../.venv/bin/python -m eval.run_answer_quality
+```
+
+BEIR corpora under `backend/vendor/beir/` and FeB4RAG under
+`backend/vendor/FeB4RAG/` are fetched per [docs/06](docs/06-datasets.md); the
+synthetic privacy cases come from the companion `fedrag-dataset` repository.
 
 ## Repository map
 
 | Path | Role |
 |---|---|
-| backend/router/smart.py | Independent selector and EvidenceTrust |
-| backend/router/ | Registry and preserved legacy components |
-| backend/baselines/ | RAGRoute stub, TASR adapter and local controls |
-| backend/nodes/ | Profile construction, hashing/semantic embedders, MCP server/client and simulator |
-| backend/api/ | FastAPI coordinator, request validation and mode dispatch |
-| backend/attacks/ | Existing A1/A2/A3 experiment components |
-| backend/eval/ | Metrics, instrumentation and existing evaluation helpers |
-| backend/generation/ | Optional generation backends |
-| backend/tests/ | Unit and integration tests |
-| frontend/ | Legacy-oriented studio and shared API types |
-| data/ | Preparation scripts and local node datasets |
-| experiments/ | Experiment configurations and provenance/results |
-| docs/ | Design, research plan, dataset strategy and status |
+| backend/router/v2.py | Local routing, exposure budget, decoy policies (`topic_stable`, `cells`) |
+| backend/router/anonymity.py | Topic-stable sampling and fixed anonymity cells |
+| backend/privacy/psi.py, cluster_index.py | OPRF / labeled-PSI dispatch; node cluster table |
+| backend/nodes/ | Profiles, Ed25519 signing, MCP server and (persistent) client, simulator |
+| backend/api/ | Coordinator (plays the device in this prototype), request validation |
+| backend/attacks/ | A1 inversion, A2 source and topic inference, A3 hijack |
+| backend/eval/ | One harness per results note; instrumentation |
+| backend/generation/ | Ollama (local), OpenAI, Gemini |
+| backend/baselines/ | Random, broadcast, cosine, oracle, smart controls; RAGRoute stub; TASR adapter |
+| frontend/ | Studio; `lib/api.ts` mirrors `backend/api/schemas.py` |
+| data/, experiments/ | Node preparation, results CSVs, run logs |
+| docs/ | 01–10 planning; 13–17 historical pilots; 30–41 measured results and the current spec |
 
-## Generation and transport
-
-With no configured generator, answers are null and retrieved citations remain
-available. When OpenAI/Gemini is configured, the question and passages are sent
-to that provider. This is demo convenience, not privacy-preserving generation.
-Smart mode skips generation when no evidence was retrieved. A fixed local model
-for evaluation remains future work.
-
-Simulated sources hold documents in the coordinator process. MCP sources use
-real local subprocess/stdio transport; each call starts a fresh subprocess.
-Transport is real, but that does not establish remote institutional deployment.
-Raw corpora remain at MCP sources while selected passages return to the coordinator.
-
-## Baselines
-
-- Official [RAGRoute](https://github.com/sacs-epfl/ragroute) is the intended direct
-  published routing comparison. The adapter is still a stub. Its upstream
-  routing module can be wrapped separately; Ollama is not intrinsically required
-  for routing-only work, and upstream has a disable-LLM option.
-- [Routing-hijacking/TASR](https://github.com/Junjie-Mu/routing-hijacking-fedrag)
-  supplies external security comparison code. The TASR adapter is distinct from
-  the new smart-mode consistency heuristic.
-- Broadcast, random, cosine and oracle adapters remain local controls.
-
-A clone or passing adapter unit test is not a completed benchmark reproduction.
-Record versions, artifacts, commands and raw outputs before reporting results.
-See [baseline selection](docs/10-baseline-selection.md).
-
-## Verification and limitations
-
-The first [real-data pilot](docs/14-smart-router-pilot.md) found that default
-smart routing stops too aggressively on 30 random SciFact sources. It obeyed
-the budget but underperformed cosine top-3 on source/retrieval recall. Preserve
-this negative result; implementation correctness is not algorithmic benefit.
-
-The smart-router implementation was verified with 160 Python tests passing,
-including real MCP integration on a synthetic fixture, and TypeScript checking.
-The 1,000-profile test checks an in-memory invariant, not deployment scalability.
-Rerun these checks after changes:
+## Verification
 
 ```sh
-.venv/bin/pytest -q
-cd frontend
-./node_modules/.bin/tsc --noEmit --incremental false
+.venv/bin/pytest -q                                            # from the repository root
+cd frontend && ./node_modules/.bin/tsc --noEmit --incremental false
 ```
 
-Still required: semantic-model integration, comparable baseline runs, full
-attack evaluation, global evidence reranking, network/stage instrumentation,
-persistent authenticated identity/policies, and larger transport experiments.
-Profile signing is a placeholder; redaction is heuristic; consistency does not
-prove honesty. Do not use real private or patient data in this demo.
+Test counts are not experimental, privacy or answer-quality results.
 
-## Documentation
+## Limitations
 
-1. [Research gap hypotheses](docs/01-research-gap.md)
-2. [Proposal planning notes](docs/02-proposal.md)
-3. [Architecture](docs/03-architecture.md)
-4. [Router design](docs/04-router-design.md)
-5. [Experiments](docs/05-experiments.md)
-6. [Dataset strategy](docs/06-datasets.md)
-7. [Roadmap](docs/07-roadmap.md)
-8. [Deployment boundaries](docs/08-deployment.md)
-9. [Thesis mapping](docs/09-thesis-mapping.md)
-10. [Baseline selection](docs/10-baseline-selection.md)
-11. [Smart-router implementation and usage](docs/13-smart-router-implementation.md)
-12. [Measured smart-router pilot](docs/14-smart-router-pilot.md)
-13. [MCP metadata extension and comparison](docs/15-mcp-metadata-pilot.md)
+The coordinator is trusted and plays the user's device; separating it into
+a relay is the docs/03 target. Metadata (that a query happened, its timing
+and size) is not protected. A source that lies about its content is
+selected as often as an honest one; the evidence rerank keeps its planted
+passage out of the prompt but does not stop the contact. PSI responses are
+linear in a node's table size. Answer quality is one model, one seed, 150
+questions. The healthcare federation is public literature partitioned by
+topic, not institutional data. Do not use real private or patient data.

@@ -1,5 +1,7 @@
 # Roadmap
 
+> **Status:** Historical planning note. Progress and current state are in docs/41.
+
 This roadmap follows the revised independent-router direction. It is ordered by
 remaining work, not an assumed academic calendar. Confirm formal meeting,
 submission and dissertation requirements with the supervisor.

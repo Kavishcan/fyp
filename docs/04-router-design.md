@@ -1,5 +1,7 @@
 # Smart router design
 
+> **Status:** Historical design note. The selection rule and decoy strategy described here were superseded by router/v2 and the anonymity cells of docs/40; see docs/41 for the current system.
+
 The current proposal is an independent training-free source-selection heuristic.
 Its implementation is [smart.py](../backend/router/smart.py). RAGRoute and other
 published methods remain separate comparison baselines.

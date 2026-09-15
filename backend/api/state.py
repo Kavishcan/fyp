@@ -31,6 +31,7 @@ from router.pipeline import PipelineResult, PrivacyAwarePipeline, RerankFeatures
 from router.registry import SourceRegistry
 from router.smart import EvidenceTrust, SmartConfig, SmartRouter, SourceEvidence
 from router.trust import BoundedTrustUpdate
+from router.anonymity import build_cells
 from router.v2 import DecoyAwareEvidenceTrust, V2Config, dispatch_payload, dispatched_vector, select_dispatch
 
 from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
@@ -248,7 +249,7 @@ class AppState:
         relevance_mode: str = "centroid", description_weight: float = 0.5,
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
         coarse_k: int = 15, psi_nprobe: int = 2, psi_fetch_set: int | None = None,
-        evidence_top_k: int | None = None,
+        evidence_top_k: int | None = None, decoy_policy: str = "topic_stable", cell_size: int = 4,
     ) -> dict:
         if routing_mode not in {"legacy", "smart", "v2", "psi"}:
             raise ValueError("routing_mode must be legacy, smart, v2 or psi")
@@ -307,12 +308,14 @@ class AppState:
                 exposure_budget=float(max_nodes) if exposure_budget is None else exposure_budget,
                 max_sources=max_nodes, genuine_k=genuine_k, coarse_k=coarse_k,
                 aggregation=aggregation, minimum_trust=minimum_trust, sigma=sigma,
+                decoy_policy=decoy_policy,
             )
             decision = select_dispatch(
                 query_embedding, profiles,
                 trust={p.source_id: self.v2_trust.get(p.source_id)[0] for p in profiles},
                 per_source_cost={p.source_id: self.source_exposure_costs.get(p.source_id, 1.0) for p in profiles},
                 topic_key=topic_key, config=v2_config,
+                cells=self.anonymity_cells(cell_size) if decoy_policy == "cells" else None,
             )
             v2_vector = dispatched_vector(query_embedding, sigma, self._rng) if routing_mode == "v2" else None
             routing_details = decision.to_dict()
@@ -484,6 +487,15 @@ class AppState:
             "generation_status": generation_status,
             "routing_details": routing_details,
         }
+
+    def anonymity_cells(self, cell_size: int) -> list[list[str]]:
+        """Fixed cells over the current registry (docs/40). Deterministic in the
+        sorted source ids and their first policy label (the only group signal a
+        profile carries), so the same registry always yields the same cells and
+        the cover set is stable across queries."""
+        profiles = self.registry.all_profiles()
+        group_of = {p.source_id: (p.policy_labels[0] if p.policy_labels else "") for p in profiles}
+        return build_cells([p.source_id for p in profiles], group_of, cell_size)
 
     def _rerank_evidence(self, query_embedding: np.ndarray, citations: list[dict], top_k: int | None) -> list[dict]:
         """Global rerank of all returned passages by cosine in the shared

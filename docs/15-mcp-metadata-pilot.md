@@ -1,5 +1,7 @@
 # MCP metadata extension and measured comparison
 
+> **Status:** Historical pilot result. Current measurements: docs/36–40.
+
 ## What was implemented
 
 Sources can now publish these additional application-defined fields through

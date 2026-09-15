@@ -55,6 +55,11 @@ class V2Config:
     aggregation: str = "max"  # CosineRouter aggregation over profile centroids
     minimum_trust: float = 0.0
     sigma: float = 0.0        # perturbation of the ONE dispatched vector
+    # docs/39–40: "topic_stable" pads the genuine set with per-topic decoys
+    # (hides which contact is genuine, does not hide the topic); "cells"
+    # dispatches the whole fixed cell of each genuine source (hides both, at
+    # one fewer genuine contact). Cells are supplied by the caller.
+    decoy_policy: str = "topic_stable"
 
     def __post_init__(self):
         if not isfinite(self.exposure_budget) or self.exposure_budget < 0:
@@ -71,6 +76,8 @@ class V2Config:
             raise ValueError("sigma must be finite and nonnegative")
         if self.aggregation not in {"max", "mean", "top_r_mean"}:
             raise ValueError("aggregation must be max, mean or top_r_mean")
+        if self.decoy_policy not in {"topic_stable", "cells"}:
+            raise ValueError("decoy_policy must be topic_stable or cells")
 
 
 @dataclass
@@ -106,12 +113,19 @@ def select_dispatch(
     topic_key: str,
     config: V2Config | None = None,
     order_rng: random.Random | None = None,
+    cells: list[list[str]] | None = None,
 ) -> V2Decision:
     """Rank locally, take the genuine set within budget, pad with topic-stable
     decoys within the remaining budget, shuffle the dispatch order.
 
     `trust` and `per_source_cost` are coordinator-owned inputs; missing entries
     default to neutral 0.5 trust and unit cost. Every cost must be positive.
+
+    With `config.decoy_policy == "cells"`, `cells` (router/anonymity.build_cells)
+    is required: for each genuine source in rank order, its whole cell is
+    dispatched if the cell fits the remaining budget and `max_sources`;
+    otherwise that genuine source is skipped rather than contacted outside
+    its cell. Cell mates are recorded as decoys.
     """
     config = config or V2Config()
     decision = V2Decision(config=asdict(config))
@@ -160,6 +174,51 @@ def select_dispatch(
             "relevance": ranking.scores.get(source_id), "exposure_cost": cost,
             "cumulative_exposure": fsum(spent),
         })
+
+    if config.decoy_policy == "cells":
+        if cells is None:
+            raise ValueError("decoy_policy='cells' requires cells")
+        # Undo the genuine pass: cells are dispatched whole or not at all.
+        decision.genuine_source_ids, decision.steps, spent = [], [], []
+        cell_of = {sid: tuple(cell) for cell in cells for sid in cell}
+        eligible_ids = {p.source_id for p in eligible}
+        taken: set[tuple[str, ...]] = set()
+        for source_id in candidates:
+            if len(decision.genuine_source_ids) >= config.genuine_k:
+                break
+            cell = cell_of.get(source_id)
+            if cell is None:
+                decision.excluded[source_id] = "no_cell"
+                continue
+            if cell in taken:
+                decision.genuine_source_ids.append(source_id)
+                decision.decoy_source_ids.remove(source_id)
+                continue
+            members = [m for m in cell if m in eligible_ids]
+            cost = fsum(per_source_cost.get(m, 1.0) for m in members)
+            already = len(decision.genuine_source_ids) + len(decision.decoy_source_ids)
+            if fsum([*spent, cost]) > config.exposure_budget or already + len(members) > config.max_sources:
+                decision.excluded[source_id] = "exposure_budget"
+                continue
+            taken.add(cell)
+            spent.append(cost)
+            decision.genuine_source_ids.append(source_id)
+            for m in members:
+                role = "genuine" if m == source_id else "decoy"
+                if role == "decoy":
+                    decision.decoy_source_ids.append(m)
+                decision.steps.append({
+                    "source_id": m, "role": role, "relevance": ranking.scores.get(m),
+                    "exposure_cost": per_source_cost.get(m, 1.0), "cumulative_exposure": fsum(spent), "cell": list(cell),
+                })
+        decision.exposure_spent = fsum(spent)
+        dispatched = [*decision.genuine_source_ids, *decision.decoy_source_ids]
+        (order_rng or random.Random()).shuffle(dispatched)
+        decision.dispatched_source_ids = dispatched
+        decision.stop_reason = ("max_sources" if len(dispatched) >= config.max_sources else
+                                "exposure_budget" if any(r == "exposure_budget" for r in decision.excluded.values()) else
+                                "no_candidates" if not dispatched else "candidates_exhausted")
+        return decision
 
     pool = [s for s in candidates if s not in decision.genuine_source_ids and s not in decision.excluded]
     wanted = max(0, config.max_sources - len(decision.genuine_source_ids))
