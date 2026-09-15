@@ -161,6 +161,8 @@ def main() -> None:
     parser.add_argument("--minimum-trust", type=float, default=0.0,
                         help="v2 uses trust ONLY as an exclusion gate, so at 0.0 trust "
                              "cannot affect selection at all (see docs/32)")
+    parser.add_argument("--trust-weight", type=float, default=0.0,
+                        help="v2 ranking term: relevance + w*(trust-0.5); docs/32 named it, docs/42 measures it")
     parser.add_argument("--seeds", nargs="+", type=int, default=[11, 22, 33])
     parser.add_argument("--embedder", choices=["sentence-transformer", "hashing"], default="sentence-transformer")
     parser.add_argument("--embedder-model", default="BAAI/bge-base-en-v1.5")
@@ -190,7 +192,7 @@ def main() -> None:
         config = V2Config(
             exposure_budget=float(args.max_nodes), max_sources=args.max_nodes,
             genuine_k=args.genuine_k, coarse_k=args.coarse_k, aggregation="max",
-            minimum_trust=args.minimum_trust,
+            minimum_trust=args.minimum_trust, trust_weight=args.trust_weight,
         )
         for condition in ("none", "plausibility", "trust", "both"):
             row = run_condition(

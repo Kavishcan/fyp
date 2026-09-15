@@ -13,6 +13,12 @@ device), comparing
                 reranked on the device.
 - broadcast     `--top-per-node` passages from EVERY node — the contact-
                 everything reference, highest exposure.
+- psi_cells     docs/40 recommended configuration: fixed anonymity cells
+                (`decoy_policy="cells"`, cell size 4, one genuine) instead of
+                topic-stable decoys, and the cross-node evidence rerank
+                keeping `--evidence-top-k` passages.
+- psi_rerank    psi routing as above plus the cross-node rerank only, to
+                separate the rerank's effect from the cells'.
 
 Nodes: medical BEIR corpora (nfcorpus, scifact, trec-covid) plus
 non-medical distractors (fiqa, arguana, scidocs) so routing has something to
@@ -48,6 +54,7 @@ from generation.ollama_generator import OllamaGenerator
 from nodes.simulator import InProcessNode, attach_psi_index
 from privacy.cluster_index import assign_clusters, rerank_passages
 from privacy.psi import PSIClient
+from router.anonymity import build_cells
 from router.v2 import V2Config, select_dispatch
 
 MIRAGE = REPO_ROOT / "backend" / "vendor" / "ragroute" / "data" / "benchmark" / "MIRAGE.json"
@@ -82,14 +89,18 @@ def parse_letter(answer: str, options: dict) -> str | None:
     return found[0] if found else None
 
 
-def psi_passages(query_vec, node: InProcessNode, top_n: int, nprobe: int) -> list[str]:
-    """Device-side PSI contact against an in-process node (no MCP)."""
+def psi_candidates(query_vec, node: InProcessNode, nprobe: int) -> list[dict]:
+    """Device-side PSI contact against an in-process node (no MCP): the
+    decrypted passages of the probed clusters, with their embeddings."""
     wanted = assign_clusters(query_vec, node.psi_centroids, nprobe=nprobe)
     q = PSIClient.blind(wanted)
     outputs = PSIClient.unblind(q, node.psi.evaluate(q.blinded))
     matches = PSIClient.open_matches(q, outputs, node.source_id, node.psi.envelopes_for(None))
-    candidates = [p for cid in wanted for p in matches.get(cid, [])]
-    return [doc for doc, _ in rerank_passages(query_vec, candidates, top_n=top_n)]
+    return [p for cid in wanted for p in matches.get(cid, [])]
+
+
+def psi_passages(query_vec, node: InProcessNode, top_n: int, nprobe: int) -> list[str]:
+    return [doc for doc, _ in rerank_passages(query_vec, psi_candidates(query_vec, node, nprobe), top_n=top_n)]
 
 
 def main() -> None:
@@ -105,7 +116,10 @@ def main() -> None:
     parser.add_argument("--coarse-k", type=int, default=12)
     parser.add_argument("--nprobe", type=int, default=2)
     parser.add_argument("--top-per-node", type=int, default=2)
-    parser.add_argument("--conditions", nargs="+", default=["closed_book", "psi", "broadcast"])
+    parser.add_argument("--conditions", nargs="+", default=["closed_book", "psi", "broadcast"],
+                        choices=["closed_book", "psi", "broadcast", "psi_cells", "psi_rerank"])
+    parser.add_argument("--evidence-top-k", type=int, default=2, help="psi_cells / psi_rerank: passages kept after the cross-node rerank")
+    parser.add_argument("--cell-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--model", default=None, help="Ollama model (default: OLLAMA_MODEL env)")
     parser.add_argument("--embedder", choices=["sentence-transformer", "hashing"], default="sentence-transformer")
@@ -134,6 +148,14 @@ def main() -> None:
     q_vecs = [_normalise(v) for v in embedder.embed([q["question"] for q in questions])]
     config = V2Config(exposure_budget=float(args.max_nodes), max_sources=args.max_nodes,
                       genuine_k=args.genuine_k, coarse_k=args.coarse_k, aggregation="max")
+    # Cells are grouped by domain the way FeB4RAG verticals are; the router
+    # itself never sees these labels, only the fixed partition they produce.
+    vertical = {"nfcorpus": "biomedical", "scifact": "scientific", "trec-covid": "biomedical", "fiqa": "finance",
+                "arguana": "general", "scidocs": "scientific", "dbpedia-entity": "general", "webis-touche2020": "debate"}
+    cells = build_cells(engines, {e: vertical.get(e, "other") for e in engines}, args.cell_size)
+    cells_config = V2Config(exposure_budget=float(max(args.max_nodes, max(len(c) for c in cells))),
+                            max_sources=max(args.max_nodes, max(len(c) for c in cells)), genuine_k=1,
+                            coarse_k=args.coarse_k, aggregation="max", decoy_policy="cells")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = time.strftime("%Y%m%d-%H%M%S")
@@ -149,9 +171,17 @@ def main() -> None:
             else:
                 decision = select_dispatch(vec, list(profiles.values()),
                                            trust={e: 0.5 for e in profiles}, per_source_cost={e: 1.0 for e in profiles},
-                                           topic_key=item["subset"], config=config)
+                                           topic_key=item["subset"],
+                                           config=cells_config if cond == "psi_cells" else config,
+                                           cells=cells if cond == "psi_cells" else None)
                 contacted = decision.dispatched_source_ids
-                passages = [d for e in contacted for d in psi_passages(vec, nodes[e], args.top_per_node, args.nprobe)]
+                if cond in {"psi_cells", "psi_rerank"}:
+                    # Cross-node rerank (docs/40): every node's candidates scored
+                    # against the query on the device, top-k kept.
+                    pool = [p for e in contacted for p in psi_candidates(vec, nodes[e], args.nprobe)]
+                    passages = [d for d, _ in rerank_passages(vec, pool, top_n=args.evidence_top_k)]
+                else:
+                    passages = [d for e in contacted for d in psi_passages(vec, nodes[e], args.top_per_node, args.nprobe)]
             t = time.perf_counter()
             raw = generator.generate(mcq_text(item), passages)
             gen_ms = (time.perf_counter() - t) * 1000

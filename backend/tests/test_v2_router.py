@@ -225,3 +225,34 @@ def test_cells_policy_requires_cells():
     with pytest.raises(ValueError):
         select_dispatch(q, profiles, trust={}, per_source_cost={}, topic_key="t",
                         config=V2Config(decoy_policy="cells"))
+
+
+# --- trust as a ranking term (docs/42) ------------------------------------------
+
+
+def test_trust_weight_zero_is_byte_identical_to_no_trust_term():
+    from router.v2 import V2Config, select_dispatch
+
+    profiles, _, q = _cell_fixture()
+    trust = {p.source_id: 0.2 if i == 0 else 0.9 for i, p in enumerate(profiles)}
+    a = select_dispatch(q, profiles, trust=trust, per_source_cost={}, topic_key="t",
+                        config=V2Config(exposure_budget=4.0, max_sources=4, genuine_k=2, coarse_k=8))
+    b = select_dispatch(q, profiles, trust={}, per_source_cost={}, topic_key="t",
+                        config=V2Config(exposure_budget=4.0, max_sources=4, genuine_k=2, coarse_k=8))
+    assert a.genuine_source_ids == b.genuine_source_ids and a.coarse_candidate_ids == b.coarse_candidate_ids
+
+
+def test_trust_weight_demotes_a_low_trust_top_candidate_without_excluding_it():
+    import numpy as np
+    from router.v2 import V2Config, select_dispatch
+
+    profiles, _, _ = _cell_fixture()
+    q = np.asarray(profiles[0].centroids)[0]           # s0 is the most relevant
+    trust = {"s0": 0.1}
+    plain = select_dispatch(q, profiles, trust=trust, per_source_cost={}, topic_key="t",
+                            config=V2Config(exposure_budget=2.0, max_sources=2, genuine_k=1, coarse_k=8))
+    weighted = select_dispatch(q, profiles, trust=trust, per_source_cost={}, topic_key="t",
+                               config=V2Config(exposure_budget=2.0, max_sources=2, genuine_k=1, coarse_k=8, trust_weight=2.0))
+    assert plain.genuine_source_ids == ["s0"]
+    assert weighted.genuine_source_ids != ["s0"]
+    assert "s0" in weighted.coarse_candidate_ids and "s0" not in weighted.excluded

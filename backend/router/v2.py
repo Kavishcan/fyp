@@ -60,6 +60,12 @@ class V2Config:
     # dispatches the whole fixed cell of each genuine source (hides both, at
     # one fewer genuine contact). Cells are supplied by the caller.
     decoy_policy: str = "topic_stable"
+    # docs/32 found the trust GATE inert (≤0.5) or deadlocking (>0.5). This is
+    # the ranking-term alternative it named: candidates in the coarse pool are
+    # re-ordered by relevance + trust_weight * (trust - 0.5). 0 = off, and
+    # every earlier result is byte-identical at 0. Adopted only if the docs/32
+    # ablation, re-run with it, says so (docs/42).
+    trust_weight: float = 0.0
 
     def __post_init__(self):
         if not isfinite(self.exposure_budget) or self.exposure_budget < 0:
@@ -78,6 +84,8 @@ class V2Config:
             raise ValueError("aggregation must be max, mean or top_r_mean")
         if self.decoy_policy not in {"topic_stable", "cells"}:
             raise ValueError("decoy_policy must be topic_stable or cells")
+        if not isfinite(self.trust_weight) or self.trust_weight < 0:
+            raise ValueError("trust_weight must be finite and nonnegative")
 
 
 @dataclass
@@ -153,6 +161,15 @@ def select_dispatch(
     router.register_sources(eligible)
     ranking = router.rank(query, top_k=config.coarse_k)
     candidates = list(ranking.ranked_source_ids)
+    if config.trust_weight > 0:
+        # Demote, never exclude: a low-trust source still enters the pool and
+        # can recover; a forged profile's relevance advantage is what is taxed.
+        adjusted = {sid: float(ranking.scores.get(sid, 0.0)) + config.trust_weight * (trust.get(sid, 0.5) - 0.5)
+                    for sid in candidates}
+        candidates.sort(key=lambda sid: adjusted[sid], reverse=True)
+        for sid in candidates:
+            decision.steps.append({"source_id": sid, "role": "candidate", "relevance": ranking.scores.get(sid),
+                                   "trust": trust.get(sid, 0.5), "adjusted_score": adjusted[sid]})
     decision.coarse_candidate_ids = candidates
 
     spent: list[float] = []

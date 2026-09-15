@@ -75,10 +75,10 @@ export interface QueryRequest {
   relative_score_floor?: number;
 }
 
-/** Returned when routing_mode="v2". Mirrors router/v2.V2Decision plus the
- * fields api/state.py attaches. */
+/** Returned when routing_mode="v2" or "psi". Mirrors router/v2.V2Decision plus
+ * the fields api/state.py attaches. */
 export interface V2RoutingDetails {
-  mode: "v2";
+  mode: "v2" | "psi";
   genuine_source_ids: string[];
   decoy_source_ids: string[];
   /** Shuffled: order does not encode genuine vs decoy. */
@@ -87,17 +87,24 @@ export interface V2RoutingDetails {
   excluded: Record<string, string>;
   steps: Array<{
     source_id: string;
-    role: "genuine" | "decoy";
+    role: "genuine" | "decoy" | "candidate";
     relevance: number | null;
-    exposure_cost: number;
-    cumulative_exposure: number;
+    exposure_cost?: number;
+    cumulative_exposure?: number;
+    /** decoy_policy="cells": the fixed cell this contact belongs to. */
+    cell?: string[];
+    /** trust_weight > 0: candidate re-ordering inputs. */
+    trust?: number;
+    adjusted_score?: number;
   }>;
   exposure_spent: number;
   stop_reason: string;
   config: Record<string, number | string | null>;
   exposure_unit: string;
   embedding_model: string;
-  dispatch_payload_kind: "shared_routing_space_vector";
+  dispatch_payload_kind: "shared_routing_space_vector" | "blinded_cluster_ids_oprf_psi";
+  /** psi only: per-node PSI accounting (envelopes delivered/opened, passages disclosed). */
+  psi?: { nprobe: number; fetch_set: number | null; per_node: Record<string, Record<string, number>> };
   retrieval_errors: Record<string, string>;
 }
 
