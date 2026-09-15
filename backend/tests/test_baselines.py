@@ -23,11 +23,13 @@ def test_broadcast_returns_all_sources_in_order():
     assert result.ranked_source_ids == ["a", "b", "c"]
 
 
-def test_broadcast_respects_top_k():
+def test_broadcast_ignores_top_k():
+    """docs/39 hygiene: a broadcast that truncates is a top-k router, not the
+    maximum-exposure control. `top_k` is accepted and ignored."""
     router = BroadcastRouter()
     router.register_sources(make_profiles())
     result = router.rank(np.array([1.0, 0.0]), top_k=2)
-    assert result.ranked_source_ids == ["a", "b"]
+    assert result.ranked_source_ids == ["a", "b", "c"]
 
 
 def test_random_router_returns_permutation_of_all_sources():
