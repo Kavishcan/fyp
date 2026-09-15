@@ -248,6 +248,7 @@ class AppState:
         relevance_mode: str = "centroid", description_weight: float = 0.5,
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
         coarse_k: int = 15, psi_nprobe: int = 2, psi_fetch_set: int | None = None,
+        evidence_top_k: int | None = None,
     ) -> dict:
         if routing_mode not in {"legacy", "smart", "v2", "psi"}:
             raise ValueError("routing_mode must be legacy, smart, v2 or psi")
@@ -451,6 +452,19 @@ class AppState:
             )
         )
 
+        # Cross-node evidence rerank (docs/40): every contacted node — decoy
+        # or forged — contributes its top passage, so without a global filter
+        # a decoy's off-topic passage and an attacker's planted one reach the
+        # prompt (docs/37: cited 1.000). Passages are re-embedded with the
+        # shared routing model on the device and scored against the query;
+        # only the top `evidence_top_k` are generated from and returned.
+        # Per-node scores are not comparable across nodes (different local
+        # models), which is why this rescoring exists. None keeps all.
+        # Only when it can matter: a cap was requested, or a generator will
+        # consume the passages. Keeps the no-generation legacy path byte-identical.
+        if evidence_top_k is not None or self.generator is not None:
+            citations = self._rerank_evidence(query_embedding, citations, evidence_top_k)
+
         answer = None
         generation_status = "not_implemented"
         if routing_mode == "smart" and not citations:
@@ -470,6 +484,24 @@ class AppState:
             "generation_status": generation_status,
             "routing_details": routing_details,
         }
+
+    def _rerank_evidence(self, query_embedding: np.ndarray, citations: list[dict], top_k: int | None) -> list[dict]:
+        """Global rerank of all returned passages by cosine in the shared
+        routing space; keeps `top_k` (None = all, but still annotated)."""
+        if not citations:
+            return citations
+        q = np.asarray(query_embedding, dtype=np.float64)
+        q = q / (np.linalg.norm(q) or 1.0)
+        embeddings = self.routing_embedder.embed([c["document"] for c in citations])
+        norms = np.maximum(np.linalg.norm(embeddings, axis=1), 1e-12)
+        scores = (embeddings @ q) / norms
+        order = np.argsort(-scores)
+        ranked = []
+        for i in order:
+            entry = dict(citations[int(i)])
+            entry["rerank_score"] = float(scores[int(i)])
+            ranked.append(entry)
+        return ranked if top_k is None else ranked[: max(0, top_k)]
 
     def _psi_retrieve(self, node, profile, query_embedding, *, top_n: int, nprobe: int, fetch_set_size: int | None):
         """One PSI contact, playing the device role (privacy/psi.py):

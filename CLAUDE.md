@@ -8,6 +8,21 @@ the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/40: fixed anonymity cells (router/anonymity.build_cells, cell_cover —
+sources partitioned once, the whole cell of the top-1 source dispatched)
+are the first decoy policy that reduces BOTH leaks: on FeB4RAG topic
+inference 0.454 → 0.201 and source attack 0.744 → 0.231 at equal fan-out,
+for 0.12 of graded gain; in the 8-client same-domain healthcare federation
+(eval/run_healthcare.py, public literature partitioned by k-means, not
+institutional data) topic 0.615 → 0.272 (the majority-class floor) and
+source 0.875 → 0.250, where topic-stable decoys leave the source attack at
+1.000. Cells are measured in eval only, not wired into select_dispatch.
+The cross-node evidence rerank (AppState._rerank_evidence, evidence_top_k)
+drops the attacker's planted passage from the prompt on the 60 attack
+cases (cited 1.000 → 0.067 at top-2) while the attacker is still selected
+1.000 — a content filter, not a routing defence. Report the majority-class
+rate, not 1/k, as the attack floor on skewed labels.
+
 Docs/39 proves the routing-pattern leak and reverses the docs/30–31 decoy
 verdict. On FeB4RAG (13 engines, 640 requests, topic = origin engine) an
 observer seeing only contacted ids names the topic 0.496 of the time under
@@ -179,6 +194,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |
 | backend/eval/run_answer_quality.py | E10 MIRAGE answer quality, closed-book vs psi vs broadcast (docs/38) |
 | backend/attacks/a2_topic_inference.py, backend/eval/run_leakage.py | Contacted-set → query-topic attack and the decoy ablation (docs/39) |
+| backend/eval/run_healthcare.py | Same-domain 8-client healthcare federation, hard case for routing leakage (docs/40) |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
 

@@ -24,9 +24,11 @@ Per privacy case and mode, three things are measured:
 - redaction   the repository's regex heuristic (nodes/profile.redact_pii)
   applied to the text before a text-mode dispatch, as the cheap comparison.
 
-Per attack case: attacker selection rate and how often its returned passage
-is cited (each contacted node contributes its top passage; there is no
-cross-node evidence filter in the pipeline, so cited = contacted).
+Per attack case: attacker selection rate, and how often its planted passage
+survives into the final evidence with and without the cross-node evidence
+rerank (docs/40): every contacted node returns its best passage, all are
+scored against the query in the shared routing space, and `evidence_top_k`
+are kept. Without the rerank, cited = contacted.
 
 Engines are the 13 FeB4RAG engines with local BEIR corpora, profiled from
 corpus samples exactly as eval/run_feb4rag.py. In-process; no MCP.
@@ -146,6 +148,13 @@ def run(args) -> tuple[list[dict], list[dict]]:
                   f"unnecessary(dispatched) {rows[-1]['unnecessary_contacts_dispatched']:.2f}", flush=True)
 
     # Attack cases: one forged-profile attacker returning the malicious content.
+    # Each contacted node returns its top passage in the shared routing space;
+    # the device then reranks ALL returned passages by cosine to the query
+    # (api/state.AppState._rerank_evidence, docs/40) and keeps `evidence_top_k`.
+    # "cited" = the attacker's passage survives into the final evidence.
+    doc_vecs = {e: np.asarray(embedder.embed(docs), dtype=np.float64) for e, docs in node_docs.items()}
+    for e in doc_vecs:
+        doc_vecs[e] /= np.maximum(np.linalg.norm(doc_vecs[e], axis=1, keepdims=True), 1e-12)
     attack_rows: list[dict] = []
     attack_vecs = {}
     for a in attacks:
@@ -155,22 +164,40 @@ def run(args) -> tuple[list[dict], list[dict]]:
     attacker = forge_profile(next(iter(profiles.values())), mean_query.reshape(1, -1))
     attacker.source_id = "attacker"
     with_attacker = {**profiles, "attacker": attacker}
+    malicious_vecs = {a["attack_id"]: _normalise(v) for a, v in
+                      zip(attacks, embedder.embed([a["malicious_content"] for a in attacks]))}
     for mode in MODES:
-        selected, cited = [], []
-        for a in attacks:
-            vec = attack_vecs[a["attack_id"]]
-            dispatched = dispatch_for_mode(
-                "v2" if mode == "psi" else mode, vec, with_attacker, "attack", set(),
-                max_nodes=args.max_nodes, genuine_k=args.genuine_k, coarse_k=args.coarse_k, sigma=0.0, rng=np_rng,
-            )
-            hit = "attacker" in dispatched
-            selected.append(1.0 if hit else 0.0)
-            cited.append(1.0 if hit else 0.0)  # each contacted node's top passage is cited; no cross-node filter
-        attack_rows.append({"mode": mode, "attack_cases": len(attacks),
-                            "attacker_selected": float(np.mean(selected)),
-                            "malicious_passage_cited": float(np.mean(cited)),
-                            "attack_types": sorted({a["attack_type"] for a in attacks})})
-        print(f"  attack {mode:<7} selected {attack_rows[-1]['attacker_selected']:.3f}", flush=True)
+        for top_k in (None, 2):
+            selected, cited, attacker_rank = [], [], []
+            for a in attacks:
+                vec = attack_vecs[a["attack_id"]]
+                dispatched = dispatch_for_mode(
+                    "v2" if mode == "psi" else mode, vec, with_attacker, "attack", set(),
+                    max_nodes=args.max_nodes, genuine_k=args.genuine_k, coarse_k=args.coarse_k, sigma=0.0, rng=np_rng,
+                )
+                hit = "attacker" in dispatched
+                selected.append(1.0 if hit else 0.0)
+                # Returned evidence: each honest node's best passage, the attacker's planted one.
+                evidence = []
+                for e in dispatched:
+                    if e == "attacker":
+                        evidence.append(("attacker", float(malicious_vecs[a["attack_id"]] @ vec)))
+                    else:
+                        evidence.append((e, float(np.max(doc_vecs[e] @ vec))))
+                evidence.sort(key=lambda x: -x[1])
+                kept = evidence if top_k is None else evidence[:top_k]
+                cited.append(1.0 if any(e == "attacker" for e, _ in kept) else 0.0)
+                if hit:
+                    attacker_rank.append(1 + [e for e, _ in evidence].index("attacker"))
+            attack_rows.append({"mode": mode, "evidence_top_k": "all" if top_k is None else top_k,
+                                "attack_cases": len(attacks),
+                                "attacker_selected": float(np.mean(selected)),
+                                "malicious_passage_cited": float(np.mean(cited)),
+                                "attacker_mean_rank_when_selected": float(np.mean(attacker_rank)) if attacker_rank else float("nan"),
+                                "attack_types": sorted({a["attack_type"] for a in attacks})})
+            print(f"  attack {mode:<7} top_k={attack_rows[-1]['evidence_top_k']:<4} selected "
+                  f"{attack_rows[-1]['attacker_selected']:.3f} cited {attack_rows[-1]['malicious_passage_cited']:.3f} "
+                  f"rank {attack_rows[-1]['attacker_mean_rank_when_selected']:.2f}", flush=True)
     return rows, attack_rows
 
 

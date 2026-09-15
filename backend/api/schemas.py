@@ -62,6 +62,10 @@ class QueryRequest(BaseModel):
     # envelopes, i.e. plain labeled PSI; the node learns nothing about the match).
     psi_nprobe: int = Field(default=2, ge=1)
     psi_fetch_set: Optional[int] = Field(default=None, ge=1)
+    # Cross-node evidence rerank (docs/40): keep only the top-k passages by
+    # cosine to the query in the shared routing space, across all contacted
+    # nodes, before generation. None = keep all (every node's passage).
+    evidence_top_k: Optional[int] = Field(default=None, ge=1)
     exposure_budget: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
@@ -100,6 +104,7 @@ class Citation(BaseModel):
     node_id: str
     document: str
     score: float
+    rerank_score: Optional[float] = None  # cosine to the query in the shared routing space
 
 
 class QueryResponse(BaseModel):

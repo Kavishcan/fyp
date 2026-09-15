@@ -28,6 +28,12 @@ Conditions (cap K contacts unless stated)
                  coarse pool; the pattern psi mode produces.
 - random_decoys  genuine_k + fresh random decoys from the coarse pool.
 - random_any     genuine_k + fresh random decoys from ALL engines.
+- cells_1x3/1x4  router/anonymity.build_cells: engines partitioned once into
+                 vertical-diverse cells of 3 or 4; dispatch = the whole cell
+                 of the top-1 engine. Stable AND not a function of the topic
+                 beyond the cell (docs/40). Whole cells always fit: the cap
+                 is n_genuine x largest cell.
+- cells_2x2      cells of 2; dispatch = cells of the top-2 engines.
 - oracle         the best-graded engine(s).
 
 The topic key for sticky decoys is the live api/topic.assign_topic_key
@@ -55,10 +61,11 @@ from baselines.random_router import RandomRouter
 from eval.embed_cache import CachedEmbedder
 from eval.run_feb4rag import FEB4RAG_DIR, available_engines, captured_gain, load_requests, load_rs_qrels, sample_corpus
 from eval.sweep import RESULTS_DIR, HashingEmbedder, SentenceTransformerEmbedder, _normalise, build_node_profiles
-from router.anonymity import random_sample, topic_stable_sample
+from router.anonymity import build_cells, cell_cover, random_sample
 from router.v2 import V2Config, select_dispatch
 
-CONDITIONS = ("random", "broadcast", "cosine@g", "cosine@K", "sticky_decoys", "random_decoys", "random_any", "oracle")
+CONDITIONS = ("random", "broadcast", "cosine@g", "cosine@K", "sticky_decoys", "random_decoys", "random_any",
+              "cells_1x3", "cells_1x4", "cells_2x2", "oracle")
 
 
 def load_origin(engines: set[str]) -> dict[str, str]:
@@ -78,7 +85,8 @@ def load_verticals() -> dict[str, str]:
 
 
 def dispatch(condition: str, vec, profiles: dict, grades: dict, *, max_nodes: int, genuine_k: int,
-             coarse_k: int, rng: random.Random, random_router: RandomRouter) -> tuple[list[str], list[str]]:
+             coarse_k: int, rng: random.Random, random_router: RandomRouter,
+             cells: dict[str, list[list[str]]] | None = None) -> tuple[list[str], list[str]]:
     """Returns (dispatched, decoys)."""
     ids = list(profiles)
     if condition == "broadcast":
@@ -93,6 +101,14 @@ def dispatch(condition: str, vec, profiles: dict, grades: dict, *, max_nodes: in
     ranking = list(router.rank(vec, top_k=coarse_k).ranked_source_ids)
     if condition == "cosine@g":
         return ranking[:genuine_k], []
+    if condition.startswith("cells_"):
+        # Whole cells are dispatched, so the cap is n_genuine cells of the
+        # largest size (a merged final cell can exceed the nominal size).
+        n_genuine = int(condition.split("_")[1].split("x")[0])
+        genuine = ranking[:n_genuine]
+        cap = n_genuine * max(len(c) for c in cells[condition])
+        dispatched = cell_cover(genuine, cells[condition], cap)
+        return dispatched, [e for e in dispatched if e not in genuine]
     if condition == "cosine@K":
         return ranking[:max_nodes], []
     genuine = ranking[:genuine_k]
@@ -147,6 +163,8 @@ def main() -> None:
         split = len(order) // 2
         train_ids, test_ids = order[:split], order[split:]
         print(f"seed {seed}: profiles ready; {len(train_ids)} train / {len(test_ids)} test requests", flush=True)
+        cells = {"cells_1x3": build_cells(engines, vertical, 3), "cells_1x4": build_cells(engines, vertical, 4),
+                 "cells_2x2": build_cells(engines, vertical, 2)}
 
         for condition in args.conditions:
             cond_rng = random.Random(seed * 1000 + hash(condition) % 997)
@@ -159,7 +177,7 @@ def main() -> None:
                 grades = qrels[q]
                 dispatched, decoys = dispatch(condition, vecs[q], profiles, grades, max_nodes=args.max_nodes,
                                               genuine_k=args.genuine_k, coarse_k=args.coarse_k,
-                                              rng=cond_rng, random_router=random_router)
+                                              rng=cond_rng, random_router=random_router, cells=cells)
                 records[q] = (dispatched, decoys)
                 hits.append(1.0 if origin[q] in dispatched else 0.0)
                 gains.append(captured_gain(dispatched, grades))

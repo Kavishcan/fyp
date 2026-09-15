@@ -60,3 +60,33 @@ def test_random_decoys_vary_across_repeated_queries_same_topic():
     dispatched_1 = set(add_decoys(real, candidates, m=6, rng=rng1))
     dispatched_2 = set(add_decoys(real, candidates, m=6, rng=rng2))
     assert dispatched_1 != dispatched_2
+
+
+# --- fixed anonymity cells (docs/40) -----------------------------------------
+
+from router.anonymity import build_cells, cell_cover  # noqa: E402
+
+
+def test_cells_are_domain_diverse_and_cover_every_source():
+    groups = {f"a{i}": "A" for i in range(4)} | {f"b{i}": "B" for i in range(4)} | {f"c{i}": "C" for i in range(4)}
+    cells = build_cells(list(groups), groups, cell_size=3)
+    assert sorted(s for c in cells for s in c) == sorted(groups)
+    assert all(len({groups[s] for s in cell}) == 3 for cell in cells)
+
+
+def test_short_final_cell_is_merged():
+    cells = build_cells([f"s{i}" for i in range(7)], {}, cell_size=3)
+    assert [len(c) for c in cells] == [3, 4]
+
+
+def test_cell_cover_dispatches_whole_cells_only():
+    cells = [["a", "b"], ["c", "d"], ["e", "f"]]
+    assert cell_cover(["a"], cells, max_sources=4) == ["a", "b"]
+    assert cell_cover(["a", "c"], cells, max_sources=4) == ["a", "b", "c", "d"]
+    assert cell_cover(["a", "c", "e"], cells, max_sources=4) == ["a", "b", "c", "d"]   # third cell does not fit
+    assert cell_cover(["a", "b"], cells, max_sources=4) == ["a", "b"]                  # same cell once
+
+
+def test_cell_cover_is_identical_for_every_query_landing_on_the_cell():
+    cells = build_cells([f"s{i}" for i in range(8)], {}, cell_size=4)
+    assert cell_cover([cells[0][0]], cells, 4) == cell_cover([cells[0][3]], cells, 4)

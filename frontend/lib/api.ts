@@ -60,6 +60,8 @@ export interface QueryRequest {
   psi_nprobe?: number;
   /** psi only: envelope anonymity-set size per node; omit for all envelopes. */
   psi_fetch_set?: number;
+  /** Keep only the top-k passages across all contacted nodes (cross-node rerank) before generation. */
+  evidence_top_k?: number;
   exposure_budget?: number;
   minimum_gain?: number;
   minimum_trust?: number;
@@ -126,6 +128,8 @@ export interface Citation {
   node_id: string;
   document: string;
   score: number;
+  /** Cosine to the query in the shared routing space, set by the cross-node rerank. */
+  rerank_score?: number | null;
 }
 
 export interface QueryResponse {

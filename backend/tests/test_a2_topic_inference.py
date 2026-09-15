@@ -33,3 +33,22 @@ def test_macro_f1_and_jaccard():
     assert macro_f1(["x", "y"], ["y", "x"], ["x", "y"]) == 0.0
     assert jaccard({1, 2}, {2, 3}) == 1 / 3
     assert jaccard(set(), set()) == 1.0
+
+
+def test_leakage_dispatch_cells_condition_dispatches_whole_cells():
+    import numpy as np
+    from baselines.base import SourceProfile
+    from baselines.random_router import RandomRouter
+    from eval.run_leakage import dispatch
+    from router.anonymity import build_cells
+
+    rng = np.random.default_rng(0)
+    profiles = {f"s{i}": SourceProfile(source_id=f"s{i}", centroids=rng.standard_normal((1, 4))) for i in range(8)}
+    cells = {"cells_1x4": build_cells(list(profiles), {s: "g" for s in profiles}, 4)}
+    router = RandomRouter(seed=0)
+    router.register_sources(list(profiles.values()))
+    dispatched, decoys = dispatch("cells_1x4", rng.standard_normal(4), profiles, {"s0": 1.0}, max_nodes=4,
+                                  genuine_k=2, coarse_k=8, rng=__import__("random").Random(0),
+                                  random_router=router, cells=cells)
+    assert sorted(dispatched) in [sorted(c) for c in cells["cells_1x4"]]
+    assert len(decoys) == 3
