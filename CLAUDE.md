@@ -10,6 +10,15 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/42: the docs/32 ablation re-run with trust as a RANKING term
+(`V2Config.trust_weight`, relevance + w·(trust−0.5)). At w=0.5 the forged
+attacker's selection falls 0.520 → 0.362 and keeps falling over the stream
+(0.42 → 0.30) for 1.4 points of honest recall; larger weights are flat on
+the attacker and cost recall. The floor is the trust signal's 0.11 gap, not
+the weight. Recommended setting 0.5; default stays 0 so every earlier result
+is byte-identical. This is the first routing-level A3 result; it is a
+one-third reduction, not a defence.
+
 Docs/40: fixed anonymity cells (router/anonymity.build_cells, cell_cover —
 sources partitioned once, the whole cell of the top-1 source dispatched)
 are the first decoy policy that reduces BOTH leaks: on FeB4RAG topic
