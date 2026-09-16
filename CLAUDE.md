@@ -27,7 +27,7 @@ for 0.12 of graded gain; in the 8-client same-domain healthcare federation
 (eval/run_healthcare.py, public literature partitioned by k-means, not
 institutional data) topic 0.615 → 0.272 (the majority-class floor) and
 source 0.875 → 0.250, where topic-stable decoys leave the source attack at
-1.000. Cells are measured in eval only, not wired into select_dispatch.
+1.000. Cells are wired into select_dispatch as decoy_policy="cells".
 The cross-node evidence rerank (AppState._rerank_evidence, evidence_top_k)
 drops the attacker's planted passage from the prompt on the 60 attack
 cases (cited 1.000 → 0.067 at top-2) while the attacker is still selected
@@ -75,8 +75,8 @@ table in ⌈clusters/nprobe⌉ queries (75 for 150 clusters) — the OPRF makes
 it rate-limitable, not impossible. Persistent MCP sessions
 (PersistentMCPNodeHandle) bring legacy/v2/psi to 10/9/61 ms per query on
 30 real nodes; psi's real per-contact cost is ~10 ms and ~170 KB per
-40-document node. Ollama local generation exists (localhost only) and has
-produced no answer-quality number; Ollama is not installed here.
+40-document node. Ollama local generation (localhost only) is the E10
+generator (docs/38).
 
 Docs/36: `routing_mode="psi"` is the first dispatch stage in which a node
 receives neither the query nor a vector — blinded cluster ids over an
