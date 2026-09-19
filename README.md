@@ -99,6 +99,16 @@ reports that mode's trust state.
 
 ## Reproduce a result
 
+The central table — every configuration against every measured axis — is one command:
+
+```sh
+cd backend
+../.venv/bin/python -m eval.scorecard            # assemble from the newest result CSVs
+../.venv/bin/python -m eval.scorecard --run      # re-run every backing harness first (hours; needs Ollama)
+```
+
+Individual harnesses:
+
 ```sh
 cd backend
 ../.venv/bin/python -m eval.run_leakage            # docs/39–40 pattern leakage table

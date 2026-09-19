@@ -208,7 +208,8 @@ def main() -> None:
     summary = []
     for condition in ("none", "plausibility", "trust", "both"):
         group = [r for r in per_seed if r["condition"] == condition]
-        entry = {"condition": condition, "seeds": len(group), "queries": group[0]["queries"],
+        entry = {"condition": condition, "trust_weight": args.trust_weight, "minimum_trust": args.minimum_trust,
+                 "seeds": len(group), "queries": group[0]["queries"],
                  "attacker_registered": all(r["attacker_registered"] for r in group),
                  "attacker_reject_reason": next((r["attacker_reject_reason"] for r in group if r["attacker_reject_reason"]), "")}
         for metric in numeric:

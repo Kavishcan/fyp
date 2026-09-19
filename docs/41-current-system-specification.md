@@ -92,6 +92,10 @@ No superiority over a published learned router is claimed.
 
 ## Reproducibility
 
+`python -m eval.scorecard` assembles the configuration × axis table from the
+newest result CSVs (`--run` re-executes every backing harness with the
+arguments the docs notes record). It copies numbers; it computes nothing.
+
 Exact environment: `backend/requirements-lock.txt`. Every experiment writes
 per-seed and summary CSVs to `data/eval_results/` and records its command in
 its docs note. Seeds 11/22/33 throughout; seeds share data, so spreads are
