@@ -60,7 +60,7 @@ question
   → per-stage latency and per-contact bytes logged for every query
 ```
 
-Legacy remains the API/dashboard default; smart, v2 and psi are opt-in.
+The API default remains legacy; the studio defaults to psi + cells with every mode selectable.
 
 ## Labels
 

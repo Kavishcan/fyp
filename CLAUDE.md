@@ -3,8 +3,9 @@
 The authoritative statement of what is implemented, measured and claimed is
 docs/41-current-system-specification.md; docs 04, 07–08 and 13–17 are
 historical and carry a status line. `decoy_policy="cells"` (docs/40) is now
-a select_dispatch option and a QueryRequest field alongside "topic_stable";
-legacy remains the API default. Paillier encrypted scoring (docs/34) is an
+a select_dispatch option and a QueryRequest field alongside "topic_stable".
+The API default remains legacy; the studio (frontend) defaults to psi +
+cells + evidence_top_k=2 with every mode selectable and labelled. Paillier encrypted scoring (docs/34) is an
 experimental in-cluster tier, disabled by default, not the mechanism.
 Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
@@ -153,8 +154,9 @@ The earlier instruction prohibiting a new router is superseded.
 
 - Preserve the legacy pipeline and published baseline semantics as independent
   controls. Do not silently change old experiment outputs or call legacy RAGRoute.
-- Smart mode is opt-in through POST /query; legacy remains the API/dashboard
-  default. Update documentation and tests if those defaults change.
+- Smart, v2 and psi are opt-in through POST /query; legacy remains the API
+  default. The studio defaults to psi + cells (docs/41) and shows the mode on
+  every answer. Update documentation and tests if either default changes.
 - Every smart source contact must fit the positive-cost per-query budget.
   There is no genuine-source exemption, decoy dispatch or fallback broadcast.
 - Relevance, trust and overlap are heuristics. Do not claim novelty, optimality,

@@ -11,6 +11,17 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api, ApiError, type AuditResponse, type QueryResponse } from "@/lib/api";
 
+type RoutingMode = "legacy" | "smart" | "v2" | "psi";
+type DecoyPolicy = "topic_stable" | "cells";
+
+/** What a contacted node receives in each mode — the fact the mode selector exists to make visible. */
+const MODE_HELP: Record<RoutingMode, string> = {
+  psi: "Proposed. Local routing; nodes receive blinded cluster ids over OPRF/PSI — never the question or a vector.",
+  v2: "Local routing; nodes receive an invertible routing-space vector.",
+  smart: "Adaptive budgeted selection, no decoys; nodes receive the question text.",
+  legacy: "Control. Cosine shortlist, rerank, decoys; nodes receive the question text.",
+};
+
 interface ChatMessage {
   id: string;
   question: string;
@@ -24,8 +35,13 @@ interface ChatMessage {
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [maxNodes, setMaxNodes] = useState(5);
-  const [genuineK, setGenuineK] = useState(2);
+  const [maxNodes, setMaxNodes] = useState(4);
+  const [genuineK, setGenuineK] = useState(1);
+  // The studio defaults to the proposed configuration (docs/41): psi dispatch,
+  // anonymity cells, cross-node rerank. The API's own default stays legacy;
+  // every mode is selectable here so the control can be shown side by side.
+  const [routingMode, setRoutingMode] = useState<RoutingMode>("psi");
+  const [decoyPolicy, setDecoyPolicy] = useState<DecoyPolicy>("cells");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -43,7 +59,14 @@ export function ChatPanel() {
     setInput("");
     setSending(true);
     try {
-      const result = await api.query({ question, max_nodes: maxNodes, genuine_k: genuineK });
+      const privacyModes = routingMode === "v2" || routingMode === "psi";
+      const result = await api.query({
+        question,
+        max_nodes: maxNodes,
+        genuine_k: genuineK,
+        routing_mode: routingMode,
+        ...(privacyModes ? { decoy_policy: decoyPolicy, cell_size: 4, evidence_top_k: 2 } : {}),
+      });
       setMessages((m) => m.map((msg) => (msg.id === id ? { ...msg, status: "done", result } : msg)));
     } catch (err) {
       const error = err instanceof ApiError ? err.message : "Query failed";
@@ -72,8 +95,9 @@ export function ChatPanel() {
             <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 py-24">
               <h2 className="text-lg font-medium">Ask FedSafeRouter something</h2>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Each answer shows only what a caller would see — citations and which sources were
-                contacted, never which were genuine versus decoys. Reveal that per message below.
+                Default is the proposed configuration: private (PSI) dispatch with anonymity cells.
+                Each answer shows what a caller would see — citations and which sources were
+                contacted, never which were genuine. Switch to legacy in settings to compare.
               </p>
             </div>
           )}
@@ -107,6 +131,9 @@ export function ChatPanel() {
                       )}
 
                       <div className="flex flex-wrap gap-1 items-center text-xs">
+                        <Badge variant="outline" className="font-mono text-[10px]">
+                          {msg.result.routing_details?.mode ?? "legacy"}
+                        </Badge>
                         <span className="text-muted-foreground">contacted:</span>
                         {msg.result.nodes_contacted.map((n) => (
                           <Badge key={n} variant="secondary" className="font-mono text-[10px]">
@@ -180,7 +207,36 @@ export function ChatPanel() {
             <PopoverTrigger className={buttonVariants({ variant: "outline", size: "icon", className: "shrink-0" })}>
               <Settings2 className="size-4" />
             </PopoverTrigger>
-            <PopoverContent className="w-56 flex flex-col gap-3" align="start">
+            <PopoverContent className="w-72 flex flex-col gap-3" align="start">
+              <Label className="flex flex-col items-start gap-1.5 text-xs">
+                Routing mode
+                <select
+                  value={routingMode}
+                  onChange={(e) => setRoutingMode(e.target.value as RoutingMode)}
+                  className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                >
+                  <option value="psi">psi — private dispatch (proposed)</option>
+                  <option value="v2">v2 — vector dispatch</option>
+                  <option value="smart">smart</option>
+                  <option value="legacy">legacy (control)</option>
+                </select>
+                <span className="text-[11px] leading-snug text-muted-foreground font-normal">
+                  {MODE_HELP[routingMode]}
+                </span>
+              </Label>
+              {(routingMode === "v2" || routingMode === "psi") && (
+                <Label className="flex flex-col items-start gap-1.5 text-xs">
+                  Decoy policy
+                  <select
+                    value={decoyPolicy}
+                    onChange={(e) => setDecoyPolicy(e.target.value as DecoyPolicy)}
+                    className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="cells">anonymity cells — hides topic and source</option>
+                    <option value="topic_stable">topic-stable decoys — hides source only</option>
+                  </select>
+                </Label>
+              )}
               <Label className="flex flex-col items-start gap-1.5 text-xs">
                 Max nodes (m)
                 <Input
