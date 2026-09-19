@@ -69,6 +69,7 @@ class InProcessNode:
         # PSI dispatch (privacy/psi.py): set by attach_psi_index. The node
         # answers OPRF evaluations and serves envelopes; it never sees a query.
         self.psi = None
+        self.authorizer = None   # privacy/credentials.Authorizer when the node gates PSI
         # v2 (docs/30): a second index in the SHARED routing space so the
         # coordinator can dispatch a vector instead of raw query text. Costs the
         # node retrieval-model heterogeneity for that mode — the shared encoder,

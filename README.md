@@ -59,6 +59,7 @@ Legacy (cosine + rerank + decoys) remains the API/dashboard default; `smart`,
 | Cheap defences fail | [32](docs/32-v2-attack-results.md) | inversion 1.000; noise kills utility first; trust gate deadlocks |
 | v2 vs legacy | [30](docs/30-privacy-pipeline-v2.md), [31](docs/31-mode-comparison-results.md) | v2 ties legacy; exemption leaks decoys |
 | Encrypted scoring PoC | [34](docs/34-encrypted-query-scoring.md) | Paillier, correct, ~18 s/query — experimental |
+| Credential gate on PSI | [43](docs/43-credential-gate.md) | node evaluates only for allow-listed clients within a daily budget; dumping a node takes 8–10 days, logged |
 
 Each note records its command, seeds and what it does not establish.
 
@@ -158,7 +159,7 @@ Test counts are not experimental, privacy or answer-quality results.
 The coordinator is trusted and plays the user's device; separating it into
 a relay is the docs/03 target. Metadata (that a query happened, its timing
 and size) is not protected. A source that lies about its content is
-selected as often as an honest one; the evidence rerank keeps its planted
+selected a third less often with the trust term, not never; the evidence rerank keeps its planted
 passage out of the prompt but does not stop the contact. PSI responses are
 linear in a node's table size. Answer quality is one model, one seed, 150
 questions. The healthcare federation is public literature partitioned by

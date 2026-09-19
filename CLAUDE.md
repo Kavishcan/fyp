@@ -11,6 +11,17 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/43: the PSI step is gated by a federation credential
+(privacy/credentials.py): HMAC over (node id, UTC day, blinded points),
+node-side allow-list `<node>.clients.json` with a per-client daily
+evaluation budget and an audit line per request; refusal happens before the
+OPRF key is touched, so it leaks nothing. Absent allow-list = open node
+(prior behaviour). Measured with the real gate: dumping a 150–200-cluster
+node takes 8–10 days of one credential's 20-evaluation budget, logged under
+that id. The node learns which credential asked, never what; anonymous
+credentials are the stated direction. TLS is deployment configuration, not
+built, and changes no measured number.
+
 Docs/42: the docs/32 ablation re-run with trust as a RANKING term
 (`V2Config.trust_weight`, relevance + w·(trust−0.5)). At w=0.5 the forged
 attacker's selection falls 0.520 → 0.362 and keeps falling over the stream
@@ -209,6 +220,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_scaling.py, run_mcp_transport.py, embed_cache.py | Scaling / transport harnesses (docs/33); cache changes no embedding |
 | backend/eval/run_bucket_recall.py | SimHash vs cluster-id bucket recall for PSI retrieval (docs/35) |
 | backend/privacy/psi.py, cluster_index.py | OPRF/labeled-PSI dispatch and the node's cluster table (docs/36) |
+| backend/privacy/credentials.py | HMAC credential + per-client daily evaluation budget gating psi_evaluate (docs/43) |
 | backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
 | backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
 | backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |

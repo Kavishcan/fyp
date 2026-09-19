@@ -30,7 +30,7 @@ keeps the planted passage out of the prompt (cited 1.000 → 0.067, docs/40).
 | **Coordinator** (the API process) | raw query, embeddings, all returned passages, routing trace | **Trusted** — it plays the user's device in this prototype. Moving its device-side code to the client and reducing it to a relay is the docs/03 target, not the implementation. |
 | **Contacted source** (MCP node) | legacy/smart: query text; v2: an invertible vector; **psi: blinded group elements + a fetch set** | Honest-but-curious about the query; may lie about content (A3) |
 | **Pattern observer** (network, relay, colluding sources) | which sources were contacted, sizes, timing | Untrusted |
-| **Malicious client** | everything a client sees | Bounded by the OPRF: ⌈clusters/nprobe⌉ evaluated queries to dump a node's table (docs/37) |
+| **Malicious client** | everything a credentialed client sees | Gated: the node evaluates the OPRF only for an allow-listed credential within its daily evaluation budget (docs/43); dumping a 150–200-cluster node takes 8–10 days of one credential's budget and is logged under that id |
 
 Protected assets: query text and embedding (from sources, psi); query topic
 (from the observer, cells); which contact is genuine (cells / topic-stable
@@ -66,7 +66,7 @@ The API default remains legacy; the studio defaults to psi + cells with every mo
 
 | Implemented and measured | Experimental | Planned / not built |
 |---|---|---|
-| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority / credentials; sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; trust redesign |
+| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with per-client evaluation budget, persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
 
 ## Traceability
 
@@ -80,7 +80,7 @@ The API default remains legacy; the studio defaults to psi + cells with every mo
 | Answer quality | `eval/run_answer_quality` | 150 MIRAGE questions, Qwen3.5-9B local | MCQ accuracy | closed 0.547 / psi 0.580 / broadcast 0.627 — docs/38 |
 | Efficiency | `eval/run_scaling`, `eval/run_mcp_transport` | 30–300 virtual; 30 real MCP processes | ms, bytes, contacts | psi 61 ms/query persistent; 102 KB (v2) vs 1 KB (psi) request — docs/33, 36–37 |
 | Malicious source | `eval/run_privacy_cases` attack section, `eval/run_v2_a3` | 60 attack cases; 24 shards | selected, cited, honest recall | selected 1.000; cited 0.067 with rerank — docs/32, 40 |
-| Enumeration | `eval/run_psi_enumeration` | synthetic | queries to open a table | ⌈C/nprobe⌉ — docs/37 |
+| Enumeration | `eval/run_psi_enumeration` | synthetic, real gate | queries / days to open a table | ⌈C/nprobe⌉ ungated; 8–10 days gated at 20/day — docs/37, 43 |
 
 ## Baselines
 

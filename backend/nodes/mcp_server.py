@@ -86,6 +86,12 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     from privacy.psi import random_scalar  # noqa: E402
 
     attach_psi_index(node, profile, seed=seed, psi_key=_load_or_create_psi_key(data_file.with_suffix(".psi.key"), random_scalar))
+    # Authorisation for the PSI step (privacy/credentials.py, docs/43): an
+    # allow-list next to the data file gates psi_evaluate per client with a
+    # daily evaluation budget. No file = open node (prototype behaviour).
+    from privacy.credentials import load_authorizer  # noqa: E402
+
+    node.authorizer = load_authorizer(node_id, data_file.with_suffix(".clients.json"))
     sign_profile(profile, load_or_create_key_file(data_file.with_suffix(".key")))
     return node, profile.__dict__, local_model
 
@@ -145,11 +151,21 @@ def main() -> None:
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
 
     @server.tool()
-    def psi_evaluate(blinded: list[str]) -> str:
+    def psi_evaluate(blinded: list[str], auth: dict | None = None) -> str:
         """PSI dispatch step 1: OPRF-evaluate blinded points (hex). The node
         learns nothing about the query — the points are uniform in the group.
-        Authorization belongs in front of this call."""
-        evaluated = node.psi.evaluate([bytes.fromhex(b) for b in blinded])
+        With an allow-list configured, `auth` (client_id, day, mac) is checked
+        and the evaluations charged BEFORE anything touches the OPRF key; a
+        refusal returns {"error": reason} and evaluates nothing."""
+        points = [bytes.fromhex(b) for b in blinded]
+        if node.authorizer is not None:
+            from privacy.credentials import Unauthorized  # noqa: E402
+
+            try:
+                node.authorizer.check(auth, points)
+            except Unauthorized as exc:
+                return json.dumps({"error": exc.reason})
+        evaluated = node.psi.evaluate(points)
         return json.dumps([e.hex() for e in evaluated])
 
     @server.tool()

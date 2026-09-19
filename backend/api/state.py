@@ -83,6 +83,9 @@ class AppState:
         # query payload. Empty profile labels mean public in this demo only.
         self.allowed_policy_labels: set[str] = set()
         self.source_exposure_costs: dict[str, float] = {}
+        # The client's federation credential for gated PSI nodes (docs/43).
+        # None = present none; an open node accepts that, a gated node refuses.
+        self.credential = None
         self.instrumentation = Instrumentation(instrumentation_path)
         self._rng = np.random.default_rng()
         # Demo-only, external-API generation — see backend/generation/base.py
@@ -568,12 +571,20 @@ class AppState:
             self._rng.shuffle(fetch_set)
 
         query = PSIClient.blind(wanted)
+        auth = self.credential.sign(profile.source_id, query.blinded) if self.credential is not None else None
         if isinstance(node, MCPNodeHandle):
-            evaluated = node.psi_evaluate(query.blinded)
+            evaluated = node.psi_evaluate(query.blinded, auth)
             envelopes = node.psi_envelopes(fetch_set)
         else:
             if node.psi is None:
                 raise RuntimeError(f"node {profile.source_id!r} has no PSI table")
+            if node.authorizer is not None:
+                from privacy.credentials import Unauthorized
+
+                try:
+                    node.authorizer.check(auth, query.blinded)
+                except Unauthorized as exc:
+                    raise PermissionError(f"node {profile.source_id!r} refused psi_evaluate: {exc.reason}") from exc
             evaluated = node.psi.evaluate(query.blinded)
             envelopes = node.psi.envelopes_for(fetch_set)
         outputs = PSIClient.unblind(query, evaluated)

@@ -80,18 +80,25 @@ class MCPNodeHandle:
         payload = {"vector": [float(x) for x in vector], "top_n": top_n}
         return json.loads(await self._call_tool("retrieve_vector", payload))
 
-    async def psi_evaluate_async(self, blinded: list[bytes]) -> list[bytes]:
+    async def psi_evaluate_async(self, blinded: list[bytes], auth: dict | None = None) -> list[bytes]:
         """PSI dispatch: blinded group elements out, evaluated elements back.
-        Neither the query text nor its vector is ever an argument here."""
-        result = json.loads(await self._call_tool("psi_evaluate", {"blinded": [b.hex() for b in blinded]}))
+        Neither the query text nor its vector is ever an argument here.
+        `auth` is the credential signature (privacy/credentials.Credential.sign);
+        a refusal raises PermissionError with the node's reason."""
+        args = {"blinded": [b.hex() for b in blinded]}
+        if auth is not None:
+            args["auth"] = auth
+        result = json.loads(await self._call_tool("psi_evaluate", args))
+        if isinstance(result, dict) and "error" in result:
+            raise PermissionError(f"node {self.node_id!r} refused psi_evaluate: {result['error']}")
         return [bytes.fromhex(e) for e in result]
 
     async def psi_envelopes_async(self, fetch_set: list[int] | None = None) -> dict[str, bytes]:
         result = json.loads(await self._call_tool("psi_envelopes", {"fetch_set": fetch_set}))
         return {token: bytes.fromhex(env) for token, env in result.items()}
 
-    def psi_evaluate(self, blinded: list[bytes]) -> list[bytes]:
-        return asyncio.run(self.psi_evaluate_async(blinded))
+    def psi_evaluate(self, blinded: list[bytes], auth: dict | None = None) -> list[bytes]:
+        return asyncio.run(self.psi_evaluate_async(blinded, auth))
 
     def psi_envelopes(self, fetch_set: list[int] | None = None) -> dict[str, bytes]:
         return asyncio.run(self.psi_envelopes_async(fetch_set))
