@@ -35,6 +35,7 @@ from router.anonymity import build_cells
 from router.v2 import DecoyAwareEvidenceTrust, V2Config, dispatch_payload, dispatched_vector, select_dispatch
 
 from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
+from nodes.embedding import routing_embedder_name, shared_routing_embedder
 from .topic import assign_topic_key
 
 
@@ -70,7 +71,9 @@ class AppState:
         # this is what keeps max-over-centroid scoring valid regardless of how
         # many distinct local_model names nodes register with (see
         # backend/nodes/simulator.py module docstring).
-        self.routing_embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
+        # ROUTING_EMBEDDER selects hashing (default) or a semantic model; the
+        # MCP node processes read the same variable (nodes/embedding.py).
+        self.routing_embedder = shared_routing_embedder()
         self.trust_update = BoundedTrustUpdate(alpha=0.3, decoy_aware=False)
         self.smart_trust = EvidenceTrust()
         # v2 keeps its own trust state so its decoy exemption cannot alter the
@@ -104,7 +107,8 @@ class AppState:
         this node too, i.e. no heterogeneity.
         """
         local_embedder = (
-            HashingEmbedder(model_name=local_model, n_features=256) if local_model else self.routing_embedder
+            HashingEmbedder(model_name=local_model, n_features=256)
+            if local_model and local_model != self.routing_embedder.model_name else self.routing_embedder
         )
         node, profile = build_simulated_source(
             node_id,
@@ -135,6 +139,7 @@ class AppState:
         handle = handle_cls(node_id=node_id, data_file=Path(data_file))
         profile_data = await handle.get_profile_async()
         profile = _profile_from_dict(profile_data)
+        self._check_routing_space(profile, handle)
         local_model = profile_data.get("local_model") or SHARED_ROUTING_MODEL
         self._publish(profile.source_id, handle, profile, local_model)
         return profile
@@ -488,13 +493,34 @@ class AppState:
             "routing_details": routing_details,
         }
 
+    def _check_routing_space(self, profile: SourceProfile, handle) -> None:
+        """A node whose profile is not in the coordinator's routing space would
+        fail at the first query with an opaque matmul error; refuse it at
+        registration and name both sides instead."""
+        expected = self.routing_embedder.embed(["dimension probe"]).shape[1]
+        got = np.asarray(profile.centroids).shape[-1] if np.asarray(profile.centroids).size else expected
+        if got != expected:
+            if isinstance(handle, PersistentMCPNodeHandle):
+                handle.close()
+            raise ValueError(
+                f"node {profile.source_id!r} published {got}-d centroids but the coordinator's routing "
+                f"embedder ({self.routing_embedder.model_name}) is {expected}-d; set ROUTING_EMBEDDER "
+                f"identically for the coordinator and every node process")
+
     def anonymity_cells(self, cell_size: int) -> list[list[str]]:
         """Fixed cells over the current registry (docs/40). Deterministic in the
         sorted source ids and their first policy label (the only group signal a
         profile carries), so the same registry always yields the same cells and
         the cover set is stable across queries."""
         profiles = self.registry.all_profiles()
-        group_of = {p.source_id: (p.policy_labels[0] if p.policy_labels else "") for p in profiles}
+        # Group = first policy label when nodes carry one; otherwise the corpus
+        # prefix of the node id (data/prepare_beir_nodes names shards
+        # "<corpus>_<n>"), so shards of one corpus are spread across cells
+        # rather than dealt into the same one alphabetically.
+        group_of = {
+            p.source_id: (p.policy_labels[0] if p.policy_labels else p.source_id.rsplit("_", 1)[0])
+            for p in profiles
+        }
         return build_cells([p.source_id for p in profiles], group_of, cell_size)
 
     def _rerank_evidence(self, query_embedding: np.ndarray, citations: list[dict], top_k: int | None) -> list[dict]:

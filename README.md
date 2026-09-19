@@ -70,11 +70,16 @@ Python 3.10+. Exact versions used for every reported number are in
 ```sh
 python3.12 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
-.venv/bin/uvicorn api.app:app --reload --app-dir backend --port 8000
+ROUTING_EMBEDDER=BAAI/bge-base-en-v1.5 MCP_PERSISTENT=1 \
+  .venv/bin/uvicorn api.app:app --app-dir backend --port 8000
 ```
 
 Prepared node files in `data/mcp_nodes` are registered at startup as real MCP
-subprocesses. For local generation install [Ollama](https://ollama.com), pull
+subprocesses. `ROUTING_EMBEDDER` selects the shared routing space for the
+coordinator and every node process (default `hashing`, the dependency-free
+placeholder; the semantic model above is what every measured result used and
+makes demo retrieval meaningful). With a semantic model use `MCP_PERSISTENT=1`
+so each node loads the model once — first start-up is ~10 s per node. For local generation install [Ollama](https://ollama.com), pull
 a model, and set `LLM_PROVIDER=ollama OLLAMA_MODEL=qwen3.5:9b`. Hosted
 providers (OpenAI/Gemini) work but send the question and passages off-device;
 they are a quality reference, not a private configuration.

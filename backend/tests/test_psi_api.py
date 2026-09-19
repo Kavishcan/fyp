@@ -193,3 +193,15 @@ def test_psi_with_cells_policy_contacts_a_fixed_cell(tmp_path):
     cells = [sorted(c) for c in state.anonymity_cells(4)]
     assert sorted(a["nodes_contacted"]) in cells and sorted(b["nodes_contacted"]) in cells
     assert a["citations"]
+
+
+def test_anonymity_cells_spread_same_corpus_shards_across_cells(tmp_path):
+    state = AppState(instrumentation_path=str(tmp_path / "q.jsonl"))
+    state.generator = None
+    for corpus in ("arguana", "nfcorpus", "fiqa", "scifact"):
+        for i in (1, 2):
+            state.register_node(node_id=f"{corpus}_{i}", documents=_docs(i), policy_labels=[], k=1, sigma=0.0)
+    cells = state.anonymity_cells(4)
+    for cell in cells:
+        corpora = [c.rsplit("_", 1)[0] for c in cell]
+        assert len(set(corpora)) == len(corpora), cell   # no two shards of one corpus in a cell

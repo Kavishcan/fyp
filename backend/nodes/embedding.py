@@ -83,3 +83,40 @@ class SentenceTransformerEmbedder:
 
     def __call__(self, texts: list[str]) -> np.ndarray:
         return self.embed(texts)
+
+
+# --- the ONE shared routing embedder for the live path -------------------------
+#
+# Coordinator and every MCP node process must embed into the same space, so
+# both call this factory rather than constructing an embedder themselves. The
+# choice is an environment variable so the demo can run on the hashing
+# placeholder (fast, dependency-free, what every earlier live-path result
+# used) or on the semantic model every measured result used (docs/31–42):
+#
+#   ROUTING_EMBEDDER=hashing                 (default)
+#   ROUTING_EMBEDDER=BAAI/bge-base-en-v1.5   (any sentence-transformers name)
+#
+# With a semantic model, node start-up embeds its documents once (~1 s per 40
+# documents on Apple Silicon plus model load), so run MCP nodes with
+# persistent sessions (MCP_PERSISTENT=1) or every spawn-per-call contact
+# reloads the model. Embeddings are cached on disk by (model, text).
+
+ROUTING_EMBEDDER_ENV = "ROUTING_EMBEDDER"
+
+
+def routing_embedder_name() -> str:
+    import os
+
+    return os.environ.get(ROUTING_EMBEDDER_ENV, "hashing").strip() or "hashing"
+
+
+def shared_routing_embedder():
+    """HashingEmbedder(256) by default; a cached SentenceTransformerEmbedder
+    when ROUTING_EMBEDDER names a model. `.model_name` identifies the space
+    in profiles, decisions and logs either way."""
+    name = routing_embedder_name()
+    if name.lower() == "hashing":
+        return HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
+    from eval.embed_cache import CachedEmbedder  # lazy: sqlite + numpy only
+
+    return CachedEmbedder(SentenceTransformerEmbedder(name))

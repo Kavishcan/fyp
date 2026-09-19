@@ -32,7 +32,7 @@ from mcp.server.mcpserver import MCPServer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # allow `import nodes.*` when run as a script
 
-from nodes.embedding import SHARED_ROUTING_MODEL, HashingEmbedder  # noqa: E402
+from nodes.embedding import SHARED_ROUTING_MODEL, HashingEmbedder, shared_routing_embedder  # noqa: E402
 from nodes.profile import build_profile, embed_documents  # noqa: E402
 from nodes.simulator import InProcessNode  # noqa: E402
 from nodes.metadata import attach_metadata  # noqa: E402
@@ -47,9 +47,11 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     if type(profile_k) is not int or profile_k < 1:
         raise ValueError("k must be a positive integer")
 
-    routing_embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
+    # Same factory as the coordinator: ROUTING_EMBEDDER decides the space.
+    routing_embedder = shared_routing_embedder()
     local_embedder = (
-        routing_embedder if local_model == SHARED_ROUTING_MODEL else HashingEmbedder(model_name=local_model, n_features=256)
+        routing_embedder if local_model in (SHARED_ROUTING_MODEL, routing_embedder.model_name)
+        else HashingEmbedder(model_name=local_model, n_features=256)
     )
 
     # Profiles must stay reproducible across the fresh process used per call.

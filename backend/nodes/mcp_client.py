@@ -22,10 +22,32 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
+
+from nodes.embedding import ROUTING_EMBEDDER_ENV, routing_embedder_name
 
 _SERVER_MODULE = "nodes.mcp_server"
 _BACKEND_DIR = str(Path(__file__).resolve().parent.parent)
+
+
+def _server_params(data_file: Path) -> StdioServerParameters:
+    """The MCP stdio client launches servers with a minimal environment, so
+    the shared-routing-space choice (and the HF cache location) must be
+    forwarded explicitly or the node would silently embed into a different
+    space from the coordinator."""
+    import os
+
+    env = get_default_environment()
+    env[ROUTING_EMBEDDER_ENV] = routing_embedder_name()
+    for key in ("HF_HOME", "HF_HUB_CACHE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "TOKENIZERS_PARALLELISM"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return StdioServerParameters(
+        command=sys.executable,
+        args=["-m", _SERVER_MODULE, "--data-file", str(data_file)],
+        cwd=_BACKEND_DIR,
+        env=env,
+    )
 
 
 @dataclass
@@ -38,11 +60,7 @@ class MCPNodeHandle:
     data_file: Path
 
     async def _call_tool(self, tool_name: str, arguments: dict) -> str:
-        params = StdioServerParameters(
-            command=sys.executable,
-            args=["-m", _SERVER_MODULE, "--data-file", str(self.data_file)],
-            cwd=_BACKEND_DIR,
-        )
+        params = _server_params(self.data_file)
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -131,11 +149,7 @@ class PersistentMCPNodeHandle(MCPNodeHandle):
     async def _run(self) -> None:
         self._ready = asyncio.get_running_loop().create_future()
         self._stop = asyncio.Event()
-        params = StdioServerParameters(
-            command=sys.executable,
-            args=["-m", _SERVER_MODULE, "--data-file", str(self.data_file)],
-            cwd=_BACKEND_DIR,
-        )
+        params = _server_params(self.data_file)
         try:
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:

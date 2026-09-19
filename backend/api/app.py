@@ -17,6 +17,7 @@ Loads backend/.env if present (OPENAI_API_KEY / GEMINI_API_KEY / LLM_PROVIDER
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -48,7 +49,11 @@ state = AppState()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    loaded = await state.load_mcp_nodes_from_dir(MCP_NODES_DIR)
+    # MCP_PERSISTENT=1 keeps one server process per node (docs/37: ~10 ms
+    # per contact instead of ~450); required in practice with a semantic
+    # ROUTING_EMBEDDER, whose model would otherwise reload on every call.
+    persistent = os.environ.get("MCP_PERSISTENT", "0") == "1"
+    loaded = await state.load_mcp_nodes_from_dir(MCP_NODES_DIR, persistent=persistent)
     if loaded:
         print(f"[startup] registered {len(loaded)} MCP node(s) from {MCP_NODES_DIR}: {loaded}")
     else:
@@ -130,7 +135,7 @@ async def activate_node(req: ActivateNodeRequest) -> NodeRegisterResponse:
     data_file = EXTRA_MCP_NODES_DIR / f"{req.node_id}.json"
     if not data_file.exists():
         raise HTTPException(status_code=404, detail="node_id not found among available MCP nodes")
-    profile = await state.register_mcp_node_async(data_file)
+    profile = await state.register_mcp_node_async(data_file, persistent=os.environ.get("MCP_PERSISTENT", "0") == "1")
     return NodeRegisterResponse(
         node_id=profile.source_id,
         document_count_bucket=profile.document_count_bucket,

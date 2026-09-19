@@ -46,7 +46,7 @@ reduction to DDH and the AEAD.
 
 ```text
 question
-  → shared routing embedder (hashing in the live demo; bge-base in every experiment)
+  → shared routing embedder (ROUTING_EMBEDDER: hashing by default, bge-base for the demo and every experiment)
   → local ranking over signed profiles (router/v2.select_dispatch)
   → dispatch set: cells of the top source(s) [or genuine_k + topic-stable decoys]
        every contact charged to one exposure budget, no exemption

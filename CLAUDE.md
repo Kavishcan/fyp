@@ -175,8 +175,12 @@ The earlier instruction prohibiting a new router is superseded.
   the docs/03 target, not the implementation. Do not say "end-to-end".
 - Signature validation, production authentication and complete de-identification
   are not implemented. Policy labels are only a demo selection hook.
-- Hashing is still the live demo encoder. Semantic-model evaluation must use
-  compatible query/profile spaces and record model/version/preprocessing.
+- The live path's routing space is chosen by ROUTING_EMBEDDER (default
+  "hashing"; e.g. "BAAI/bge-base-en-v1.5"), read identically by the
+  coordinator and every MCP node process (forwarded through the stdio env);
+  registration refuses a node whose centroids are not in the coordinator's
+  space. A semantic model needs MCP_PERSISTENT=1 (each node process loads the
+  model once, ~10 s). Evaluation must still record model/version/preprocessing.
 - A cloned repository is not a reproduced result. Pin code/artifacts and save
   commands, environments, splits and raw per-query outputs.
 - Distinguish real MCP transport, in-process simulation and virtual source
