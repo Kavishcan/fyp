@@ -11,6 +11,20 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/44: nodes previously served RAW documents — redaction ran only inside
+embed_documents, so vectors were clean but retrieve results and PSI
+envelopes carried PII (authorised client recovered 100% of injected
+names/MRN/DOB/phone/email). Nodes now de-identify once at load
+(privacy/deidentify.Deidentifier, from nodes/mcp_server and
+nodes/simulator) before embedding, profile, cluster table and serving:
+cued records leak 0%; bare names leak 100% under rules alone and 0% with the
+node's own registry (`known_identifiers`). Clean-text cost: 1–2% of
+documents altered, dense recall@10 unchanged. No bare ABC-123 id rule (hits
+compounds/cell lines); institutions add formats via `id_patterns`. Not a
+validated clinical de-identifier; Presidio/Philter plug in at
+`Deidentifier.backend`, not installed. Do not say "PII is removed" without
+"rules + registry, cued names".
+
 Docs/43: the PSI step is gated by a federation credential
 (privacy/credentials.py): HMAC over (node id, UTC day, blinded points),
 node-side allow-list `<node>.clients.json` with a per-client daily
@@ -184,8 +198,8 @@ The earlier instruction prohibiting a new router is superseded.
   Privacy claims are against contacted nodes and a routing-pattern observer,
   never against the coordinator; moving the device-side code to the client is
   the docs/03 target, not the implementation. Do not say "end-to-end".
-- Signature validation, production authentication and complete de-identification
-  are not implemented. Policy labels are only a demo selection hook.
+- Production authentication and validated de-identification are not implemented
+  (nodes run rule + registry de-identification, docs/44). Policy labels are only a demo selection hook.
 - The live path's routing space is chosen by ROUTING_EMBEDDER (default
   "hashing"; e.g. "BAAI/bge-base-en-v1.5"), read identically by the
   coordinator and every MCP node process (forwarded through the stdio env);
@@ -221,6 +235,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_bucket_recall.py | SimHash vs cluster-id bucket recall for PSI retrieval (docs/35) |
 | backend/privacy/psi.py, cluster_index.py | OPRF/labeled-PSI dispatch and the node's cluster table (docs/36) |
 | backend/privacy/credentials.py | HMAC credential + per-client daily evaluation budget gating psi_evaluate (docs/43) |
+| backend/privacy/deidentify.py, backend/eval/run_node_deid.py | Node-side de-identification at load, and its leakage/cost measurement (docs/44) |
 | backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
 | backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
 | backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |

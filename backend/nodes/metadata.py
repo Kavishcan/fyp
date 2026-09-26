@@ -12,6 +12,7 @@ import numpy as np
 
 from baselines.base import SourceProfile
 from nodes.profile import redact_pii
+from privacy.deidentify import strip_placeholders
 
 METHOD = "document-frequency-keywords-v1"
 _WORDS = re.compile(r"\b[a-z]{3,}\b")
@@ -36,7 +37,7 @@ def describe_documents(documents: list[str], *, max_topics: int = 16) -> dict:
     counts: Counter[str] = Counter()
     for document in documents:
         # Document frequency, not raw word repetition; one document gets one vote.
-        words = set(_WORDS.findall(redact_pii(document).lower())) - _STOP
+        words = set(_WORDS.findall(strip_placeholders(redact_pii(document)).lower())) - _STOP
         counts.update(words)
     topics = sorted(counts, key=lambda term: (-counts[term], term))[:max_topics]
     return {

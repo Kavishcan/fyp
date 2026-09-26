@@ -42,7 +42,16 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     spec = json.loads(data_file.read_text())
     node_id = spec["node_id"]
     local_model = spec.get("local_model") or SHARED_ROUTING_MODEL
+    # Node-side de-identification (privacy/deidentify.py, docs/44): runs once,
+    # before anything else sees the text, so embeddings, the published
+    # profile, the PSI envelopes and every retrieve result are built from the
+    # same de-identified documents. `known_identifiers` is the institution's
+    # own registry (names/ids); `"deidentify": false` disables it explicitly.
+    from privacy.deidentify import Deidentifier  # noqa: E402
+
     documents = spec["documents"]
+    if spec.get("deidentify", True):
+        documents = Deidentifier(known_identifiers=spec.get("known_identifiers", [])).redact_all(documents)
     profile_k = spec.get("k", 4)
     if type(profile_k) is not int or profile_k < 1:
         raise ValueError("k must be a positive integer")

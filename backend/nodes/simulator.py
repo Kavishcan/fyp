@@ -147,6 +147,8 @@ def build_simulated_source(
     publish_metadata: bool = True,
     signing_key=None,
     psi: bool = True,
+    deidentify: bool = True,
+    known_identifiers: list[str] | None = None,
 ) -> tuple[InProcessNode, SourceProfile]:
     """PII removal happens once per embedder call, on the same raw documents.
 
@@ -163,6 +165,12 @@ def build_simulated_source(
     remote party — state that wherever simulated results are reported.
     """
     local_embedder = local_embedder or routing_embedder
+    if deidentify:
+        # Same node-side step as nodes/mcp_server (docs/44): the node never
+        # holds, embeds, publishes or serves the raw text.
+        from privacy.deidentify import Deidentifier
+
+        documents = Deidentifier(known_identifiers=known_identifiers or ()).redact_all(documents)
 
     routing_embeddings = embed_documents(documents, routing_embedder)
     local_embeddings = (

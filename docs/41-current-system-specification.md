@@ -32,7 +32,7 @@ keeps the planted passage out of the prompt (cited 1.000 → 0.067, docs/40).
 | **Pattern observer** (network, relay, colluding sources) | which sources were contacted, sizes, timing | Untrusted |
 | **Malicious client** | everything a credentialed client sees | Gated: the node evaluates the OPRF only for an allow-listed credential within its daily evaluation budget (docs/43); dumping a 150–200-cluster node takes 8–10 days of one credential's budget and is logged under that id |
 
-Protected assets: query text and embedding (from sources, psi); query topic
+Protected assets: patient identifiers in node documents (from every client — de-identified before indexing, docs/44); query text and embedding (from sources, psi); query topic
 (from the observer, cells); which contact is genuine (cells / topic-stable
 decoys). Not protected: that a query happened, its size and timing; the
 coordinator's view; source truthfulness; generation when a hosted provider
@@ -66,7 +66,7 @@ The API default remains legacy; the studio defaults to psi + cells with every mo
 
 | Implemented and measured | Experimental | Planned / not built |
 |---|---|---|
-| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with per-client evaluation budget, persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
+| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with per-client evaluation budget, node-side de-identification at load, persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
 
 ## Traceability
 
@@ -111,5 +111,6 @@ BEIR corpora under `backend/vendor/` are regenerated, not committed.
   are measurably weaker.
 - PSI response size is linear in the node's table (~170 KB per 40-doc node).
 - No routing-level defence against a forged profile.
-- Regex PII redaction catches 1 of 3 value types on the privacy cases.
+- Node-side de-identification is rules + the node's registry (docs/44): cued and
+  registered identifiers do not leave the node; an uncued, unregistered name does.
 - Healthcare federation is public literature partitioned by topic.
