@@ -20,10 +20,14 @@ nodes/simulator) before embedding, profile, cluster table and serving:
 cued records leak 0%; bare names leak 100% under rules alone and 0% with the
 node's own registry (`known_identifiers`). Clean-text cost: 1–2% of
 documents altered, dense recall@10 unchanged. No bare ABC-123 id rule (hits
-compounds/cell lines); institutions add formats via `id_patterns`. Not a
-validated clinical de-identifier; Presidio/Philter plug in at
-`Deidentifier.backend`, not installed. Do not say "PII is removed" without
-"rules + registry, cued names".
+compounds/cell lines); institutions add formats via `id_patterns`. Optional
+NER: `presidio_backend()` (Presidio + spaCy en_core_web_sm, node config
+`"ner": "presidio"`), PERSON full names only — bare names leaked 1.000 →
+0.126, 7% of clean docs altered, recall unchanged; stock PERSON+LOCATION
+altered 66% and is not the default. Not a validated clinical de-identifier;
+a clinical transformer (~440 MB) is the stated production choice, not
+installed. Do not say "PII is removed" without "rules + registry + NER,
+~13% of uncued unregistered names missed".
 
 Docs/43: the PSI step is gated by a federation credential
 (privacy/credentials.py): HMAC over (node id, UTC day, blinded points),

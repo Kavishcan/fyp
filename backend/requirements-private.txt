@@ -1,2 +1,7 @@
 # Optional experimental encrypted scoring. No independent security audit.
 phe==1.5.0
+
+# Optional node-side NER de-identification (privacy/deidentify.presidio_backend, docs/44)
+presidio-analyzer
+presidio-anonymizer
+# then: python -m spacy download en_core_web_sm   (~12 MB)

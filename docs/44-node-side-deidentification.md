@@ -31,9 +31,38 @@ nfcorpus documents, 30% carrying a fictional record)
 
 The one gap is stated in the table: **a bare name with no cue is not
 detectable by rules.** The node's own registry of its patients' and staff
-names — which every hospital has — closes it. A validated NER-based tool
-(Presidio, Philter) plugs in at the same point (`Deidentifier.backend`) and
-was not installed or measured here.
+names — which every hospital has — closes it.
+
+### Adding a trained name detector (NER)
+
+For names that are neither cued nor registered, `presidio_backend()` plugs
+Microsoft Presidio with spaCy's small English model (`en_core_web_sm`,
+~12 MB) into `Deidentifier.backend`. Same canary run, bare-name template:
+
+| Condition | Bare names leaked | Clean docs altered (nfcorpus / scifact) | Recall@10 |
+|---|---:|---:|---|
+| rules | 1.000 | 1.2% / 2.2% | unchanged |
+| rules + registry | **0.000** | 1.2% / 2.2% | unchanged |
+| rules + NER (PERSON + LOCATION, stock) | 0.081 | **66% / 67%** | 0.850 → 0.840 on scifact |
+| **rules + NER (full person names only)** | **0.126** | **7.6% / 6.9%** | unchanged |
+
+The stock configuration catches 92% of bare names but rewrites two thirds of
+clean abstracts: the small model tags "Mediterranean" (diet), "MM",
+"cyanobacteria" as places and "BMAA", "Cox" (regression), "Cd", "Proteus
+mirabilis" as people. Restricting it to PERSON spans of two or more
+capitalised words — the shape of a patient's name — cuts the damage to ~7%
+of documents with retrieval unchanged, and still catches 87% of bare names.
+Countries named in a study are not patient identifiers, so LOCATION is off
+by default.
+
+Reading: **registry is exact where the institution knows the name; NER is
+the safety net where it doesn't; neither alone is enough.** The ~13% of bare
+names the small model misses is what the clinical transformer
+de-identifiers (trained on i2b2/n2c2 notes, ~440 MB, not installed under
+this project's download limit) exist to close — the stated production
+choice. Enable NER on a node with `"ner": "presidio"` in its data file;
+optional dependency (`presidio-analyzer`, `presidio-anonymizer`,
+`en_core_web_sm`), never a silent fallback.
 
 **Cost on clean text is zero on retrieval.** On 2,000-document nfcorpus and
 scifact pools with no injected PII, 1.2% and 2.2% of documents were altered
@@ -86,7 +115,8 @@ two pools. An institution adds its real record format through `id_patterns`.
 ## Reproduce
 
 ```
-python -m eval.run_node_deid
+python -m eval.run_node_deid              # adds the rules + NER condition (default --ner presidio)
+python -m eval.run_node_deid --ner none   # rules and registry only
 ```
 
 Tests: `tests/test_deidentify.py` — each identifier type, clinical and

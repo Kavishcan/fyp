@@ -96,3 +96,34 @@ def test_real_mcp_node_serves_only_deidentified_text(tmp_path):
     text = "\n".join(served)
     assert "chest pain" in text.lower()
     assert not any(v in text for v in VALUES)
+
+
+# --- optional Presidio NER backend (docs/44) ------------------------------------
+
+presidio = pytest.importorskip("presidio_analyzer")
+
+
+@pytest.fixture(scope="module")
+def ner():
+    spacy = pytest.importorskip("spacy")
+    try:
+        spacy.load("en_core_web_sm")
+    except OSError:
+        pytest.skip("en_core_web_sm not installed")
+    from privacy.deidentify import presidio_backend
+
+    return presidio_backend()
+
+
+def test_ner_catches_a_bare_full_name_the_rules_miss(ner):
+    text = "Rahul Menon was admitted on the ward."
+    assert "Rahul Menon" in Deidentifier().redact(text)
+    assert "Rahul Menon" not in Deidentifier(backend=ner).redact(text)
+
+
+@pytest.mark.parametrize("text", [
+    "A Mediterranean diet reduced risk in the United States and China.",
+    "BMAA exposure; Cox regression; Proteus mirabilis; Cd and MeHg levels.",
+])
+def test_ner_leaves_places_acronyms_and_species_alone(ner, text):
+    assert Deidentifier(backend=ner).redact(text) == text

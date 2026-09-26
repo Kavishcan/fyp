@@ -131,10 +131,62 @@ class Deidentifier:
         return [self.redact(d) for d in documents]
 
 
-_PLACEHOLDER = re.compile(r"\[(?:EMAIL|URL|IP|ID|SSN|CARD|DATE|PHONE|NAME|NAME_OR_ID)\]")
+_PLACEHOLDER = re.compile(r"\[(?:EMAIL|URL|IP|ID|SSN|CARD|DATE|PHONE|NAME|NAME_OR_ID|LOCATION)\]")
 
 
 def strip_placeholders(text: str) -> str:
     """For derived public metadata (topics/description): drop the placeholder
     tokens so "[NAME]" never becomes a published topic word."""
     return _PLACEHOLDER.sub(" ", text)
+
+
+# --- optional NER backend: Microsoft Presidio (docs/44) -------------------------
+#
+# The rule + registry layers cannot see a bare name with no cue that is not in
+# the institution's registry. A trained named-entity recogniser can. Presidio
+# is used with spaCy's SMALL English model (en_core_web_sm, ~12 MB) — Presidio's
+# default is en_core_web_lg (~560 MB), over this project's download limit, and
+# the clinical transformer de-identifiers (~440 MB) are the stated production
+# choice, not installed. Optional dependency: absent packages raise ImportError
+# at construction, never silently fall back.
+
+PRESIDIO_ENTITIES = ("PERSON", "LOCATION", "EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD",
+                     "IP_ADDRESS", "URL", "DATE_TIME", "NRP")
+
+
+_FULL_NAME_SPAN = re.compile(r"^[A-Z](?:'[A-Z])?[a-z]+(?:[ '-][A-Z](?:'[A-Z])?[a-z]+)+$")
+
+
+def presidio_backend(spacy_model: str = "en_core_web_sm", entities: Iterable[str] = ("PERSON",),
+                     score_threshold: float = 0.5, full_names_only: bool = True) -> Callable[[str], str]:
+    """A `Deidentifier.backend`: Presidio analyzer + anonymizer, replacing each
+    entity with `[NAME]` (PERSON) or `[<ENTITY>]`.
+
+    Defaults measured in docs/44. The small spaCy model over-fires badly on
+    biomedical abstracts: LOCATION tagged "Mediterranean" (diet), "MM",
+    "cyanobacteria"; PERSON tagged "BMAA", "Cox" (regression), "Cd", "Proteus
+    mirabilis". With PERSON+LOCATION it altered 66% of clean documents. So:
+    PERSON only (a country named in a study is not a patient identifier), and
+    `full_names_only` keeps a PERSON span only if it is two or more
+    capitalised words — the shape of a patient's name, not of an acronym,
+    species, statistic or single cited surname."""
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
+    from presidio_anonymizer import AnonymizerEngine
+    from presidio_anonymizer.entities import OperatorConfig
+
+    provider = NlpEngineProvider(nlp_configuration={
+        "nlp_engine_name": "spacy", "models": [{"lang_code": "en", "model_name": spacy_model}]})
+    analyzer = AnalyzerEngine(nlp_engine=provider.create_engine(), supported_languages=["en"])
+    anonymizer = AnonymizerEngine()
+    wanted = list(entities)
+    operators = {e: OperatorConfig("replace", {"new_value": "[NAME]" if e == "PERSON" else f"[{e}]"}) for e in wanted}
+
+    def redact(text: str) -> str:
+        results = analyzer.analyze(text=text, language="en", entities=wanted, score_threshold=score_threshold)
+        if full_names_only:
+            results = [r for r in results if r.entity_type != "PERSON" or _FULL_NAME_SPAN.match(text[r.start:r.end])]
+        return anonymizer.anonymize(text=text, analyzer_results=results, operators=operators).text if results else text
+
+    redact.name = f"presidio[{spacy_model}]"  # type: ignore[attr-defined]
+    return redact

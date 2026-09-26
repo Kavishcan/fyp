@@ -48,7 +48,7 @@ from nodes.embedding import HashingEmbedder as NodeHashing
 from nodes.profile import redact_pii
 from nodes.simulator import build_simulated_source
 from privacy.cluster_index import assign_clusters
-from privacy.deidentify import Deidentifier
+from privacy.deidentify import Deidentifier, presidio_backend
 from privacy.psi import PSIClient
 
 CASES = REPO_ROOT.parent / "fedrag-dataset" / "data" / "processed" / "privacy" / "privacy_cases.jsonl"
@@ -95,11 +95,13 @@ def dump_node(node, profile) -> str:
     return "\n".join(out)
 
 
-def part_a() -> list[dict]:
+def part_a(ner) -> list[dict]:
     cases = [json.loads(l) for l in CASES.read_text().splitlines() if l.strip()]
     registry = [v["value"] for c in cases for v in c["sensitive_values"] if v["type"] != "fictional_email"]
     conditions = {"embed_only_regex (before)": redact_pii, "rules": Deidentifier().redact,
                   "rules + registry": Deidentifier(known_identifiers=registry).redact}
+    if ner is not None:
+        conditions["rules + NER"] = Deidentifier(backend=ner).redact
     rows = []
     for name, fn in conditions.items():
         by_type = Counter(); total = Counter()
@@ -113,7 +115,7 @@ def part_a() -> list[dict]:
     return rows
 
 
-def part_b(embedder, seed: int, n_nodes: int, docs_per_node: int, share: float) -> list[dict]:
+def part_b(embedder, seed: int, n_nodes: int, docs_per_node: int, share: float, ner=None) -> list[dict]:
     from eval.run_feb4rag import sample_corpus
 
     rng = random.Random(seed)
@@ -131,13 +133,14 @@ def part_b(embedder, seed: int, n_nodes: int, docs_per_node: int, share: float) 
                     recs.append(rec)
             nodes_docs.append(docs)
             records.append(recs)
-        for cond in ("none (before)", "rules", "rules + registry"):
+        for cond in ("none (before)", "rules", "rules + registry", *(("rules + NER",) if ner is not None else ())):
             leak = Counter(); total = Counter()
             for n, (docs, recs) in enumerate(zip(nodes_docs, records)):
                 registry = [r["name"] for r in recs] + [r["mrn"] for r in recs] if cond == "rules + registry" else []
                 node, profile = build_simulated_source(f"hosp_{n}", list(docs), embedder, k=3, sigma=0.0,
                                                        rng=np.random.default_rng(seed), deidentify=cond != "none (before)",
-                                                       known_identifiers=registry)
+                                                       known_identifiers=registry,
+                                                       deid_backend=ner if cond == "rules + NER" else None)
                 served = dump_node(node, profile)
                 for rec in recs:
                     for field_ in ("name", "mrn", "dob", "phone", "email"):
@@ -151,11 +154,17 @@ def part_b(embedder, seed: int, n_nodes: int, docs_per_node: int, share: float) 
     return rows
 
 
-def part_c(embedder, seed: int) -> list[dict]:
+def part_c(embedder, seed: int, ner=None) -> list[dict]:
     from eval.run_bucket_recall import dense_recall, load_pool
 
     rows = []
-    deid = Deidentifier()
+    for label, deid in (("rules", Deidentifier()), *((("rules + NER", Deidentifier(backend=ner)),) if ner is not None else ())):
+        rows += _part_c_one(embedder, seed, label, deid, dense_recall, load_pool)
+    return rows
+
+
+def _part_c_one(embedder, seed, label, deid, dense_recall, load_pool) -> list[dict]:
+    rows = []
     for corpus in ("nfcorpus", "scifact"):
         ids, texts, queries, relevant = load_pool(corpus, 100, 2000, seed)
         before = Counter(deid.counts)
@@ -165,11 +174,11 @@ def part_c(embedder, seed: int) -> list[dict]:
         qv = embedder.embed([t for _, t in queries]); qv /= np.linalg.norm(qv, axis=1, keepdims=True)
         raw = embedder.embed(texts); raw /= np.linalg.norm(raw, axis=1, keepdims=True)
         cln = embedder.embed(clean); cln /= np.linalg.norm(cln, axis=1, keepdims=True)
-        rows.append({"part": "C", "corpus": corpus, "docs": len(texts), "docs_altered": changed / len(texts),
+        rows.append({"part": "C", "condition": label, "corpus": corpus, "docs": len(texts), "docs_altered": changed / len(texts),
                      "placeholders": json.dumps({k: v for k, v in added.items() if v}),
                      "dense_recall@10_raw": dense_recall(qv, raw, relevant, 10),
                      "dense_recall@10_deidentified": dense_recall(qv, cln, relevant, 10)})
-        print(f"  C {corpus}: altered {rows[-1]['docs_altered']:.3f} {rows[-1]['placeholders']} "
+        print(f"  C {label:<12} {corpus}: altered {rows[-1]['docs_altered']:.3f} {rows[-1]['placeholders']} "
               f"recall@10 {rows[-1]['dense_recall@10_raw']:.3f} -> {rows[-1]['dense_recall@10_deidentified']:.3f}", flush=True)
     return rows
 
@@ -180,17 +189,20 @@ def main() -> None:
     parser.add_argument("--nodes", type=int, default=6)
     parser.add_argument("--docs-per-node", type=int, default=60)
     parser.add_argument("--share", type=float, default=0.3, help="share of documents carrying a patient record")
+    parser.add_argument("--ner", choices=["none", "presidio"], default="presidio",
+                        help="add a rules + NER condition (Presidio + spaCy en_core_web_sm)")
     parser.add_argument("--embedder", choices=["sentence-transformer", "hashing"], default="sentence-transformer")
     parser.add_argument("--embedder-model", default="BAAI/bge-base-en-v1.5")
     args = parser.parse_args()
 
     eval_embedder = (CachedEmbedder(SentenceTransformerEmbedder(args.embedder_model))
                      if args.embedder == "sentence-transformer" else HashingEmbedder())
-    rows = part_a()
+    ner = presidio_backend() if args.ner == "presidio" else None
+    rows = part_a(ner)
     for r in rows:
         print("  A", r["condition"], {k: round(v, 3) for k, v in r.items() if k.startswith("removed_")}, flush=True)
-    rows += part_b(NodeHashing(n_features=256), args.seed, args.nodes, args.docs_per_node, args.share)
-    rows += part_c(eval_embedder, args.seed)
+    rows += part_b(NodeHashing(n_features=256), args.seed, args.nodes, args.docs_per_node, args.share, ner)
+    rows += part_c(eval_embedder, args.seed, ner)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / f"node_deid_{time.strftime('%Y%m%d-%H%M%S')}.csv"

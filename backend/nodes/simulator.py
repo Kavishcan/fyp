@@ -149,6 +149,7 @@ def build_simulated_source(
     psi: bool = True,
     deidentify: bool = True,
     known_identifiers: list[str] | None = None,
+    deid_backend=None,
 ) -> tuple[InProcessNode, SourceProfile]:
     """PII removal happens once per embedder call, on the same raw documents.
 
@@ -170,7 +171,7 @@ def build_simulated_source(
         # holds, embeds, publishes or serves the raw text.
         from privacy.deidentify import Deidentifier
 
-        documents = Deidentifier(known_identifiers=known_identifiers or ()).redact_all(documents)
+        documents = Deidentifier(known_identifiers=known_identifiers or (), backend=deid_backend).redact_all(documents)
 
     routing_embeddings = embed_documents(documents, routing_embedder)
     local_embeddings = (

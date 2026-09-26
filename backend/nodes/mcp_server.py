@@ -51,7 +51,13 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
 
     documents = spec["documents"]
     if spec.get("deidentify", True):
-        documents = Deidentifier(known_identifiers=spec.get("known_identifiers", [])).redact_all(documents)
+        backend = None
+        if spec.get("ner") == "presidio":
+            from privacy.deidentify import presidio_backend  # noqa: E402
+
+            backend = presidio_backend(spec.get("ner_model", "en_core_web_sm"))
+        documents = Deidentifier(known_identifiers=spec.get("known_identifiers", []),
+                                 id_patterns=spec.get("id_patterns", []), backend=backend).redact_all(documents)
     profile_k = spec.get("k", 4)
     if type(profile_k) is not int or profile_k < 1:
         raise ValueError("k must be a positive integer")
