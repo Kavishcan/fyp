@@ -77,6 +77,7 @@ class InProcessNode:
         self.access_policy: dict[str, list[str]] = {}
         self.restricted_clusters: dict[int, tuple[str, np.ndarray]] = {}   # id -> (collection, centroid)
         self.signing_key = None
+        self.deid_counts: dict[str, int] | None = None   # identifiers redacted at load (docs/44)
         # v2 (docs/30): a second index in the SHARED routing space so the
         # coordinator can dispatch a vector instead of raw query text. Costs the
         # node retrieval-model heterogeneity for that mode — the shared encoder,
@@ -194,7 +195,11 @@ def build_simulated_source(
         # holds, embeds, publishes or serves the raw text.
         from privacy.deidentify import Deidentifier
 
-        documents = Deidentifier(known_identifiers=known_identifiers or (), backend=deid_backend).redact_all(documents)
+        _deid = Deidentifier(known_identifiers=known_identifiers or (), backend=deid_backend)
+        documents = _deid.redact_all(documents)
+        deid_counts = {k: v for k, v in _deid.counts.items() if v}
+    else:
+        deid_counts = None
 
     routing_embeddings = embed_documents(documents, routing_embedder)
     local_embeddings = (
@@ -219,6 +224,7 @@ def build_simulated_source(
     node = InProcessNode(
         source_id, documents, local_embeddings, local_embedder=local_embedder, routing_embeddings=routing_embeddings
     )
+    node.deid_counts = deid_counts
     if psi:
         attach_psi_index(node, profile, seed=int(rng.integers(0, 2**31 - 1)),
                          collections=collections, access_policy=access_policy)

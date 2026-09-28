@@ -36,6 +36,8 @@ from .schemas import (
     NodeStatus,
     QueryRequest,
     QueryResponse,
+    IdentityRequest,
+    IdentityState,
 )
 from .state import AppState
 from .private_scoring import PrivateScoreRequest, run_private_scoring
@@ -156,6 +158,7 @@ def query(req: QueryRequest) -> QueryResponse:
         selection_policy=req.selection_policy, relative_score_floor=req.relative_score_floor,
         coarse_k=req.coarse_k, psi_nprobe=req.psi_nprobe, psi_fetch_set=req.psi_fetch_set,
         evidence_top_k=req.evidence_top_k, decoy_policy=req.decoy_policy, cell_size=req.cell_size,
+        trust_weight=req.trust_weight,
     )
     return QueryResponse(**result)
 
@@ -174,3 +177,49 @@ def audit(query_id: str) -> AuditResponse:
         decoy_source_ids=record["decoy_source_ids"],
         routing_details=record.get("extra", {}).get("routing"),
     )
+
+
+# --- studio: demo federation, identity, results (docs/43–45) --------------------
+
+
+def _identity_state() -> IdentityState:
+    from .demo import list_identities
+
+    active = state.credential
+    return IdentityState(
+        active=None if active is None else {"client_id": active.client_id, "roles": list(active.roles)},
+        available=list_identities(state),
+    )
+
+
+@app.post("/demo/federation")
+def demo_federation() -> dict:
+    """Registers three demo hospitals (public / research / clinical notes with
+    fictional patient identifiers) and issues demo identities."""
+    from .demo import build_demo_federation
+
+    return build_demo_federation(state)
+
+
+@app.get("/identity", response_model=IdentityState)
+def get_identity() -> IdentityState:
+    return _identity_state()
+
+
+@app.post("/identity", response_model=IdentityState)
+def set_identity(req: IdentityRequest) -> IdentityState:
+    try:
+        state.set_identity(req.client_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown identity; load the demo federation first")
+    return _identity_state()
+
+
+@app.get("/scorecard")
+def scorecard() -> dict:
+    """The central configuration × axis table (eval/scorecard.py), assembled
+    from the newest result CSVs. Copies numbers; blanks what was not run."""
+    from eval.scorecard import assemble
+
+    rows, sources = assemble()
+    return {"rows": rows, "sources": sources}

@@ -9,7 +9,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { api, ApiError, type AuditResponse, type QueryResponse } from "@/lib/api";
+import { PrivacyDetails } from "@/components/privacy-details";
+import { api, ApiError, type AuditResponse, type IdentityState, type QueryResponse } from "@/lib/api";
 
 type RoutingMode = "legacy" | "smart" | "v2" | "psi";
 type DecoyPolicy = "topic_stable" | "cells";
@@ -42,12 +43,27 @@ export function ChatPanel() {
   // every mode is selectable here so the control can be shown side by side.
   const [routingMode, setRoutingMode] = useState<RoutingMode>("psi");
   const [decoyPolicy, setDecoyPolicy] = useState<DecoyPolicy>("cells");
+  const [trustWeight, setTrustWeight] = useState(0.5);
+  const [evidenceTopK, setEvidenceTopK] = useState(2);
+  const [identity, setIdentity] = useState<IdentityState>({ active: null, available: [] });
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    api.getIdentity().then(setIdentity).catch(() => undefined);
+  }, []);
+
+  async function changeIdentity(clientId: string) {
+    try {
+      setIdentity(await api.setIdentity(clientId === "" ? null : clientId));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not switch identity");
+    }
+  }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +81,9 @@ export function ChatPanel() {
         max_nodes: maxNodes,
         genuine_k: genuineK,
         routing_mode: routingMode,
-        ...(privacyModes ? { decoy_policy: decoyPolicy, cell_size: 4, evidence_top_k: 2 } : {}),
+        ...(privacyModes
+          ? { decoy_policy: decoyPolicy, cell_size: 4, evidence_top_k: evidenceTopK, trust_weight: trustWeight }
+          : {}),
       });
       setMessages((m) => m.map((msg) => (msg.id === id ? { ...msg, status: "done", result } : msg)));
     } catch (err) {
@@ -149,14 +167,24 @@ export function ChatPanel() {
                         <ul className="mt-2 flex flex-col gap-1">
                           {msg.result.citations.map((c, i) => (
                             <li key={i} className="border rounded p-1.5">
-                              <span className="font-mono text-[10px] text-muted-foreground">
+                              <span className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5">
                                 {c.node_id} · {c.score.toFixed(3)}
+                                {c.collection && (
+                                  <Badge
+                                    variant={c.collection === "public" ? "secondary" : "outline"}
+                                    className="text-[9px] px-1 py-0"
+                                  >
+                                    {c.collection}
+                                  </Badge>
+                                )}
                               </span>
                               <p className="line-clamp-3">{c.document}</p>
                             </li>
                           ))}
                         </ul>
                       </details>
+
+                      {msg.result.privacy && <PrivacyDetails privacy={msg.result.privacy} />}
 
                       <Button
                         size="sm"
@@ -224,6 +252,52 @@ export function ChatPanel() {
                   {MODE_HELP[routingMode]}
                 </span>
               </Label>
+              <Label className="flex flex-col items-start gap-1.5 text-xs">
+                Acting as
+                <select
+                  value={identity.active?.client_id ?? ""}
+                  onChange={(e) => changeIdentity(e.target.value)}
+                  className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                >
+                  <option value="">no credential</option>
+                  {identity.available.map((i) => (
+                    <option key={i.client_id} value={i.client_id}>
+                      {i.client_id} ({i.roles.join(", ") || "no role"})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] leading-snug text-muted-foreground font-normal">
+                  {identity.available.length === 0
+                    ? "Load the demo hospital federation on the Dashboard to get identities."
+                    : "Nodes read your roles from their own allow-lists; claiming a role gains nothing."}
+                </span>
+              </Label>
+              {(routingMode === "v2" || routingMode === "psi") && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Label className="flex flex-col items-start gap-1.5 text-xs">
+                    Trust weight
+                    <Input
+                      type="number"
+                      min={0}
+                      max={5}
+                      step={0.5}
+                      value={trustWeight}
+                      onChange={(e) => setTrustWeight(Number(e.target.value))}
+                      className="h-8 text-sm"
+                    />
+                  </Label>
+                  <Label className="flex flex-col items-start gap-1.5 text-xs">
+                    Evidence kept
+                    <Input
+                      type="number"
+                      min={1}
+                      value={evidenceTopK}
+                      onChange={(e) => setEvidenceTopK(Number(e.target.value))}
+                      className="h-8 text-sm"
+                    />
+                  </Label>
+                </div>
+              )}
               {(routingMode === "v2" || routingMode === "psi") && (
                 <Label className="flex flex-col items-start gap-1.5 text-xs">
                   Decoy policy
@@ -259,6 +333,10 @@ export function ChatPanel() {
               </Label>
             </PopoverContent>
           </Popover>
+          <Badge variant="outline" className="shrink-0 hidden md:inline-flex font-mono text-[10px]">
+            {routingMode}
+            {identity.active ? ` · ${identity.active.roles.join(",") || "no role"}` : ""}
+          </Badge>
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}

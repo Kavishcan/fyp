@@ -88,6 +88,10 @@ class AppState:
         # The client's federation credential for gated PSI nodes (docs/43).
         # None = present none; an open node accepts that, a gated node refuses.
         self.credential = None
+        # Demo identities issued by the (simulated) federation operator for the
+        # studio's "act as" switch (api/demo.py). Nodes only honour roles that
+        # are in their own allow-lists.
+        self.demo_identities: dict = {}
         self.instrumentation = Instrumentation(instrumentation_path)
         self._rng = np.random.default_rng()
         # Demo-only, external-API generation — see backend/generation/base.py
@@ -247,9 +251,26 @@ class AppState:
                     "description": profile.description,
                     "topics": profile.topics,
                     "metadata_method": profile.metadata_method,
+                    # docs/43–45: what the client can see about this node's access control
+                    "collections": sorted({"public", *(c for cs in (profile.access_policy or {}).values() for c in cs)}),
+                    "access_policy": profile.access_policy,
+                    "gated": (node.authorizer is not None) if not isinstance(node, MCPNodeHandle) else None,
+                    "public_clusters": 0 if profile.cluster_centroids is None else len(profile.cluster_centroids),
+                    "deidentified": getattr(node, "deid_counts", None),
                 }
             )
         return statuses
+
+    def set_identity(self, client_id: str | None):
+        """Studio "act as" switch: present one of the demo credentials, or none."""
+        if client_id is None:
+            self.credential = None
+        elif client_id in self.demo_identities:
+            self.credential = self.demo_identities[client_id]
+        else:
+            raise KeyError(client_id)
+        self.__dict__.pop("_restricted_cache", None)
+        return self.credential
 
     def run_query(
         self, question: str, *, max_nodes: int, genuine_k: int, sigma: float,
@@ -260,6 +281,7 @@ class AppState:
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
         coarse_k: int = 15, psi_nprobe: int = 2, psi_fetch_set: int | None = None,
         evidence_top_k: int | None = None, decoy_policy: str = "topic_stable", cell_size: int = 4,
+        trust_weight: float = 0.0,
     ) -> dict:
         if routing_mode not in {"legacy", "smart", "v2", "psi"}:
             raise ValueError("routing_mode must be legacy, smart, v2 or psi")
@@ -318,7 +340,7 @@ class AppState:
                 exposure_budget=float(max_nodes) if exposure_budget is None else exposure_budget,
                 max_sources=max_nodes, genuine_k=genuine_k, coarse_k=coarse_k,
                 aggregation=aggregation, minimum_trust=minimum_trust, sigma=sigma,
-                decoy_policy=decoy_policy,
+                decoy_policy=decoy_policy, trust_weight=trust_weight,
             )
             decision = select_dispatch(
                 query_embedding, profiles,
@@ -368,6 +390,7 @@ class AppState:
         routing_ms = (time.perf_counter() - routing_started) * 1000.0
 
         citations = []
+        psi_collections: dict[str, str] = {}
         retrieval_errors = {}
         retrieval_ms: dict[str, float] = {}
         request_bytes: dict[str, int] = {}
@@ -385,7 +408,8 @@ class AppState:
                         top_n=1, nprobe=psi_nprobe, fetch_set_size=psi_fetch_set,
                     )
                     request_bytes[node_id], response_bytes[node_id] = req_b, resp_b
-                    routing_details["psi"]["per_node"][node_id] = psi_info
+                    routing_details["psi"]["per_node"][node_id] = {k: v for k, v in psi_info.items() if k != "collection_of"}
+                    psi_collections.update(psi_info.get("collection_of", {}))
                 elif routing_mode == "v2":
                     # Identical payload to every node, genuine or decoy, and never
                     # the query text. Retrieval uses the SHARED routing space, so a
@@ -421,7 +445,8 @@ class AppState:
             finally:
                 retrieval_ms[node_id] = (time.perf_counter() - contact_started) * 1000.0
             for document, score in passages:
-                citations.append({"node_id": node_id, "document": document, "score": score})
+                citations.append({"node_id": node_id, "document": document, "score": score,
+                                  "collection": psi_collections.get(document) if routing_mode == "psi" else None})
             if routing_mode in {"smart", "v2", "psi"}:
                 documents = [document for document, _ in passages]
                 embeddings = self.routing_embedder.embed(documents) if documents else np.empty((0, 0))
@@ -496,6 +521,42 @@ class AppState:
             "nodes_contacted": result.dispatched_source_ids,
             "generation_status": generation_status,
             "routing_details": routing_details,
+            "privacy": self._privacy_summary(
+                routing_mode, decoy_policy, result, routing_details, request_bytes, response_bytes, retrieval_ms,
+                embed_ms, routing_ms, len(citations), evidence_top_k, retrieval_errors),
+        }
+
+    def _privacy_summary(self, routing_mode, decoy_policy, result, routing_details, request_bytes, response_bytes,
+                         retrieval_ms, embed_ms, routing_ms, evidence_kept, evidence_top_k, retrieval_errors) -> dict:
+        """What left the device for this answer, per contacted node — for the
+        studio. Descriptive of this run; the measured guarantees are docs/36–45."""
+        payload = {"legacy": "the question text", "smart": "the question text",
+                   "v2": "a routing-space vector (invertible, docs/32)",
+                   "psi": "blinded cluster ids over OPRF — never the question or a vector"}[routing_mode]
+        psi_nodes = ((routing_details or {}).get("psi") or {}).get("per_node", {})
+        per_node = {}
+        for node_id in result.dispatched_source_ids:
+            info = psi_nodes.get(node_id, {})
+            per_node[node_id] = {
+                "request_bytes": request_bytes.get(node_id), "response_bytes": response_bytes.get(node_id),
+                "contact_ms": retrieval_ms.get(node_id),
+                "passages_disclosed": info.get("passages_disclosed"),
+                "envelopes_delivered": info.get("envelopes_delivered"), "envelopes_opened": info.get("envelopes_opened"),
+                "collections_readable": info.get("collections_readable"),
+                "error": retrieval_errors.get(node_id) if retrieval_errors else None,
+            }
+        return {
+            "routing_mode": routing_mode,
+            "node_receives": payload,
+            "decoy_policy": decoy_policy if routing_mode in {"v2", "psi"} else None,
+            "identity": ({"client_id": self.credential.client_id, "roles": list(self.credential.roles)}
+                         if self.credential is not None else None),
+            "contacts": len(result.dispatched_source_ids),
+            "evidence_kept": evidence_kept,
+            "evidence_top_k": evidence_top_k,
+            "stage_ms": {"embed": embed_ms, "routing": routing_ms,
+                         "retrieval": sum(v for v in retrieval_ms.values() if v is not None)},
+            "per_node": per_node,
         }
 
     def _check_routing_space(self, profile: SourceProfile, handle) -> None:
@@ -657,6 +718,7 @@ class AppState:
 
         candidates = [p for cid in wanted for p in matches.get(cid, [])]
         passages = rerank_passages(query_embedding, candidates, top_n=top_n)
+        collection_of = {p["document"]: p.get("collection", "public") for p in candidates}
         request_bytes = len(json.dumps({"blinded": [b.hex() for b in query.blinded]}).encode("utf-8")) + \
             len(json.dumps({"fetch_set": fetch_set}).encode("utf-8"))
         response_bytes = len(json.dumps([{c: e.hex() for c, e in per.items()} for per in evaluated]).encode("utf-8")) + \
@@ -666,6 +728,7 @@ class AppState:
             "envelopes_opened": len(matches), "passages_disclosed": len(candidates),
             "fetch_set_size": len(envelopes) if fetch_set is None else len(fetch_set),
             "collections_readable": sorted(readable),
+            "collection_of": {d: collection_of[d] for d, _ in passages},
         }
         return passages, request_bytes, response_bytes, info
 

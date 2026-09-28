@@ -92,37 +92,37 @@ function buildGraph(sources: NodeStatus[]): { nodes: Node[]; edges: Edge[] } {
       id: "embed",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT },
-      data: { title: "Embed + perturb", subtitle: "shared routing embedder" },
+      data: { title: "Embed on device", subtitle: "shared routing model" },
     },
     {
       id: "router",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT * 2 },
-      data: { title: "Router", subtitle: "score + rerank" },
+      data: { title: "Router", subtitle: "signed profiles, one budget, trust term" },
     },
     {
       id: "decoys",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT * 3 },
-      data: { title: "Anonymity set", subtitle: "genuine + decoys" },
+      data: { title: "Anonymity cell", subtitle: "fixed cover — hides topic + source" },
     },
     {
       id: "merge",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT * 5 },
-      data: { title: "Merge passages" },
+      data: { title: "PSI + rerank", subtitle: "blinded ids in, envelopes out; rerank across nodes" },
     },
     {
       id: "llm",
       type: "stage",
       position: { x: centerX - 110, y: ROW_HEIGHT * 6 },
-      data: { title: "LLM", subtitle: "generation" },
+      data: { title: "Local LLM", subtitle: "answer stays on device" },
     },
     {
       id: "trust",
       type: "stage",
       position: { x: centerX + 110, y: ROW_HEIGHT * 6 },
-      data: { title: "Trust update", subtitle: "feeds back into rerank" },
+      data: { title: "Trust update", subtitle: "every contact, feeds the ranking" },
     },
   ];
 

@@ -74,8 +74,9 @@ export function NodesList({ refreshKey, onChanged }: { refreshKey: number; onCha
       <CardHeader>
         <CardTitle>Registered sources</CardTitle>
         <CardDescription>
-          Trust is dynamic — it updates after every query, so it may differ from the
-          static value a source published at registration.
+          Trust updates after every query. Collections, access and de-identification come
+          from each node: restricted collections open only for roles in that node&rsquo;s
+          allow-list, and identifiers are redacted before anything is indexed or served.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -91,8 +92,10 @@ export function NodesList({ refreshKey, onChanged }: { refreshKey: number; onCha
                 <TableHead>Transport</TableHead>
                 <TableHead>Trust</TableHead>
                 <TableHead>Observations</TableHead>
-                <TableHead>Document count</TableHead>
-                <TableHead>Profile version</TableHead>
+                <TableHead>Collections</TableHead>
+                <TableHead>Access</TableHead>
+                <TableHead>De-identified</TableHead>
+                <TableHead>Documents</TableHead>
                 <TableHead>Local model</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -110,8 +113,51 @@ export function NodesList({ refreshKey, onChanged }: { refreshKey: number; onCha
                     <Badge variant={trustVariant(n.trust)}>{n.trust.toFixed(3)}</Badge>
                   </TableCell>
                   <TableCell>{n.trust_observations}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {n.collections.map((c) => (
+                        <Badge
+                          key={c}
+                          variant={c === "public" ? "secondary" : "outline"}
+                          className="text-[10px]"
+                          title={
+                            c === "public"
+                              ? "readable by any authorised client"
+                              : `readable by: ${Object.entries(n.access_policy ?? {})
+                                  .filter(([, cs]) => cs.includes(c))
+                                  .map(([r]) => r)
+                                  .join(", ") || "no role"}`
+                          }
+                        >
+                          {c}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {n.gated === true ? (
+                      <Badge variant="default" className="text-[10px]">credential + budget</Badge>
+                    ) : n.gated === false ? (
+                      <Badge variant="secondary" className="text-[10px]">open (public only)</Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">node-side</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {n.deidentified ? (
+                      <span
+                        className="text-xs"
+                        title={Object.entries(n.deidentified)
+                          .map(([k, v]) => `${k}: ${v}`)
+                          .join("\n")}
+                      >
+                        {Object.values(n.deidentified).reduce((a, b) => a + b, 0)} redacted
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">{n.transport === "mcp" ? "node-side" : "none found"}</span>
+                    )}
+                  </TableCell>
                   <TableCell>{n.document_count_bucket}</TableCell>
-                  <TableCell>{n.profile_version}</TableCell>
                   <TableCell>
                     {n.local_model === "shared-routing-embedder" ? (
                       <span className="text-muted-foreground text-xs">shared</span>

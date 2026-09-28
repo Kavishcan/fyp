@@ -48,6 +48,26 @@ class NodeStatus(BaseModel):
     description: str = ""
     topics: List[str] = Field(default_factory=list)
     metadata_method: str = ""
+    # Access control and source-side protection (docs/43–45)
+    collections: List[str] = Field(default_factory=lambda: ["public"])
+    access_policy: Optional[dict] = None
+    gated: Optional[bool] = None          # None = not known to the client (MCP node)
+    public_clusters: int = 0
+    deidentified: Optional[dict] = None   # identifiers redacted at load, by type (simulated nodes)
+
+
+class IdentityRequest(BaseModel):
+    client_id: Optional[str] = None       # None = present no credential
+
+
+class Identity(BaseModel):
+    client_id: str
+    roles: List[str]
+
+
+class IdentityState(BaseModel):
+    active: Optional[Identity] = None
+    available: List[Identity] = Field(default_factory=list)
 
 
 class QueryRequest(BaseModel):
@@ -71,6 +91,8 @@ class QueryRequest(BaseModel):
     # topic as well, at one fewer genuine contact.
     decoy_policy: Literal["topic_stable", "cells"] = "topic_stable"
     cell_size: int = Field(default=4, ge=2)
+    # v2/psi: trust as a ranking term (docs/42); 0 = off, 0.5 recommended.
+    trust_weight: float = Field(default=0.0, ge=0, le=5, allow_inf_nan=False)
     exposure_budget: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
     minimum_gain: float = Field(default=0.05, ge=0, le=1, allow_inf_nan=False)
     minimum_trust: float = Field(default=0.0, ge=0, le=1, allow_inf_nan=False)
@@ -110,6 +132,7 @@ class Citation(BaseModel):
     document: str
     score: float
     rerank_score: Optional[float] = None  # cosine to the query in the shared routing space
+    collection: Optional[str] = None      # psi: the node collection this passage came from (docs/45)
 
 
 class QueryResponse(BaseModel):
@@ -119,6 +142,7 @@ class QueryResponse(BaseModel):
     nodes_contacted: List[str]
     generation_status: str = "not_implemented"
     routing_details: Optional[dict] = None
+    privacy: Optional[dict] = None        # what left the device, per contacted node
 
 
 class AuditResponse(BaseModel):

@@ -43,6 +43,55 @@ export interface NodeStatus {
   description: string;
   topics: string[];
   metadata_method: string;
+  /** Document collections this node holds (docs/45). "public" is always readable by authorised clients. */
+  collections: string[];
+  /** Role -> readable collections, from the node's signed profile. */
+  access_policy: Record<string, string[]> | null;
+  /** True when the node checks credentials (docs/43); null when not known (MCP node). */
+  gated: boolean | null;
+  /** Cluster centroids in the public profile; restricted ones are served per role. */
+  public_clusters: number;
+  /** Identifiers the node redacted at load, by type (docs/44); null for MCP nodes. */
+  deidentified: Record<string, number> | null;
+}
+
+export interface Identity {
+  client_id: string;
+  roles: string[];
+}
+
+export interface IdentityState {
+  active: Identity | null;
+  available: Identity[];
+}
+
+export interface NodePrivacy {
+  request_bytes: number | null;
+  response_bytes: number | null;
+  contact_ms: number | null;
+  passages_disclosed: number | null;
+  envelopes_delivered: number | null;
+  envelopes_opened: number | null;
+  collections_readable: string[] | null;
+  error: string | null;
+}
+
+/** What left the device for one answer (backend AppState._privacy_summary). */
+export interface PrivacySummary {
+  routing_mode: string;
+  node_receives: string;
+  decoy_policy: string | null;
+  identity: Identity | null;
+  contacts: number;
+  evidence_kept: number;
+  evidence_top_k: number | null;
+  stage_ms: { embed: number; routing: number; retrieval: number };
+  per_node: Record<string, NodePrivacy>;
+}
+
+export interface ScorecardRow {
+  configuration: string;
+  [metric: string]: string | number | null;
 }
 
 export interface QueryRequest {
@@ -65,6 +114,8 @@ export interface QueryRequest {
   /** v2/psi: "topic_stable" hides which contact is genuine; "cells" also hides the topic (docs/40). */
   decoy_policy?: "topic_stable" | "cells";
   cell_size?: number;
+  /** v2/psi: trust as a ranking term (docs/42); 0 = off, 0.5 recommended. */
+  trust_weight?: number;
   exposure_budget?: number;
   minimum_gain?: number;
   minimum_trust?: number;
@@ -140,6 +191,8 @@ export interface Citation {
   score: number;
   /** Cosine to the query in the shared routing space, set by the cross-node rerank. */
   rerank_score?: number | null;
+  /** psi: the node collection this passage came from (docs/45). */
+  collection?: string | null;
 }
 
 export interface QueryResponse {
@@ -149,6 +202,7 @@ export interface QueryResponse {
   nodes_contacted: string[];
   generation_status: string;
   routing_details?: SmartRoutingDetails | V2RoutingDetails | null;
+  privacy?: PrivacySummary | null;
 }
 
 export interface AuditResponse {
@@ -222,6 +276,18 @@ export const api = {
     request<{ removed: boolean; node_id: string }>(`/nodes/${encodeURIComponent(nodeId)}`, {
       method: "DELETE",
     }),
+
+  listNodesForMode: (mode: string) => request<NodeStatus[]>(`/nodes?routing_mode=${encodeURIComponent(mode)}`),
+
+  loadDemoFederation: () =>
+    request<{ nodes: string[]; identities: Identity[] }>("/demo/federation", { method: "POST" }),
+
+  getIdentity: () => request<IdentityState>("/identity"),
+
+  setIdentity: (clientId: string | null) =>
+    request<IdentityState>("/identity", { method: "POST", body: JSON.stringify({ client_id: clientId }) }),
+
+  scorecard: () => request<{ rows: ScorecardRow[]; sources: Record<string, string> }>("/scorecard"),
 };
 
 export { ApiError, BASE_URL };
