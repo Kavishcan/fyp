@@ -11,6 +11,18 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/46: HyFedRAG-style design (broadcast, raw edge retrieval, server
+fusion, stock Presidio) vs this project on PMC-Patients (545 MB CSV, user
+approved; backend/vendor/pmc_patients/), patient-to-patient retrieval with
+cross-article relevance only, 5,000 patients in 8 k-means hospitals, 986
+queries. HyFedRAG-style MRR 0.444 = centralized, topic at floor 0.239, but
+question text to all 8 hospitals; cosine top-4 MRR 0.444, topic 0.318;
+ours PSI+cells MRR 0.350 (−0.062 from PSI bucketing, −0.032 from cells),
+question to 0 hospitals, topic 0.254. Stock Presidio altered 84.1% of clean
+case reports vs ours 11.7%. It is a reimplementation of the described
+design, not HyFedRAG's code; not comparable to its published numbers.
+Report the 1,000-query run (a 300-query run gave cells 0.383 — unstable).
+
 Docs/45: role-based access to node collections. Documents carry a
 collection (`public` default); the node's signed profile publishes
 `access_policy` (role -> collections) and `cluster_collections`; client
@@ -264,6 +276,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_answer_quality.py | E10 MIRAGE answer quality, closed-book vs psi vs broadcast (docs/38) |
 | backend/attacks/a2_topic_inference.py, backend/eval/run_leakage.py | Contacted-set → query-topic attack and the decoy ablation (docs/39) |
 | backend/eval/run_healthcare.py | Same-domain 8-client healthcare federation, hard case for routing leakage (docs/40) |
+| backend/eval/run_hyfedrag_compare.py | HyFedRAG-style design vs ours on PMC-Patients (docs/46) |
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
