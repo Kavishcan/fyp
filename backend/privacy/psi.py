@@ -75,8 +75,12 @@ def scalar_invert(scalar: bytes) -> bytes:
     return sodium.crypto_core_ed25519_scalar_invert(scalar)
 
 
-def label_key(oprf_output: bytes, node_id: str) -> bytes:
-    return hashlib.blake2b(oprf_output, key=_DOMAIN_KEY, salt=node_id.encode("utf-8")[:16].ljust(16, b"\0"),
+def label_key(oprf_output: bytes, node_id: str, collection: str = "public") -> bytes:
+    """Envelope key. "public" keeps the original derivation byte-for-byte;
+    any other collection is bound into the key as well (docs/45), so an
+    envelope of one collection can never open with another's OPRF output."""
+    material = oprf_output if collection == "public" else oprf_output + b"\0collection:" + collection.encode("utf-8")
+    return hashlib.blake2b(material, key=_DOMAIN_KEY, salt=node_id.encode("utf-8")[:16].ljust(16, b"\0"),
                            digest_size=KEY_BYTES).digest()
 
 
@@ -147,6 +151,32 @@ class PSIClient:
                     continue
         return found
 
+    @staticmethod
+    def open_matches_multi(query: BlindedQuery, evaluated: list[dict[str, bytes]], node_id: str,
+                           envelopes: dict[str, bytes]) -> dict[int, list[dict]]:
+        """Role-scoped variant (docs/45): the node returns, per blinded point,
+        one evaluation per collection the caller's role may read. Unblind
+        each, derive one key per (cluster, collection), try the envelopes.
+        Envelopes of collections the node did not evaluate stay opaque."""
+        if len(evaluated) != len(query.secrets):
+            raise ValueError("evaluated points do not match the blinded query")
+        keys: list[tuple[int, bytes]] = []
+        for cid, r, per_collection in zip(query.cluster_ids, query.secrets, evaluated):
+            inverse = scalar_invert(r)
+            for collection, point in per_collection.items():
+                keys.append((cid, label_key(scalar_mult(inverse, point), node_id, collection)))
+        found: dict[int, list[dict]] = {}
+        for envelope in envelopes.values():
+            for cid, key in keys:
+                if cid in found:
+                    continue
+                try:
+                    found[cid] = json.loads(open_envelope(key, envelope))
+                    break
+                except CryptoError:
+                    continue
+        return found
+
 
 # --- node ---------------------------------------------------------------------
 
@@ -154,21 +184,40 @@ class PSIClient:
 class PSINode:
     """Node side. Holds the OPRF key and the encrypted cluster table."""
 
-    def __init__(self, node_id: str, key: bytes | None = None) -> None:
+    def __init__(self, node_id: str, key: bytes | None = None, keys: dict[str, bytes] | None = None) -> None:
+        """`keys`: one OPRF key per document collection (docs/45). A node with
+        a single `key` has one collection, "public" — the original behaviour."""
         self.node_id = node_id
-        self.key = key or random_scalar()
+        self.keys: dict[str, bytes] = dict(keys) if keys else {"public": key or random_scalar()}
         self.table: dict[int, bytes] = {}          # cluster id -> envelope
         self.tokens: dict[int, str] = {}           # cluster id -> opaque token
+        self.collection_of: dict[int, str] = {}    # cluster id -> collection
 
-    def _label_key(self, cluster_id: int) -> bytes:
-        return label_key(scalar_mult(self.key, hash_to_point(encode_cluster_id(cluster_id))), self.node_id)
+    @property
+    def key(self) -> bytes:
+        """The public collection's key (single-collection nodes: the key)."""
+        return self.keys.get("public") or next(iter(self.keys.values()))
 
-    def build_table(self, clusters: dict[int, list[dict]]) -> None:
+    @property
+    def collections(self) -> list[str]:
+        return sorted(self.keys)
+
+    def _label_key(self, cluster_id: int, collection: str = "public") -> bytes:
+        k = self.keys[collection]
+        return label_key(scalar_mult(k, hash_to_point(encode_cluster_id(cluster_id))), self.node_id, collection)
+
+    def build_table(self, clusters: dict[int, list[dict]], collection_of: dict[int, str] | None = None) -> None:
         """`clusters`: cluster id -> passages (each a JSON-serialisable dict).
-        Tokens are random, so their order/value reveals nothing about ids."""
-        self.table, self.tokens = {}, {}
+        `collection_of`: cluster id -> collection (default all "public").
+        Each envelope is sealed under its own collection's key. Tokens are
+        random, so their order/value reveals nothing about ids or collections."""
+        self.table, self.tokens, self.collection_of = {}, {}, {}
         for cid, passages in clusters.items():
-            self.table[cid] = seal(self._label_key(cid), json.dumps(passages).encode("utf-8"))
+            collection = (collection_of or {}).get(cid, "public")
+            if collection not in self.keys:
+                self.keys[collection] = random_scalar()
+            self.collection_of[cid] = collection
+            self.table[cid] = seal(self._label_key(cid, collection), json.dumps(passages).encode("utf-8"))
             self.tokens[cid] = os.urandom(16).hex()
 
     def evaluate(self, blinded: list[bytes]) -> list[bytes]:
@@ -178,6 +227,19 @@ class PSINode:
             if len(point) != POINT_BYTES or not sodium.crypto_core_ed25519_is_valid_point(point):
                 raise ValueError("invalid blinded point")
         return [scalar_mult(self.key, b) for b in blinded]
+
+    def evaluate_for(self, blinded: list[bytes], collections: list[str]) -> list[dict[str, bytes]]:
+        """Role-scoped OPRF (docs/45): evaluate each blinded point under the
+        key of every collection in `collections` (the caller's permitted
+        set, decided by the authorizer BEFORE this call). The node still
+        learns nothing about which cluster, or which collection, matched; a
+        collection not in the set is simply never evaluated, so none of its
+        envelopes can open."""
+        for point in blinded:
+            if len(point) != POINT_BYTES or not sodium.crypto_core_ed25519_is_valid_point(point):
+                raise ValueError("invalid blinded point")
+        allowed = [c for c in collections if c in self.keys]
+        return [{c: scalar_mult(self.keys[c], b) for c in allowed} for b in blinded]
 
     def envelopes_for(self, fetch_set: list[int] | None = None) -> dict[str, bytes]:
         """Envelopes for an anonymity set of cluster ids, keyed by opaque

@@ -49,7 +49,20 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     # own registry (names/ids); `"deidentify": false` disables it explicitly.
     from privacy.deidentify import Deidentifier  # noqa: E402
 
-    documents = spec["documents"]
+    # Role-based access (docs/45): a document is either a string ("public")
+    # or {"text": ..., "collection": "clinical_notes"}; alternatively the file
+    # may hold {"collections": {"public": [...], "research": [...]}}.
+    # `access_policy` maps role -> readable collections and is published.
+    raw_documents, collections = [], []
+    if "collections" in spec:
+        for name, docs in spec["collections"].items():
+            raw_documents.extend(docs)
+            collections.extend([name] * len(docs))
+    for d in spec.get("documents", []):
+        raw_documents.append(d["text"] if isinstance(d, dict) else d)
+        collections.append(d.get("collection", "public") if isinstance(d, dict) else "public")
+    documents = raw_documents
+    access_policy = spec.get("access_policy") or {}
     if spec.get("deidentify", True):
         backend = None
         if spec.get("ner") == "presidio":
@@ -100,7 +113,9 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     from nodes.simulator import attach_psi_index  # noqa: E402
     from privacy.psi import random_scalar  # noqa: E402
 
-    attach_psi_index(node, profile, seed=seed, psi_key=_load_or_create_psi_key(data_file.with_suffix(".psi.key"), random_scalar))
+    psi_keys = _load_or_create_psi_keys(data_file.with_suffix(".psi.key"), sorted(set(collections)), random_scalar)
+    attach_psi_index(node, profile, seed=seed, psi_keys=psi_keys, collections=collections,
+                     access_policy=access_policy)
     # Authorisation for the PSI step (privacy/credentials.py, docs/43): an
     # allow-list next to the data file gates psi_evaluate per client with a
     # daily evaluation budget. No file = open node (prototype behaviour).
@@ -109,6 +124,31 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     node.authorizer = load_authorizer(node_id, data_file.with_suffix(".clients.json"))
     sign_profile(profile, load_or_create_key_file(data_file.with_suffix(".key")))
     return node, profile.__dict__, local_model
+
+
+def _load_or_create_psi_keys(path: Path, collections: list[str], generate) -> dict[str, bytes]:
+    """One OPRF key per collection, persisted (0600) so every process of this
+    node agrees. Backward compatible: a file holding one bare hex key is the
+    "public" collection's key."""
+    keys: dict[str, bytes] = {}
+    if path.exists():
+        text = path.read_text().strip()
+        if text.startswith("{"):
+            keys = {c: bytes.fromhex(h) for c, h in json.loads(text).items()}
+        else:
+            keys = {"public": bytes.fromhex(text)}
+    changed = False
+    for c in collections:
+        if c not in keys:
+            keys[c] = generate()
+            changed = True
+    if changed or not path.exists():
+        if set(keys) == {"public"}:
+            path.write_text(keys["public"].hex())
+        else:
+            path.write_text(json.dumps({c: k.hex() for c, k in keys.items()}))
+        path.chmod(0o600)
+    return {c: keys[c] for c in collections}
 
 
 def _load_or_create_psi_key(path: Path, generate) -> bytes:
@@ -172,16 +212,22 @@ def main() -> None:
         With an allow-list configured, `auth` (client_id, day, mac) is checked
         and the evaluations charged BEFORE anything touches the OPRF key; a
         refusal returns {"error": reason} and evaluates nothing."""
-        points = [bytes.fromhex(b) for b in blinded]
-        if node.authorizer is not None:
-            from privacy.credentials import Unauthorized  # noqa: E402
+        from privacy.credentials import Unauthorized, permitted_collections  # noqa: E402
 
+        points = [bytes.fromhex(b) for b in blinded]
+        roles: tuple[str, ...] = ()
+        if node.authorizer is not None:
             try:
-                node.authorizer.check(auth, points)
+                client_id = node.authorizer.check(auth, points)
             except Unauthorized as exc:
                 return json.dumps({"error": exc.reason})
-        evaluated = node.psi.evaluate(points)
-        return json.dumps([e.hex() for e in evaluated])
+            roles = node.authorizer.roles_of(client_id)
+        # Roles come from THIS node's allow-list, never from the request.
+        allowed = permitted_collections(node.access_policy, roles, node.psi.collections,
+                                        authorised=node.authorizer is not None)
+        evaluated = node.psi.evaluate_for(points, allowed)
+        return json.dumps({"collections": allowed,
+                           "evaluations": [{c: e.hex() for c, e in per.items()} for per in evaluated]})
 
     @server.tool()
     def psi_envelopes(fetch_set: list[int] | None = None) -> str:

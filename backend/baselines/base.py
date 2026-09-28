@@ -45,6 +45,11 @@ class SourceProfile:
     # query to its nearest few and the cluster id is the PSI item. None when
     # the node does not serve PSI.
     cluster_centroids: object | None = None
+    # Role-based access (docs/45): the collection each published cluster
+    # belongs to, and the node's role -> readable collections policy. Both
+    # public and signed; which roles a client holds is not.
+    cluster_collections: list | None = None
+    access_policy: dict | None = None
 
 
 @dataclass

@@ -11,6 +11,19 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/45: role-based access to node collections. Documents carry a
+collection (`public` default); the node's signed profile publishes
+`access_policy` (role -> collections) and `cluster_collections`; client
+roles live only in the node allow-list (`roles` per client). Enforcement is
+inside PSI: one OPRF key per collection (privacy/psi.PSINode.keys,
+`<node>.psi.key` JSON, 0600), and `evaluate_for` evaluates only permitted
+collections, so an unpermitted envelope can never open whatever ids are
+probed. Unauthenticated legacy/v2 retrieve serves `public` only. Measured
+(eval/run_rbac.py): access matrix equals the policy exactly; a client lying
+about its role gains 0. Restricted collections' centroids are still public;
+no LDAP/OPA, no attribute/consent rules. Single-collection nodes are
+byte-identical to before.
+
 Docs/44: nodes previously served RAW documents — redaction ran only inside
 embed_documents, so vectors were clean but retrieve results and PSI
 envelopes carried PII (authorised client recovered 100% of injected
@@ -240,6 +253,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/privacy/psi.py, cluster_index.py | OPRF/labeled-PSI dispatch and the node's cluster table (docs/36) |
 | backend/privacy/credentials.py | HMAC credential + per-client daily evaluation budget gating psi_evaluate (docs/43) |
 | backend/privacy/deidentify.py, backend/eval/run_node_deid.py | Node-side de-identification at load, and its leakage/cost measurement (docs/44) |
+| backend/eval/run_rbac.py (+ privacy/credentials roles, psi per-collection keys) | Role-based access to node collections, enforced in the PSI step (docs/45) |
 | backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
 | backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
 | backend/generation/ollama_generator.py | Local-only generator (LLM_PROVIDER=ollama); the only one inside the trust boundary |

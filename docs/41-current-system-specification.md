@@ -66,7 +66,7 @@ The API default remains legacy; the studio defaults to psi + cells with every mo
 
 | Implemented and measured | Experimental | Planned / not built |
 |---|---|---|
-| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with per-client evaluation budget, node-side de-identification at load, persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
+| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with per-client evaluation budget, role-based access to node collections (per-collection OPRF keys), node-side de-identification at load (rules + registry + optional NER), persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
 
 ## Traceability
 
@@ -111,6 +111,9 @@ BEIR corpora under `backend/vendor/` are regenerated, not committed.
   are measurably weaker.
 - PSI response size is linear in the node's table (~170 KB per 40-doc node).
 - No routing-level defence against a forged profile.
-- Node-side de-identification is rules + the node's registry (docs/44): cued and
-  registered identifiers do not leave the node; an uncued, unregistered name does.
+- Node-side de-identification is rules + the node's registry + optional NER (docs/44):
+  cued and registered identifiers do not leave the node; ~13% of uncued,
+  unregistered names still do with NER on.
+- Role-based access (docs/45) hides restricted documents, not the topic structure of
+  restricted collections (their centroids are in the public profile).
 - Healthcare federation is public literature partitioned by topic.

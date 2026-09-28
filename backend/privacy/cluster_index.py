@@ -98,6 +98,36 @@ def build_cluster_index(
     return centroids, clusters
 
 
+def build_cluster_index_by_collection(
+    documents: list[str],
+    routing_embeddings: np.ndarray,
+    collections: list[str],
+    *,
+    seed: int,
+    docs_per_cluster: int = DEFAULT_DOCS_PER_CLUSTER,
+    min_size: int = DEFAULT_MIN_CLUSTER_SIZE,
+) -> tuple[np.ndarray, dict[int, list[dict]], list[str]]:
+    """Clusters never mix collections (docs/45): each collection is clustered
+    on its own and gets a contiguous id range. Returns (all centroids,
+    cluster id -> passages, cluster id -> collection)."""
+    if len(collections) != len(documents):
+        raise ValueError("one collection label per document")
+    all_centroids, clusters, cluster_collections = [], {}, []
+    offset = 0
+    for collection in sorted(set(collections)):
+        idx = [i for i, c in enumerate(collections) if c == collection]
+        cents, cl = build_cluster_index([documents[i] for i in idx], np.asarray(routing_embeddings)[idx],
+                                        seed=seed, docs_per_cluster=docs_per_cluster, min_size=min_size)
+        for cid, passages in cl.items():
+            for p in passages:
+                p["collection"] = collection
+            clusters[offset + cid] = passages
+        all_centroids.append(cents)
+        cluster_collections.extend([collection] * len(cents))
+        offset += len(cents)
+    return np.vstack(all_centroids) if all_centroids else np.empty((0, 0)), clusters, cluster_collections
+
+
 def assign_clusters(query_vector: np.ndarray, centroids: np.ndarray, nprobe: int = DEFAULT_NPROBE) -> list[int]:
     """Client side: the `nprobe` nearest published centroids, by cosine."""
     if centroids is None or len(centroids) == 0:

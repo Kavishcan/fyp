@@ -91,6 +91,9 @@ def signing_payload(profile: SourceProfile) -> bytes:
         "source_id": profile.source_id,
         "centroids": centroids,
         "cluster_centroids": cluster_centroids,
+        "cluster_collections": list(profile.cluster_collections) if profile.cluster_collections is not None else None,
+        "access_policy": ({r: sorted(c) for r, c in sorted(profile.access_policy.items())}
+                          if profile.access_policy is not None else None),
         "profile_version": profile.profile_version,
         "document_count_bucket": profile.document_count_bucket,
         "policy_labels": list(profile.policy_labels),

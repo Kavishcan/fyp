@@ -70,6 +70,11 @@ class InProcessNode:
         # answers OPRF evaluations and serves envelopes; it never sees a query.
         self.psi = None
         self.authorizer = None   # privacy/credentials.Authorizer when the node gates PSI
+        # Role-based access (docs/45): collection label per document and the
+        # node's role -> collections policy. The unauthenticated legacy/v2
+        # retrieve paths can only ever return "public" documents.
+        self.collections: list[str] = ["public"] * len(documents)
+        self.access_policy: dict[str, list[str]] = {}
         # v2 (docs/30): a second index in the SHARED routing space so the
         # coordinator can dispatch a vector instead of raw query text. Costs the
         # node retrieval-model heterogeneity for that mode — the shared encoder,
@@ -77,6 +82,13 @@ class InProcessNode:
         if routing_embeddings is not None and len(routing_embeddings) != len(documents):
             raise ValueError("documents and routing_embeddings must be the same length")
         self.routing_embeddings = None if routing_embeddings is None else np.asarray(routing_embeddings, dtype=np.float64)
+
+    def _public_only(self, scores: np.ndarray) -> np.ndarray:
+        """The unauthenticated retrieve paths never rank a restricted document."""
+        if all(c == "public" for c in self.collections):
+            return scores
+        mask = np.array([c == "public" for c in self.collections])
+        return np.where(mask, scores, -np.inf)
 
     def retrieve_vector(self, routing_vector: np.ndarray, top_n: int = 5) -> list[RetrievedPassage]:
         """v2 dispatch: `routing_vector` is in the shared routing space, never
@@ -92,8 +104,8 @@ class InProcessNode:
         q_norm = np.linalg.norm(q) or 1.0
         doc_norms = np.linalg.norm(self.routing_embeddings, axis=1)
         doc_norms = np.where(doc_norms == 0, 1.0, doc_norms)
-        scores = (self.routing_embeddings @ q) / (doc_norms * q_norm)
-        order = np.argsort(scores)[::-1][:top_n]
+        scores = self._public_only((self.routing_embeddings @ q) / (doc_norms * q_norm))
+        order = [i for i in np.argsort(scores)[::-1][:top_n] if np.isfinite(scores[i])]
         return [
             RetrievedPassage(source_id=self.source_id, document=self.documents[i], score=float(scores[i]))
             for i in order
@@ -111,8 +123,8 @@ class InProcessNode:
         q_norm = np.linalg.norm(q) or 1.0
         doc_norms = np.linalg.norm(self.document_embeddings, axis=1)
         doc_norms = np.where(doc_norms == 0, 1.0, doc_norms)
-        scores = (self.document_embeddings @ q) / (doc_norms * q_norm)
-        order = np.argsort(scores)[::-1][:top_n]
+        scores = self._public_only((self.document_embeddings @ q) / (doc_norms * q_norm))
+        order = [i for i in np.argsort(scores)[::-1][:top_n] if np.isfinite(scores[i])]
         return [
             RetrievedPassage(source_id=self.source_id, document=self.documents[i], score=float(scores[i]))
             for i in order
@@ -150,6 +162,8 @@ def build_simulated_source(
     deidentify: bool = True,
     known_identifiers: list[str] | None = None,
     deid_backend=None,
+    collections: list[str] | None = None,
+    access_policy: dict[str, list[str]] | None = None,
 ) -> tuple[InProcessNode, SourceProfile]:
     """PII removal happens once per embedder call, on the same raw documents.
 
@@ -196,7 +210,8 @@ def build_simulated_source(
         source_id, documents, local_embeddings, local_embedder=local_embedder, routing_embeddings=routing_embeddings
     )
     if psi:
-        attach_psi_index(node, profile, seed=int(rng.integers(0, 2**31 - 1)))
+        attach_psi_index(node, profile, seed=int(rng.integers(0, 2**31 - 1)),
+                         collections=collections, access_policy=access_policy)
         if signing_key is not None:
             from nodes.signing import sign_profile
 
@@ -204,18 +219,38 @@ def build_simulated_source(
     return node, profile
 
 
-def attach_psi_index(node: InProcessNode, profile: SourceProfile, *, seed: int, psi_key: bytes | None = None) -> None:
+def attach_psi_index(node: InProcessNode, profile: SourceProfile, *, seed: int, psi_key: bytes | None = None,
+                     psi_keys: dict[str, bytes] | None = None, collections: list[str] | None = None,
+                     access_policy: dict[str, list[str]] | None = None) -> None:
     """Build the node's cluster table and OPRF state, publish the centroids.
     Documents stay inside the node; only centroids (≥ min-size documents
-    each) and encrypted envelopes ever leave."""
-    from privacy.cluster_index import build_cluster_index
+    each) and encrypted envelopes ever leave.
+
+    With `collections` (one label per document, docs/45) each collection is
+    clustered separately and sealed under its own OPRF key, and the profile
+    publishes which collection each cluster belongs to plus the node's
+    role -> collections policy. Without it, everything is "public" and the
+    result is byte-identical to the single-key node."""
+    from privacy.cluster_index import build_cluster_index, build_cluster_index_by_collection
     from privacy.psi import PSINode
 
-    centroids, clusters = build_cluster_index(node.documents, node.routing_embeddings, seed=seed)
-    psi_node = PSINode(node.source_id, key=psi_key)
-    psi_node.build_table(clusters)
+    if collections is not None:
+        node.collections = list(collections)
+    node.access_policy = dict(access_policy or {})
+    if all(c == "public" for c in node.collections):
+        centroids, clusters = build_cluster_index(node.documents, node.routing_embeddings, seed=seed)
+        cluster_collections = None
+        psi_node = PSINode(node.source_id, key=psi_key, keys=psi_keys)
+        psi_node.build_table(clusters)
+    else:
+        centroids, clusters, cluster_collections = build_cluster_index_by_collection(
+            node.documents, node.routing_embeddings, node.collections, seed=seed)
+        psi_node = PSINode(node.source_id, keys=psi_keys or ({"public": psi_key} if psi_key else None))
+        psi_node.build_table(clusters, {cid: c for cid, c in enumerate(cluster_collections)})
     node.psi = psi_node
     profile.cluster_centroids = centroids
+    profile.cluster_collections = cluster_collections
+    profile.access_policy = dict(access_policy) if access_policy else None
 
 
 def forge_profile(profile: SourceProfile, target_centroids: np.ndarray) -> SourceProfile:

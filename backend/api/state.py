@@ -59,6 +59,8 @@ def _profile_from_dict(data: dict) -> SourceProfile:
         metadata_embedding_model=data.get("metadata_embedding_model", ""),
         cluster_centroids=(np.asarray(data["cluster_centroids"], dtype=np.float64)
                            if data.get("cluster_centroids") is not None else None),
+        cluster_collections=data.get("cluster_collections"),
+        access_policy=data.get("access_policy"),
     )
 
 
@@ -559,7 +561,20 @@ class AppState:
         centroids = getattr(profile, "cluster_centroids", None)
         if centroids is None or len(centroids) == 0:
             raise RuntimeError(f"node {profile.source_id!r} published no cluster centroids; cannot serve psi")
-        wanted = assign_clusters(query_embedding, centroids, nprobe=nprobe)
+        # Role-based access (docs/45): probe only clusters in collections the
+        # node's PUBLISHED policy lets our roles read. This is a client-side
+        # efficiency choice; the node enforces from its own allow-list either way.
+        from privacy.credentials import permitted_collections
+
+        cluster_collections = getattr(profile, "cluster_collections", None) or ["public"] * len(centroids)
+        my_roles = self.credential.roles if self.credential is not None else ()
+        readable = set(permitted_collections(getattr(profile, "access_policy", None), my_roles,
+                                             sorted(set(cluster_collections)), authorised=self.credential is not None))
+        candidate_ids = [i for i, c in enumerate(cluster_collections) if c in readable]
+        if not candidate_ids:
+            raise PermissionError(f"node {profile.source_id!r}: no collection readable with roles {list(my_roles)}")
+        local = assign_clusters(query_embedding, np.asarray(centroids)[candidate_ids], nprobe=nprobe)
+        wanted = [candidate_ids[i] for i in local]
         fetch_set = None
         if fetch_set_size is not None:
             # Hide the wanted ids among random others. The node learns the set,
@@ -585,21 +600,26 @@ class AppState:
                     node.authorizer.check(auth, query.blinded)
                 except Unauthorized as exc:
                     raise PermissionError(f"node {profile.source_id!r} refused psi_evaluate: {exc.reason}") from exc
-            evaluated = node.psi.evaluate(query.blinded)
+            from privacy.credentials import permitted_collections as _node_permitted
+
+            client_id = auth["client_id"] if (node.authorizer is not None and auth) else None
+            roles = node.authorizer.roles_of(client_id) if client_id else ()
+            evaluated = node.psi.evaluate_for(query.blinded, _node_permitted(
+                node.access_policy, roles, node.psi.collections, authorised=node.authorizer is not None))
             envelopes = node.psi.envelopes_for(fetch_set)
-        outputs = PSIClient.unblind(query, evaluated)
-        matches = PSIClient.open_matches(query, outputs, profile.source_id, envelopes)
+        matches = PSIClient.open_matches_multi(query, evaluated, profile.source_id, envelopes)
 
         candidates = [p for cid in wanted for p in matches.get(cid, [])]
         passages = rerank_passages(query_embedding, candidates, top_n=top_n)
         request_bytes = len(json.dumps({"blinded": [b.hex() for b in query.blinded]}).encode("utf-8")) + \
             len(json.dumps({"fetch_set": fetch_set}).encode("utf-8"))
-        response_bytes = len(json.dumps([e.hex() for e in evaluated]).encode("utf-8")) + \
+        response_bytes = len(json.dumps([{c: e.hex() for c, e in per.items()} for per in evaluated]).encode("utf-8")) + \
             len(json.dumps({t: e.hex() for t, e in envelopes.items()}).encode("utf-8"))
         info = {
             "clusters_probed": len(wanted), "envelopes_delivered": len(envelopes),
             "envelopes_opened": len(matches), "passages_disclosed": len(candidates),
             "fetch_set_size": len(envelopes) if fetch_set is None else len(fetch_set),
+            "collections_readable": sorted(readable),
         }
         return passages, request_bytes, response_bytes, info
 

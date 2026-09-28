@@ -49,9 +49,13 @@ def request_digest(node_id: str, day: str, blinded: list[bytes]) -> bytes:
 
 @dataclass(frozen=True)
 class Credential:
-    """Client side. `key` is the shared secret issued by the federation."""
+    """Client side. `key` is the shared secret issued by the federation.
+    `roles` is the client's own copy of the roles it was issued — used only
+    to choose which published clusters to probe (docs/45). The node never
+    trusts it: the node reads the client's roles from its own allow-list."""
     client_id: str
     key: bytes
+    roles: tuple[str, ...] = ()
 
     def sign(self, node_id: str, blinded: list[bytes], now: float | None = None) -> dict:
         day = utc_day(now)
@@ -71,6 +75,7 @@ class Unauthorized(Exception):
 class ClientPolicy:
     key: bytes
     daily_evaluation_budget: int  # blinded points evaluated per UTC day
+    roles: tuple[str, ...] = ()   # issued by the federation; decides readable collections (docs/45)
 
 
 @dataclass
@@ -107,6 +112,10 @@ class Authorizer:
         self._log(client_id, "ok", len(blinded))
         return client_id
 
+    def roles_of(self, client_id: str) -> tuple[str, ...]:
+        policy = self.policies.get(client_id)
+        return tuple(policy.roles) if policy else ()
+
     def remaining(self, client_id: str, now: float | None = None) -> int:
         policy = self.policies.get(client_id)
         if policy is None:
@@ -129,7 +138,8 @@ def load_authorizer(node_id: str, path: Path) -> Authorizer | None:
         return None
     spec = json.loads(path.read_text())
     policies = {
-        cid: ClientPolicy(key=bytes.fromhex(entry["key_hex"]), daily_evaluation_budget=int(entry["daily_evaluation_budget"]))
+        cid: ClientPolicy(key=bytes.fromhex(entry["key_hex"]), daily_evaluation_budget=int(entry["daily_evaluation_budget"]),
+                          roles=tuple(entry.get("roles", ())))
         for cid, entry in spec.get("clients", {}).items()
     }
     return Authorizer(node_id=node_id, policies=policies)
@@ -137,10 +147,33 @@ def load_authorizer(node_id: str, path: Path) -> Authorizer | None:
 
 def write_allow_list(path: Path, clients: dict[str, ClientPolicy]) -> None:
     path.write_text(json.dumps({"clients": {
-        cid: {"key_hex": p.key.hex(), "daily_evaluation_budget": p.daily_evaluation_budget} for cid, p in clients.items()
+        cid: {"key_hex": p.key.hex(), "daily_evaluation_budget": p.daily_evaluation_budget, "roles": list(p.roles)}
+        for cid, p in clients.items()
     }}, indent=2))
     path.chmod(0o600)
 
 
-def new_credential(client_id: str) -> Credential:
-    return Credential(client_id=client_id, key=os.urandom(32))
+def new_credential(client_id: str, roles: tuple[str, ...] = ()) -> Credential:
+    return Credential(client_id=client_id, key=os.urandom(32), roles=tuple(roles))
+
+
+# --- role-based access to document collections (docs/45) ------------------------
+#
+# A node holds its documents in named collections ("public", "research",
+# "clinical_notes", ...). Its access policy — role -> collections — is part of
+# its signed profile, so every client can see what each role may read. Which
+# roles a CLIENT holds is in the node's allow-list, issued by the federation;
+# the client cannot claim a role. "public" is readable by any authorised
+# client and, on an open node (no allow-list), by anyone. A restricted
+# collection on an open node is readable by no one.
+
+PUBLIC = "public"
+
+
+def permitted_collections(access_policy: dict[str, list[str]] | None, roles: tuple[str, ...] | list[str],
+                          available: list[str], *, authorised: bool) -> list[str]:
+    allowed = {PUBLIC}
+    if authorised:
+        for role in roles:
+            allowed.update((access_policy or {}).get(role, []))
+    return sorted(c for c in available if c in allowed)
