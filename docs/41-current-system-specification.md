@@ -114,6 +114,7 @@ BEIR corpora under `backend/vendor/` are regenerated, not committed.
 - Node-side de-identification is rules + the node's registry + optional NER (docs/44):
   cued and registered identifiers do not leave the node; ~13% of uncued,
   unregistered names still do with NER on.
-- Role-based access (docs/45) hides restricted documents, not the topic structure of
-  restricted collections (their centroids are in the public profile).
+- Role-based access (docs/45) hides restricted documents and, through role-scoped
+  publication, their centroids and topic words from roles without access; a node
+  with no public documents still publishes a profile built from restricted content.
 - Healthcare federation is public literature partitioned by topic.

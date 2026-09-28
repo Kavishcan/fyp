@@ -528,6 +528,44 @@ class AppState:
         }
         return build_cells([p.source_id for p in profiles], group_of, cell_size)
 
+    def _restricted_centroids(self, node, profile) -> list[dict]:
+        """Role-scoped cluster centroids from a node (docs/45), verified
+        against the profile's Ed25519 key when the node signs them. Cached
+        per node, credential and UTC day; empty without a credential or when
+        the node publishes no restricted collections."""
+        if self.credential is None or not getattr(profile, "access_policy", None):
+            return []
+        from privacy.credentials import utc_day
+
+        cache_key = (profile.source_id, self.credential.client_id, utc_day())
+        cache = self.__dict__.setdefault("_restricted_cache", {})
+        if cache_key in cache:
+            return cache[cache_key]
+        auth = self.credential.sign(profile.source_id, [])
+        if isinstance(node, MCPNodeHandle):
+            result = node.get_restricted_centroids(auth)
+            payload = {k: result[k] for k in ("node_id", "client_id", "day", "clusters") if k in result}
+            if result.get("signature") and profile.public_key:
+                from nodes.signing import verify_payload
+
+                if not verify_payload(profile.public_key, payload, result["signature"]):
+                    raise PermissionError(f"node {profile.source_id!r}: restricted centroids failed signature check")
+            entries = result.get("clusters", [])
+        else:
+            from privacy.credentials import Unauthorized, permitted_collections as _p
+
+            if node.authorizer is None:
+                entries = []
+            else:
+                try:
+                    client_id = node.authorizer.check(auth, [])
+                except Unauthorized as exc:
+                    raise PermissionError(f"node {profile.source_id!r} refused centroids: {exc.reason}") from exc
+                allowed = _p(node.access_policy, node.authorizer.roles_of(client_id), node.psi.collections, authorised=True)
+                entries = node.restricted_centroids([c for c in allowed if c != "public"])
+        cache[cache_key] = entries
+        return entries
+
     def _rerank_evidence(self, query_embedding: np.ndarray, citations: list[dict], top_k: int | None) -> list[dict]:
         """Global rerank of all returned passages by cosine in the shared
         routing space; keeps `top_k` (None = all, but still annotated)."""
@@ -558,28 +596,36 @@ class AppState:
         from privacy.cluster_index import assign_clusters, rerank_passages
         from privacy.psi import PSIClient
 
-        centroids = getattr(profile, "cluster_centroids", None)
-        if centroids is None or len(centroids) == 0:
-            raise RuntimeError(f"node {profile.source_id!r} published no cluster centroids; cannot serve psi")
-        # Role-based access (docs/45): probe only clusters in collections the
-        # node's PUBLISHED policy lets our roles read. This is a client-side
-        # efficiency choice; the node enforces from its own allow-list either way.
+        # Role-based access (docs/45): the profile publishes public clusters
+        # only; restricted clusters' centroids are fetched from the node with
+        # our credential and are visible only to roles that may read them.
+        # Probing only readable clusters is a client-side efficiency choice;
+        # the node enforces from its own allow-list either way.
         from privacy.credentials import permitted_collections
 
-        cluster_collections = getattr(profile, "cluster_collections", None) or ["public"] * len(centroids)
+        pub = getattr(profile, "cluster_centroids", None)
+        ids = list(range(0 if pub is None else len(pub)))
+        centroids = [] if pub is None else [np.asarray(v, dtype=np.float64) for v in np.asarray(pub)]
+        cluster_collections = list(getattr(profile, "cluster_collections", None) or ["public"] * len(ids))
+        for entry in self._restricted_centroids(node, profile):
+            ids.append(int(entry["id"]))
+            centroids.append(np.asarray(entry["centroid"], dtype=np.float64))
+            cluster_collections.append(entry["collection"])
+        if not ids:
+            raise RuntimeError(f"node {profile.source_id!r} published no cluster centroids; cannot serve psi")
         my_roles = self.credential.roles if self.credential is not None else ()
         readable = set(permitted_collections(getattr(profile, "access_policy", None), my_roles,
                                              sorted(set(cluster_collections)), authorised=self.credential is not None))
-        candidate_ids = [i for i, c in enumerate(cluster_collections) if c in readable]
-        if not candidate_ids:
+        candidates = [i for i, c in enumerate(cluster_collections) if c in readable]
+        if not candidates:
             raise PermissionError(f"node {profile.source_id!r}: no collection readable with roles {list(my_roles)}")
-        local = assign_clusters(query_embedding, np.asarray(centroids)[candidate_ids], nprobe=nprobe)
-        wanted = [candidate_ids[i] for i in local]
+        local = assign_clusters(query_embedding, np.asarray(centroids)[candidates], nprobe=nprobe)
+        wanted = [ids[candidates[i]] for i in local]
         fetch_set = None
         if fetch_set_size is not None:
             # Hide the wanted ids among random others. The node learns the set,
             # not the member; the client cannot open the others anyway.
-            pool = [c for c in range(len(centroids)) if c not in wanted]
+            pool = [c for c in ids if c not in wanted]
             extra = self._rng.choice(pool, size=min(max(0, fetch_set_size - len(wanted)), len(pool)),
                                      replace=False).tolist() if pool else []
             fetch_set = sorted(int(c) for c in [*wanted, *extra])

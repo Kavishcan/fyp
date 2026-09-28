@@ -114,7 +114,9 @@ def build_cluster_index_by_collection(
         raise ValueError("one collection label per document")
     all_centroids, clusters, cluster_collections = [], {}, []
     offset = 0
-    for collection in sorted(set(collections)):
+    # "public" first, so its clusters are ids 0..n_public-1 — the only ones a
+    # node publishes in its profile (docs/45); restricted ids follow.
+    for collection in sorted(set(collections), key=lambda c: (c != "public", c)):
         idx = [i for i, c in enumerate(collections) if c == collection]
         cents, cl = build_cluster_index([documents[i] for i in idx], np.asarray(routing_embeddings)[idx],
                                         seed=seed, docs_per_cluster=docs_per_cluster, min_size=min_size)

@@ -90,16 +90,21 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
         routing_embeddings if local_embedder is routing_embedder else embed_documents(documents, local_embedder)
     )
 
+    # docs/45: with restricted collections, the published profile and topic
+    # words describe public documents only.
+    from nodes.simulator import public_view  # noqa: E402
+
+    pub_docs, pub_emb = public_view(documents, routing_embeddings, collections)
     profile = build_profile(
         node_id,
-        routing_embeddings,
-        k=min(profile_k, len(documents)),
+        pub_emb,
+        k=min(profile_k, len(pub_docs)),
         sigma=0.05,
         rng=rng,
-        document_count=len(documents),
+        document_count=len(pub_docs),
         policy_labels=spec.get("policy_labels", []),
     )
-    attach_metadata(profile, documents, routing_embedder, enabled=spec.get("publish_metadata", True))
+    attach_metadata(profile, pub_docs, routing_embedder, enabled=spec.get("publish_metadata", True))
     # v2 integrity (docs/30): this node's persistent Ed25519 key lives next to
     # its data file so every fresh server process signs with the same identity.
     from nodes.signing import load_or_create_key_file, sign_profile  # noqa: E402
@@ -122,7 +127,8 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     from privacy.credentials import load_authorizer  # noqa: E402
 
     node.authorizer = load_authorizer(node_id, data_file.with_suffix(".clients.json"))
-    sign_profile(profile, load_or_create_key_file(data_file.with_suffix(".key")))
+    node.signing_key = load_or_create_key_file(data_file.with_suffix(".key"))
+    sign_profile(profile, node.signing_key)
     return node, profile.__dict__, local_model
 
 
@@ -228,6 +234,26 @@ def main() -> None:
         evaluated = node.psi.evaluate_for(points, allowed)
         return json.dumps({"collections": allowed,
                            "evaluations": [{c: e.hex() for c, e in per.items()} for per in evaluated]})
+
+    @server.tool()
+    def get_restricted_centroids(auth: dict | None = None) -> str:
+        """Role-scoped profile (docs/45): centroids of restricted clusters the
+        caller's roles may read, signed with this node's profile key. Open
+        node or unauthorised caller: none. Charges no evaluations."""
+        from privacy.credentials import Unauthorized, permitted_collections  # noqa: E402
+        from nodes.signing import sign_payload  # noqa: E402
+
+        if node.authorizer is None:
+            return json.dumps({"clusters": [], "signature": None})
+        try:
+            client_id = node.authorizer.check(auth, [])
+        except Unauthorized as exc:
+            return json.dumps({"error": exc.reason})
+        allowed = permitted_collections(node.access_policy, node.authorizer.roles_of(client_id),
+                                        node.psi.collections, authorised=True)
+        payload = {"node_id": node.source_id, "client_id": client_id, "day": auth.get("day"),
+                   "clusters": node.restricted_centroids([c for c in allowed if c != "public"])}
+        return json.dumps({**payload, "signature": sign_payload(node.signing_key, payload)})
 
     @server.tool()
     def psi_envelopes(fetch_set: list[int] | None = None) -> str:

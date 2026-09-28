@@ -75,6 +75,8 @@ class InProcessNode:
         # retrieve paths can only ever return "public" documents.
         self.collections: list[str] = ["public"] * len(documents)
         self.access_policy: dict[str, list[str]] = {}
+        self.restricted_clusters: dict[int, tuple[str, np.ndarray]] = {}   # id -> (collection, centroid)
+        self.signing_key = None
         # v2 (docs/30): a second index in the SHARED routing space so the
         # coordinator can dispatch a vector instead of raw query text. Costs the
         # node retrieval-model heterogeneity for that mode — the shared encoder,
@@ -82,6 +84,13 @@ class InProcessNode:
         if routing_embeddings is not None and len(routing_embeddings) != len(documents):
             raise ValueError("documents and routing_embeddings must be the same length")
         self.routing_embeddings = None if routing_embeddings is None else np.asarray(routing_embeddings, dtype=np.float64)
+
+    def restricted_centroids(self, collections: list[str]) -> list[dict]:
+        """Centroids of restricted clusters in `collections` — the caller has
+        already been authorised and its permitted set computed (docs/45)."""
+        wanted = set(collections)
+        return [{"id": cid, "collection": c, "centroid": [float(x) for x in v]}
+                for cid, (c, v) in sorted(self.restricted_clusters.items()) if c in wanted]
 
     def _public_only(self, scores: np.ndarray) -> np.ndarray:
         """The unauthenticated retrieve paths never rank a restricted document."""
@@ -191,17 +200,18 @@ def build_simulated_source(
     local_embeddings = (
         routing_embeddings if local_embedder is routing_embedder else embed_documents(documents, local_embedder)
     )
+    pub_docs, pub_emb = public_view(documents, routing_embeddings, collections)
 
     profile = build_profile(
         source_id,
-        routing_embeddings,
-        k=k,
+        pub_emb,
+        k=min(k, len(pub_docs)),
         sigma=sigma,
         rng=rng,
-        document_count=len(documents),
+        document_count=len(pub_docs),   # restricted collection sizes are not published either
         policy_labels=policy_labels,
     )
-    attach_metadata(profile, documents, routing_embedder, enabled=publish_metadata)
+    attach_metadata(profile, pub_docs, routing_embedder, enabled=publish_metadata)
     if signing_key is not None:
         from nodes.signing import sign_profile
 
@@ -217,6 +227,20 @@ def build_simulated_source(
 
             sign_profile(profile, signing_key)  # re-sign: cluster centroids are covered
     return node, profile
+
+
+def public_view(documents: list[str], routing_embeddings: np.ndarray, collections: list[str] | None):
+    """What a node may publish (docs/45): its routing profile and metadata are
+    built from `public` documents only when it also holds restricted
+    collections, so neither the coarse centroids nor the topic words describe
+    restricted content. A node with no public documents at all falls back to
+    publishing from everything (it must be routable) — stated in docs/45."""
+    if not collections or all(c == "public" for c in collections):
+        return documents, routing_embeddings
+    idx = [i for i, c in enumerate(collections) if c == "public"]
+    if not idx:
+        return documents, routing_embeddings
+    return [documents[i] for i in idx], np.asarray(routing_embeddings)[idx]
 
 
 def attach_psi_index(node: InProcessNode, profile: SourceProfile, *, seed: int, psi_key: bytes | None = None,
@@ -248,8 +272,19 @@ def attach_psi_index(node: InProcessNode, profile: SourceProfile, *, seed: int, 
         psi_node = PSINode(node.source_id, keys=psi_keys or ({"public": psi_key} if psi_key else None))
         psi_node.build_table(clusters, {cid: c for cid, c in enumerate(cluster_collections)})
     node.psi = psi_node
-    profile.cluster_centroids = centroids
-    profile.cluster_collections = cluster_collections
+    node.restricted_clusters = {}
+    if cluster_collections is None:
+        profile.cluster_centroids = centroids
+        profile.cluster_collections = None
+    else:
+        # Role-scoped publication (docs/45): the profile carries only public
+        # clusters (ids 0..n-1, see build_cluster_index_by_collection); the
+        # node serves restricted centroids to permitted roles on request.
+        n_public = sum(1 for c in cluster_collections if c == "public")
+        profile.cluster_centroids = np.asarray(centroids)[:n_public]
+        profile.cluster_collections = ["public"] * n_public
+        node.restricted_clusters = {cid: (c, np.asarray(centroids)[cid]) for cid, c in enumerate(cluster_collections)
+                                    if c != "public"}
     profile.access_policy = dict(access_policy) if access_policy else None
 
 

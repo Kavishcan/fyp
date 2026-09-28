@@ -95,6 +95,15 @@ class MCPNodeHandle:
         # credential read (always at least "public" on an open node).
         return [{c: bytes.fromhex(h) for c, h in per.items()} for per in result["evaluations"]]
 
+    async def get_restricted_centroids_async(self, auth: dict | None) -> dict:
+        result = json.loads(await self._call_tool("get_restricted_centroids", {"auth": auth}))
+        if "error" in result:
+            raise PermissionError(f"node {self.node_id!r} refused get_restricted_centroids: {result['error']}")
+        return result
+
+    def get_restricted_centroids(self, auth: dict | None) -> dict:
+        return asyncio.run(self.get_restricted_centroids_async(auth))
+
     async def psi_envelopes_async(self, fetch_set: list[int] | None = None) -> dict[str, bytes]:
         result = json.loads(await self._call_tool("psi_envelopes", {"fetch_set": fetch_set}))
         return {token: bytes.fromhex(env) for token, env in result.items()}

@@ -117,7 +117,8 @@ def test_real_mcp_node_enforces_roles_from_its_allow_list(tmp_path: Path):
     state = AppState(instrumentation_path=str(tmp_path / "q.jsonl"))
     state.generator = None
     profile = asyncio.run(state.register_mcp_node_async(data))
-    assert profile.access_policy == POLICY and "clinical_notes" in profile.cluster_collections
+    assert profile.access_policy == POLICY
+    assert set(profile.cluster_collections) == {"public"}          # restricted structure not published (docs/45)
     seen = {}
     for name, cred in (("clin", clin), ("res", res)):
         state.credential = cred
@@ -128,3 +129,58 @@ def test_real_mcp_node_enforces_roles_from_its_allow_list(tmp_path: Path):
     key_file = json.loads((tmp_path / "hosp.psi.key").read_text())
     assert set(key_file) == {"public", "research", "clinical_notes"}
     assert oct((tmp_path / "hosp.psi.key").stat().st_mode & 0o777) == "0o600"
+
+
+
+# --- role-scoped profile publication (docs/45) ---------------------------------
+
+
+def test_public_profile_carries_no_restricted_structure():
+    docs, cols = _docs()
+    node, profile = build_simulated_source("hosp", docs, HashingEmbedder(), k=2, sigma=0.0,
+                                           rng=np.random.default_rng(0), collections=cols, access_policy=POLICY)
+    assert set(profile.cluster_collections) == {"public"}
+    assert len(profile.cluster_centroids) == sum(1 for c in node.psi.collection_of.values() if c == "public")
+    assert node.restricted_clusters and all(c != "public" for c, _ in node.restricted_clusters.values())
+    words = set(profile.topics) | set(profile.description.lower().split())
+    assert not words & {"troponin", "cardiology", "statin", "trial"}      # restricted-only vocabulary
+    assert profile.document_count_bucket == "1-100"                       # 20 public docs, not 60
+
+
+@pytest.mark.parametrize("client,expected", [("clin", {"research", "clinical_notes"}), ("res", {"research"})])
+def test_restricted_centroids_are_served_per_role(tmp_path, client, expected):
+    state, creds = _state_with_node(tmp_path, {"clin": ["clinician"], "res": ["researcher"]})
+    state.credential = creds[client]
+    entries = state._restricted_centroids(state.nodes["hosp"], state.registry.get("hosp"))
+    assert {e["collection"] for e in entries} == expected
+
+
+def test_no_credential_gets_no_restricted_centroids(tmp_path):
+    state, _ = _state_with_node(tmp_path, {"res": ["researcher"]})
+    assert state._restricted_centroids(state.nodes["hosp"], state.registry.get("hosp")) == []
+
+
+def test_real_mcp_node_signs_restricted_centroids_and_refuses_the_unlisted(tmp_path: Path):
+    from nodes.signing import verify_payload
+
+    docs, cols = _docs()
+    data = tmp_path / "hosp.json"
+    data.write_text(json.dumps({"node_id": "hosp", "local_model": "toy-e5", "access_policy": POLICY,
+                                "documents": [{"text": d, "collection": c} for d, c in zip(docs, cols)]}))
+    clin, res = new_credential("clin", ("clinician",)), new_credential("res", ("researcher",))
+    write_allow_list(tmp_path / "hosp.clients.json", {"clin": ClientPolicy(clin.key, 1000, ("clinician",)),
+                                                      "res": ClientPolicy(res.key, 1000, ("researcher",))})
+    state = AppState(instrumentation_path=str(tmp_path / "q.jsonl"))
+    state.generator = None
+    profile = asyncio.run(state.register_mcp_node_async(data))
+    handle = state.nodes["hosp"]
+    got = handle.get_restricted_centroids(clin.sign("hosp", []))
+    payload = {k: got[k] for k in ("node_id", "client_id", "day", "clusters")}
+    assert {e["collection"] for e in got["clusters"]} == {"research", "clinical_notes"}
+    assert verify_payload(profile.public_key, payload, got["signature"])
+    payload["clusters"] = payload["clusters"][:1]
+    assert not verify_payload(profile.public_key, payload, got["signature"])      # tamper detected
+    assert {e["collection"] for e in handle.get_restricted_centroids(res.sign("hosp", []))["clusters"]} == {"research"}
+    stranger = new_credential("stranger")
+    with pytest.raises(PermissionError):
+        handle.get_restricted_centroids(stranger.sign("hosp", []))

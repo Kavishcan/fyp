@@ -20,9 +20,13 @@ inside PSI: one OPRF key per collection (privacy/psi.PSINode.keys,
 collections, so an unpermitted envelope can never open whatever ids are
 probed. Unauthenticated legacy/v2 retrieve serves `public` only. Measured
 (eval/run_rbac.py): access matrix equals the policy exactly; a client lying
-about its role gains 0. Restricted collections' centroids are still public;
-no LDAP/OPA, no attribute/consent rules. Single-collection nodes are
-byte-identical to before.
+about its role gains 0. Role-scoped publication: the signed profile
+(routing centroids, topics, doc count, cluster centroids) is built from
+public documents only; restricted centroids come from the node tool
+`get_restricted_centroids(auth)`, allow-list checked and Ed25519-signed —
+clinical centroids visible 1.000 → 0.000 to unpermitted roles. A node with
+no public documents still publishes from restricted content. No LDAP/OPA,
+no attribute/consent rules. Single-collection nodes are byte-identical.
 
 Docs/44: nodes previously served RAW documents — redaction ran only inside
 embed_documents, so vectors were clean but retrieve results and PSI

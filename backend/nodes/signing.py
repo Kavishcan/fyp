@@ -127,3 +127,19 @@ def verify_profile(profile: SourceProfile) -> bool:
     except (InvalidSignature, ValueError):
         return False
     return True
+
+
+def sign_payload(key: ed25519.Ed25519PrivateKey, payload: dict) -> str:
+    """Detached Ed25519 signature (hex) over canonical JSON — used for data a
+    node serves outside its profile, e.g. role-scoped cluster centroids
+    (docs/45), so the client can check it came from the profile's key."""
+    return key.sign(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hex()
+
+
+def verify_payload(public_key: bytes, payload: dict, signature_hex: str) -> bool:
+    try:
+        ed25519.Ed25519PublicKey.from_public_bytes(public_key).verify(
+            bytes.fromhex(signature_hex), json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        return True
+    except (InvalidSignature, ValueError):
+        return False

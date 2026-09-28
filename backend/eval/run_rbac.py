@@ -20,6 +20,13 @@ code paths:
 That a clinician's ordinary query retrieves clinical notes (and a
 researcher's does not) is checked end to end in tests/test_rbac.py.
 
+Structure visibility (role-scoped publication): what each client can learn
+about a restricted collection WITHOUT reading its documents — the share of
+its cluster centroids it can obtain, and how many words that occur only in
+restricted documents appear in the node's public description/topics. The
+"before" rows reconstruct what the previous design published (every
+cluster centroid, topics over every document) from the same node.
+
 In-process nodes, hashing embedder (the enforcement does not depend on the
 embedding model). Fictional values only.
 
@@ -39,6 +46,7 @@ from eval.run_feb4rag import sample_corpus
 from eval.run_node_deid import fictional_record, inject
 from eval.sweep import RESULTS_DIR
 from nodes.embedding import HashingEmbedder
+from nodes.metadata import describe_documents
 from nodes.simulator import build_simulated_source
 from privacy.credentials import Authorizer, ClientPolicy, new_credential, permitted_collections
 from privacy.psi import PSIClient
@@ -63,8 +71,9 @@ def build(seed: int, per_collection: int):
 
 
 def psi_dump(node, profile, cred) -> dict[str, float]:
-    """Probe every cluster of every collection; open what the node allows."""
-    all_ids = list(range(len(profile.cluster_centroids)))
+    """Probe every cluster id the node holds — public AND restricted, whether
+    or not the client could see its centroid — and open what the node allows."""
+    all_ids = sorted(node.psi.table)
     q = PSIClient.blind(all_ids)
     node.authorizer.check(cred.sign("hosp", q.blinded), q.blinded)
     allowed = permitted_collections(node.access_policy, node.authorizer.roles_of(cred.client_id),
@@ -99,7 +108,8 @@ def main() -> None:
     node, profile, creds, cols = build(args.seed, args.per_collection)
     node.local_embedder = node.local_embedder or HashingEmbedder()
     print(f"node: {len(node.documents)} docs, collections "
-          f"{ {c: cols.count(c) for c in sorted(set(cols))} }, {len(profile.cluster_centroids)} clusters", flush=True)
+          f"{ {c: cols.count(c) for c in sorted(set(cols))} }, {len(node.psi.table)} clusters "
+          f"({len(profile.cluster_centroids)} published in the profile)", flush=True)
     rows = []
     for name, cred in creds.items():
         rows.append({"client": name, "path": "psi_dump_all_clusters", **psi_dump(node, profile, cred)})
@@ -109,10 +119,37 @@ def main() -> None:
     for r in rows:
         print(f"  {r['client']:<30} {r['path']:<26} " + " ".join(f"{c}={r[c]:.3f}" for c in ("public", "research", "clinical_notes")), flush=True)
 
+    # --- structure visibility ------------------------------------------------
+    restricted = {}
+    for cid, (c, _) in node.restricted_clusters.items():
+        restricted.setdefault(c, []).append(cid)
+    public_words = set(" ".join(d for d, c in zip(node.documents, node.collections) if c == "public").lower().split())
+    restricted_only = {}
+    for c in restricted:
+        vocab = describe_documents([d for d, col in zip(node.documents, node.collections) if col == c], max_topics=64)["topics"]
+        restricted_only[c] = {w for w in vocab if w not in public_words}
+    before_topics = set(describe_documents(node.documents)["topics"])
+    after_topics = set(profile.topics)
+    for c in sorted(restricted):
+        rows.append({"client": "everyone (before: all centroids in profile)", "path": f"structure:{c}",
+                     "centroids_visible": 1.0,
+                     "restricted_only_topic_words_published": len(before_topics & restricted_only[c])})
+        for name, cred in creds.items():
+            node.authorizer.check(cred.sign("hosp", []), [])
+            allowed = permitted_collections(node.access_policy, node.authorizer.roles_of(name), node.psi.collections, authorised=True)
+            got = {e["id"] for e in node.restricted_centroids([a for a in allowed if a != "public"]) if e["collection"] == c}
+            rows.append({"client": f"{name} (after)", "path": f"structure:{c}",
+                         "centroids_visible": len(got) / len(restricted[c]),
+                         "restricted_only_topic_words_published": len(after_topics & restricted_only[c])})
+    for r in rows:
+        if str(r["path"]).startswith("structure:"):
+            print(f"  {r['client']:<44} {r['path']:<24} centroids_visible={r['centroids_visible']:.3f} "
+                  f"restricted-only topic words in public profile={r['restricted_only_topic_words_published']}", flush=True)
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / f"rbac_{time.strftime('%Y%m%d-%H%M%S')}.csv"
     with out.open("w", newline="") as h:
-        w = csv.DictWriter(h, fieldnames=list(rows[0]))
+        w = csv.DictWriter(h, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
         w.writeheader()
         w.writerows(rows)
     print(f"wrote {out}")

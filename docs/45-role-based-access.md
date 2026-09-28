@@ -31,6 +31,42 @@ because the node reads roles from its own allow-list. The old text and
 vector retrieve tools — which have no credential — can no longer reach
 anything but `public`.
 
+## Role-scoped publication: hiding restricted topic structure
+
+The first version published every cluster centroid — restricted ones
+included — and built the node's description, topics and routing centroids
+from all its documents. A researcher could not read a clinical note, but
+could see the clinical collection's topic map. That is the same kind of
+leak this project measures (docs/39), so the profile is now role-scoped:
+
+- the signed profile's routing centroids, description, topics, document
+  count and cluster centroids are built from **public documents only**;
+- restricted clusters' centroids are served by a new node tool,
+  `get_restricted_centroids(auth)`, only for collections the caller's roles
+  permit — checked against the allow-list like `psi_evaluate`, charging no
+  evaluations, and **signed with the node's profile key** so the client can
+  verify them;
+- the client merges public and permitted restricted centroids before
+  choosing which clusters to probe.
+
+Same node, measured:
+
+| What a client learns about a restricted collection | Clinical notes: centroids visible | Research: centroids visible | Restricted-only topic words in the public profile |
+|---|---:|---:|---:|
+| everyone, before (all centroids published) | 1.000 | 1.000 | 2 |
+| authorised, no role — after | **0.000** | **0.000** | **0** |
+| researcher — after | **0.000** | 1.000 | 0 |
+| clinician — after | 1.000 | 1.000 | 0 |
+
+Of the node's 22 clusters, the public profile now carries 6. Every row of
+the access matrix above is unchanged.
+
+The trade-off: routing sees a node only through its public profile, so a
+question about clinical content is not steered toward a node whose clinical
+notes the asker cannot read — which is correct — and a node whose
+documents are *all* restricted still publishes a profile built from them,
+because it must be routable (stated below).
+
 ## How it works when the node is blind
 
 The node never sees which cluster is being asked for (the ids are blinded,
@@ -77,10 +113,13 @@ node never trusts them.
 
 ## What this does not establish
 
-- **Topic structure of restricted collections is public.** Their cluster
-  centroids (≥5 documents each, docs/35) and the coarse routing profile are
-  in the signed profile every member can read. Hiding them needs
-  role-scoped profile publication — not built.
+- **A node with no public documents** still publishes a routing profile and
+  topics built from its restricted content (it must be routable). Such a
+  node reveals its topic structure; give it a public collection, or accept it.
+- **Collection names and the role policy are public** (in the signed
+  profile); only the structure and contents are role-scoped.
+- **A permitted role learns restricted centroids**, which are topic
+  structure at ≥5-document granularity (docs/35) — the intended disclosure.
 - **Roles, not attributes.** No per-patient consent, time windows, purpose
   of use or break-the-glass; a role reads a whole collection.
 - **Issuance and revocation** of roles is the federation operator editing
