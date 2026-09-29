@@ -75,6 +75,26 @@ email, reference id). Those cases put every name after "My name is", so
 this is a cued-name result, not a general one — part B above is the honest
 test.
 
+## Addendum: rules added after the security audit (docs/49)
+
+The audit found formats the rules missed. Added: Sri Lankan NIC (old
+9 digits + V/X, new 12 digits), passport numbers (labelled), identifiers
+with a letter suffix (`55-8821-XK`), dates `yyyy/mm/dd`, "3rd March 2021",
+"March 3, 2021", ages over 89 (HIPAA Safe Harbor), street addresses with a
+street type and optional city/postcode, relatives' and carers' names after a
+cue ("daughter Nimali"), and registry names written surname-first or with an
+initial ("Menon, Rahul", "R. Menon"). Every audit probe is now removed;
+scientific controls (PCB-153, MB-231, "the son of the proband", "mother
+tongue", "2020-2021 cohort", "ages 60 to 85") are untouched.
+
+Re-measured (`python -m eval.run_node_deid --ner none`): canary leakage
+unchanged (cued and registered identifiers 0%, bare names 100% without a
+registry, 0% with it); clean-text alteration nfcorpus 1.2% → 2.2%, scifact
+2.2% → 3.3% (mostly the extra date formats), dense recall@10 unchanged
+(0.800, 0.850). Quasi-identifiers ("the only neurosurgeon in Jaffna") and
+uncued unregistered names remain out of reach of rules; this is still not a
+validated clinical de-identifier.
+
 ## What the node now does, in order
 
 ```text

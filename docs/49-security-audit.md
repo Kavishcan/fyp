@@ -30,6 +30,10 @@ It is true now.
   because the coordinator bumped the profile version after the node had
   signed it; a same-key re-registration is now a refresh.
 
+De-identification gaps (NIC, passports, date formats, ages over 89,
+addresses, relatives' names, surname-first registry names) are fixed —
+docs/44 addendum.
+
 ## Found, not fixed (stated limitations)
 
 | Finding | Severity | Why not now |
@@ -41,7 +45,6 @@ It is true now.
 | `psi_envelopes` (per-query PSI) serves restricted envelopes to anyone, revealing their count and sizes | medium | blind unlock's `psi_table` already serves restricted collections only to permitted roles |
 | Node registration is not authenticated (Sybil nodes) | medium | needs operator-signed node certificates |
 | Retrieved passages enter the LLM prompt without delimiters (prompt injection) | medium, unmeasured | not measured |
-| De-identification misses `yyyy/mm/dd` DOB, "3rd March 2021", street addresses and postcodes, ages over 89, surname-first registry names, relatives' names, Sri Lankan NIC and passport numbers | medium | rule additions pending; not a validated clinical de-identifier (docs/44) |
 
 ## Reproduce
 

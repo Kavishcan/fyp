@@ -127,3 +127,46 @@ def test_ner_catches_a_bare_full_name_the_rules_miss(ner):
 ])
 def test_ner_leaves_places_acronyms_and_species_alone(ner, text):
     assert Deidentifier(backend=ner).redact(text) == text
+
+
+# --- rules added after the security audit (docs/49) ------------------------------
+
+
+@pytest.mark.parametrize("text, gone", [
+    ("NIC 199012345678 recorded", "199012345678"),
+    ("old card 901234567V on file", "901234567V"),
+    ("passport N1234567 seen", "N1234567"),
+    ("Patient ID 55-8821-XK today", "XK"),
+    ("DOB 1990/04/05", "1990/04/05"),
+    ("admitted on 3rd March 2021", "March 2021"),
+    ("seen March 3, 2021", "March 3"),
+    ("a 93-year-old man", "93-year"),
+    ("aged 94 at admission", "94"),
+    ("lives at 42 Baker Street, Colombo 00300", "Baker Street"),
+    ("her daughter Nimali called", "Nimali"),
+])
+def test_audit_gaps_are_now_removed(text, gone):
+    from privacy.deidentify import Deidentifier
+
+    assert gone not in Deidentifier().redact(text)
+
+
+def test_registry_matches_surname_first_and_initialled_forms():
+    from privacy.deidentify import Deidentifier
+
+    d = Deidentifier(known_identifiers=["Rahul Menon"])
+    for text in ("Menon, Rahul was admitted", "R. Menon agreed", "Menon Rahul, 34"):
+        assert "Menon" not in d.redact(text)
+
+
+@pytest.mark.parametrize("text", [
+    "PCB-153 and MB-231 cells were exposed",
+    "the son of the proband was unaffected",
+    "a 2020-2021 cohort of 34 yo adults",
+    "their mother tongue was Sinhala",
+    "ages 60 to 85 were included",
+])
+def test_new_rules_leave_scientific_text_alone(text):
+    from privacy.deidentify import Deidentifier
+
+    assert Deidentifier().redact(text) == text

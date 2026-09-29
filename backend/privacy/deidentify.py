@@ -44,15 +44,31 @@ _STRUCTURED: list[tuple[str, re.Pattern]] = [
     # A labelled identifier: the label is case-insensitive, the value must be
     # digits (optionally with an upper-case prefix) so ordinary words after
     # "record" or "id" are never swallowed.
-    ("ID", re.compile(r"\b(?i:MRN|NHS|SSN|ID|Patient ID|Record|Hospital No)\.?\s*(?:(?i:no|number|is)\.?\s*|#\s*|:\s*)?"
-                      r"(?:[A-Z]{1,4}[- ]?)?\d[\d -]{2,14}\d\b")),
+    ("ID", re.compile(r"\b(?i:MRN|NHS|SSN|NIC|National ID|ID|Patient ID|Record|Hospital No|Passport)\.?\s*"
+                      r"(?:(?i:no|number|is)\.?\s*|#\s*|:\s*)?"
+                      r"(?:[A-Z]{1,4}[- ]?)?\d[\d -]{2,14}\d(?:[- ]?[A-Z]{1,4}\b)?")),
+    # Sri Lankan National Identity Card, unlabelled: old 9 digits + V/X,
+    # new 12 digits beginning with the birth year (docs/49 gap).
+    ("ID", re.compile(r"\b\d{9}[VvXx]\b|\b(?:19|20)\d{2}[0-8]\d{7}\b")),
+    # Passport numbers only with their label (a bare "N1234567" is too often a
+    # catalogue or accession number).
+    ("ID", re.compile(r"\b(?i:passport)(?:\s+(?i:no|number))?\.?\s*[:#]?\s*[A-Z]{1,2}\d{6,8}\b")),
     # NOTE: no bare "ABC-123" rule. In biomedical text that shape is a
     # compound, drug or cell line (PCB-153, MB-231, GS-9620) far more often
     # than a person; an institution adds its own record format via id_patterns.
     ("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
     ("CARD", re.compile(r"\b(?:\d[ -]?){12,15}\d\b")),   # Luhn-checked in _card_sub
-    ("DATE", re.compile(r"\b\d{1,2}[/.-]\d{1,2}[/.-](?:19|20)\d{2}\b|\b(?:19|20)\d{2}-\d{2}-\d{2}\b")),
-    ("DATE", re.compile(r"\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+(?:19|20)\d{2}\b")),
+    ("DATE", re.compile(r"\b\d{1,2}[/.-]\d{1,2}[/.-](?:19|20)\d{2}\b|\b(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}\b")),
+    ("DATE", re.compile(r"\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?,?\s+(?:19|20)\d{2}\b")),
+    ("DATE", re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+(?:19|20)\d{2}\b")),
+    # HIPAA Safe Harbor: ages over 89 are identifying (docs/49 gap).
+    ("AGE", re.compile(r"\b(?:9\d|1[0-1]\d)(?:[- ](?:year|yr)s?[- ]old|[- ]?(?:yo|y/o|y\.o\.)\b)|"
+                       r"\b(?i:aged|age)\s+(?:9\d|1[0-1]\d)\b")),
+    # Street addresses: house number + 1-3 capitalised words + a street type,
+    # optionally ", City" and a postcode (docs/49 gap).
+    ("ADDRESS", re.compile(r"\b\d{1,5}[A-Z]?(?:/\d{1,4})?,?\s+(?:[A-Z][a-z]+\s+){1,3}"
+                           r"(?:Street|St\.|Road|Rd\.?|Lane|Avenue|Ave\.?|Mawatha|Place|Drive|Terrace|Close|Crescent|"
+                           r"Gardens|Boulevard)\b(?:,?\s+[A-Z][a-z]+(?:\s+\d{3,6})?)?")),
     ("PHONE", re.compile(r"(?<![\w-])(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]\d{3,4}[-.\s]?\d{3,4}\b")),
 ]
 
@@ -61,6 +77,9 @@ _FULLNAME = rf"{_NAME}(?:\s+{_NAME}){{0,2}}(?:\s+\d{{1,4}})?"
 _NAME_CUES: list[re.Pattern] = [
     re.compile(rf"\b(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Professor|Nurse|Patient|Pt)\.?\s+({_FULLNAME})"),
     re.compile(rf"\b(?:[Mm]y name is|[Nn]ame:|[Pp]atient named|[Pp]atient|[Ii] am)\s+({_FULLNAME})"),
+    # Relatives and carers are identifying too (docs/49 gap): "daughter Nimali".
+    re.compile(rf"\b(?:[Dd]aughter|[Ss]on|[Ww]ife|[Hh]usband|[Mm]other|[Ff]ather|[Bb]rother|[Ss]ister|[Pp]artner|"
+               rf"[Ss]pouse|[Gg]uardian|[Cc]arer|[Cc]aregiver|[Nn]ext of kin)[,:]?\s+({_FULLNAME})"),
 ]
 # Capitalised words that follow a cue but are not names.
 _NOT_NAMES = {"The", "This", "A", "An", "He", "She", "They", "Was", "Is", "With", "Who", "In", "On", "At",
@@ -82,7 +101,16 @@ class Deidentifier:
     counts: Counter = field(default_factory=Counter)
 
     def __post_init__(self) -> None:
-        terms = sorted({t.strip() for t in self.known_identifiers if t and t.strip()}, key=len, reverse=True)
+        base = {t.strip() for t in self.known_identifiers if t and t.strip()}
+        # Registry names also appear surname-first ("Menon, Rahul"), without
+        # the comma, or with an initial ("R. Menon") — docs/49 gap.
+        variants = set(base)
+        for t in base:
+            parts = t.split()
+            if len(parts) >= 2 and all(p[:1].isalpha() for p in parts):
+                first, last = " ".join(parts[:-1]), parts[-1]
+                variants |= {f"{last}, {first}", f"{last} {first}", f"{first[0]}. {last}", f"{first[0]} {last}"}
+        terms = sorted(variants, key=len, reverse=True)
         self._registry = re.compile(r"\b(?:" + "|".join(re.escape(t) for t in terms) + r")\b", re.I) if terms else None
         self._id_patterns = [re.compile(p) for p in self.id_patterns]
 
@@ -131,7 +159,7 @@ class Deidentifier:
         return [self.redact(d) for d in documents]
 
 
-_PLACEHOLDER = re.compile(r"\[(?:EMAIL|URL|IP|ID|SSN|CARD|DATE|PHONE|NAME|NAME_OR_ID|LOCATION)\]")
+_PLACEHOLDER = re.compile(r"\[(?:EMAIL|URL|IP|ID|SSN|CARD|DATE|PHONE|NAME|NAME_OR_ID|LOCATION|AGE|ADDRESS)\]")
 
 
 def strip_placeholders(text: str) -> str:
