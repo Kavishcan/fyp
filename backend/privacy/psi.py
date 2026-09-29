@@ -132,14 +132,25 @@ def dummy_point() -> bytes:
 _COMPACT_MAGIC = b"FSR1"
 
 
-def encode_passages(passages: list[dict]) -> bytes:
+def encode_passages(passages: list[dict], embedding_dtype: str = "float16") -> bytes:
+    """`embedding_dtype`: "float16" (2 bytes per coordinate) or "int8" (1
+    byte, symmetric per-vector scale stored in the header)."""
     import numpy as np
 
-    header = json.dumps({"documents": [p["document"] for p in passages],
-                         "collections": [p.get("collection", "public") for p in passages],
-                         "dim": len(passages[0]["embedding"]) if passages else 0}).encode("utf-8")
-    embeddings = (np.asarray([p["embedding"] for p in passages], dtype=np.float16).tobytes() if passages else b"")
-    return _COMPACT_MAGIC + len(header).to_bytes(4, "big") + header + embeddings
+    vectors = np.asarray([p["embedding"] for p in passages], dtype=np.float64) if passages else np.empty((0, 0))
+    meta = {"documents": [p["document"] for p in passages],
+            "collections": [p.get("collection", "public") for p in passages],
+            "dim": int(vectors.shape[1]) if passages else 0, "dtype": embedding_dtype}
+    if embedding_dtype == "int8":
+        scales = np.maximum(np.abs(vectors).max(axis=1), 1e-12) / 127.0 if passages else np.empty(0)
+        meta["scales"] = [float(x) for x in scales]
+        body = np.rint(vectors / scales[:, None]).astype(np.int8).tobytes() if passages else b""
+    elif embedding_dtype == "float16":
+        body = vectors.astype(np.float16).tobytes() if passages else b""
+    else:
+        raise ValueError("embedding_dtype must be float16 or int8")
+    header = json.dumps(meta).encode("utf-8")
+    return _COMPACT_MAGIC + len(header).to_bytes(4, "big") + header + body
 
 
 def decode_passages(payload: bytes) -> list[dict]:
@@ -152,19 +163,63 @@ def decode_passages(payload: bytes) -> list[dict]:
     size = int.from_bytes(payload[4:8], "big")
     header = json.loads(payload[8:8 + size])
     n, dim = len(header["documents"]), header["dim"]
-    flat = np.frombuffer(payload[8 + size:8 + size + 2 * n * dim], dtype=np.float16).astype(np.float64)
-    vectors = flat.reshape(n, dim) if n else np.empty((0, dim))
+    if header.get("dtype") == "int8":
+        flat = np.frombuffer(payload[8 + size:8 + size + n * dim], dtype=np.int8).astype(np.float64)
+        vectors = flat.reshape(n, dim) * np.asarray(header["scales"])[:, None] if n else np.empty((0, dim))
+    else:
+        flat = np.frombuffer(payload[8 + size:8 + size + 2 * n * dim], dtype=np.float16).astype(np.float64)
+        vectors = flat.reshape(n, dim) if n else np.empty((0, dim))
     return [{"document": d, "collection": c, "embedding": v.tolist()}
             for d, c, v in zip(header["documents"], header["collections"], vectors)]
 
 
-def seal_deterministic(key: bytes, plaintext: bytes) -> bytes:
-    """AEAD with the nonce derived from (key, plaintext). Each blind-table key
-    seals exactly one plaintext per epoch, so there is no nonce reuse across
-    different messages, and every process of a node rebuilds a byte-identical
-    table — the device's cached copy stays valid across node restarts."""
-    nonce = hashlib.blake2b(plaintext, key=key, person=_DOMAIN_NONCE[:16], digest_size=NONCE_BYTES).digest()
-    return nonce + sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, None, nonce, key)
+def seal_deterministic(key: bytes, plaintext: bytes, aad: bytes = b"") -> bytes:
+    """AEAD with the nonce derived from (key, aad, plaintext). A blind-table
+    key seals one plaintext per (cluster, chunk) per epoch, so there is no
+    nonce reuse across different messages, and every process of a node
+    rebuilds a byte-identical table — the device's cached copy stays valid
+    across node restarts. `aad` binds the chunk index (docs/47)."""
+    nonce = hashlib.blake2b(aad + b"\0" + plaintext, key=key, person=_DOMAIN_NONCE[:16], digest_size=NONCE_BYTES).digest()
+    return nonce + sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, aad or None, nonce, key)
+
+
+# --- chunked blind tables (docs/47 addendum) -----------------------------------
+#
+# Padding every envelope to the node's largest cluster made two thirds of the
+# download padding. Instead each cluster's compact payload is compressed and
+# split into fixed CHUNK_BYTES chunks, each sealed under the cluster's key with
+# its index as associated data and listed under its own tag
+# H3(out, cluster, chunk). Tags are pseudorandom, so which chunks belong
+# together — hence each cluster's size — is hidden without padding more than
+# the last chunk. Compression is applied before encryption; no attacker
+# controls any plaintext in a node's table, and chunking hides the lengths.
+
+CHUNK_BYTES = 16384
+
+
+def chunk_suffix(chunk: int) -> bytes:
+    return b"\0chunk:" + str(int(chunk)).encode("ascii")
+
+
+def chunk_tag(oprf_output: bytes, node_id: str, collection: str, cluster_id: int, chunk: int) -> bytes:
+    return label_tag(oprf_output + chunk_suffix(chunk), node_id, collection, cluster_id=cluster_id)
+
+
+def split_payload(payload: bytes, chunk_bytes: int = CHUNK_BYTES) -> list[bytes]:
+    """zlib-compress, then cut into fixed-size chunks (the last zero-padded)."""
+    import zlib
+
+    data = zlib.compress(payload, 9)
+    chunks = [data[i:i + chunk_bytes] for i in range(0, len(data), chunk_bytes)] or [b""]
+    chunks[-1] = chunks[-1] + b"\0" * (chunk_bytes - len(chunks[-1]))
+    return chunks
+
+
+def join_payload(chunks: list[bytes]) -> bytes:
+    """Inverse of split_payload: trailing zero padding is ignored by zlib."""
+    import zlib
+
+    return zlib.decompressobj().decompress(b"".join(chunks))
 
 
 # --- AEAD envelopes -----------------------------------------------------------
@@ -175,10 +230,10 @@ def seal(key: bytes, plaintext: bytes) -> bytes:
     return nonce + sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, None, nonce, key)
 
 
-def open_envelope(key: bytes, envelope: bytes) -> bytes:
+def open_envelope(key: bytes, envelope: bytes, aad: bytes = b"") -> bytes:
     """Raises nacl.exceptions.CryptoError for a wrong key or tampered data."""
     nonce, body = envelope[:NONCE_BYTES], envelope[NONCE_BYTES:]
-    return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(body, None, nonce, key)
+    return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(body, aad or None, nonce, key)
 
 
 # --- client -------------------------------------------------------------------
@@ -352,19 +407,23 @@ class PSINode:
         self.keys = {c: random_scalar() for c in self.keys}
         self.build_table(self._clusters, self.collection_of)
 
+    # int8 embeddings in blind tables: MRR unchanged on PMC-Patients
+    # (0.421 -> 0.423 at P=8), download 20.7 -> 15.0 MB (docs/47 addendum).
+    blind_embedding_dtype = "int8"
+
     def _build_blind(self) -> dict:
-        """Tag -> (collection, envelope) for every cluster, payloads padded to
-        one length. Deterministic in (keys, clusters)."""
-        payloads = {cid: encode_passages(p) for cid, p in self._clusters.items()}
-        width = max((len(v) for v in payloads.values()), default=0)
+        """Chunk tag -> (collection, envelope): every cluster's payload
+        compressed and cut into CHUNK_BYTES chunks, every envelope the same
+        length. Deterministic in (keys, clusters, dtype)."""
         entries = {}
-        for cid, payload in payloads.items():
+        for cid, passages in self._clusters.items():
             collection = self.collection_of.get(cid, "public")
             out = scalar_mult(self.keys[collection], hash_to_point(encode_cluster_id(cid)))
-            padded = payload + b"\0" * (width - len(payload))
-            entries[label_tag(out, self.node_id, collection, cluster_id=cid)] = (
-                collection, seal_deterministic(label_key(out, self.node_id, collection, cluster_id=cid), padded))
-        return {"epoch": self.epoch, "entries": entries}
+            key = label_key(out, self.node_id, collection, cluster_id=cid)
+            for i, chunk in enumerate(split_payload(encode_passages(passages, self.blind_embedding_dtype))):
+                entries[chunk_tag(out, self.node_id, collection, cid, i)] = (
+                    collection, seal_deterministic(key, chunk, aad=chunk_suffix(i)))
+        return {"epoch": self.epoch, "dtype": self.blind_embedding_dtype, "entries": entries}
 
     def blind_table(self, collections: list[str] | None = None) -> dict:
         """The offline download: every envelope of the permitted collections
@@ -372,7 +431,8 @@ class PSINode:
         role receives the same bytes, so the download says nothing about any
         question. Restricted collections are served only to roles that may
         read them, so an outsider does not learn their size (audit #6)."""
-        if self._blind is None or self._blind["epoch"] != self.epoch:
+        if (self._blind is None or self._blind["epoch"] != self.epoch
+                or self._blind.get("dtype") != self.blind_embedding_dtype):
             self._blind = self._build_blind()
         allowed = set(collections or ["public"])
         entries = {t: env for t, (c, env) in self._blind["entries"].items() if c in allowed}

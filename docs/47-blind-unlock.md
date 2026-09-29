@@ -138,6 +138,36 @@ as a web search in September 2026 found:
   crypto; hospital compute is timed but hospitals would run in parallel on
   their own hardware.
 
+## Addendum: chunked, compressed tables
+
+The first table layout padded every envelope to the node's largest
+cluster; measured on the PMC federation, **66% of the 86 MB download was
+padding** (text 22%, float16 embeddings 12%). Tables are now built as:
+each cluster's payload is zlib-compressed and cut into fixed 16 KB chunks;
+chunk i is sealed under the cluster's key with i as associated data and
+listed under its own tag H3(out, cluster, i). Tags are pseudorandom, so
+which chunks belong together — and each cluster's size — stays hidden,
+with padding only in each cluster's last chunk. Embeddings are stored as
+int8 with a per-vector scale. The device looks up chunks 0, 1, 2, … until
+one is missing, verifies and joins them, and decompresses.
+
+| Layout | Download, 8 PMC hospitals | Largest hospital | MRR P=8 | MRR P=8 hybrid | MRR P=24 hybrid |
+|---|---:|---:|---:|---:|---:|
+| padded to largest cluster, float16 | 86 MB | 14.5 MB | 0.421 | 0.509 | 0.535 |
+| chunked + compressed, float16 | 20.7 MB | — | — | — | — |
+| **chunked + compressed, int8 (default)** | **15.0 MB** | **2.8 MB** | **0.423** | **0.508** | **0.536** |
+
+Retrieval is unchanged (int8 moves MRR by ≤0.002); the download is 5.7×
+smaller, ~3 KB per record. Timings in that run were taken with two other
+experiments on the same machine and are not comparable to the table above.
+Compression before encryption is acceptable here because no attacker
+controls any plaintext in a node's table and fixed chunks hide per-cluster
+lengths; the total chunk count reveals only the collection's total
+compressed size, which does not depend on any question. Tests:
+`tests/test_blind_unlock.py` (multi-chunk clusters open, equal envelope
+lengths, a tampered chunk makes its cluster unopenable, int8 keeps the
+ranking, the chunked table is several times smaller).
+
 ## Future work (decided: not part of this project)
 
 Blind unlock is the project's solution as built and measured. The following
@@ -145,7 +175,6 @@ were designed or discussed and are deliberately left as future work:
 
 | Area | Future work | What it would address |
 |---|---|---|
-| Download size | fixed-size chunked envelopes + compression (measured estimate: 86 MB → ~16 MB for the PMC federation) | the one-time download, ~5× smaller |
 | Scale | blind unlock inside groups of nodes, cells between groups; PIR for envelope fetch | federations of hundreds to thousands of nodes |
 | Disclosure | two-level unlock (sub-cluster round) or k-out-of-K oblivious transfer | records released per probe (~10 → ~2–3) |
 | Key lifecycle | scheduled rotation with secure deletion of old secrets; threshold OPRF keys (split across servers); hardware-held keys (HSM/TEE) | a leaked old secret opening cached copies |

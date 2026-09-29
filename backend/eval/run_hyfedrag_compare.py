@@ -178,6 +178,8 @@ def main() -> None:
                         help="how patients are split into hospitals: k-means in the routing embedding (docs/46), "
                              "Dirichlet non-IID over k-means topics, or uniform random (robustness, docs/50)")
     parser.add_argument("--dirichlet-alpha", type=float, default=0.5)
+    parser.add_argument("--blind-embedding-dtype", choices=["float16", "int8"], default="int8",
+                        help="embedding format inside blind-unlock tables (docs/47 addendum)")
     parser.add_argument("--only", nargs="*", default=None,
                         help="run only these configurations (e.g. ours_blind_P8); default all")
     args = parser.parse_args()
@@ -287,17 +289,24 @@ def main() -> None:
 
     # Blind unlock, offline step: every hospital's public table, downloaded
     # once per key epoch. Measured here once; not charged to any question.
+    other = "int8" if args.blind_embedding_dtype == "float16" else "float16"
+    alt_bytes = 0
+    for c in clients:                                    # size of the other format, for the record
+        our_nodes[c][0].psi.blind_embedding_dtype = other
+        alt_bytes += sum(len(t) + len(e) for t, e in our_nodes[c][0].psi.blind_table()["entries"].items()) * 4 // 3
     t_off = time.perf_counter()
     blind_cache = TableCache()
     for c in clients:
+        our_nodes[c][0].psi.blind_embedding_dtype = args.blind_embedding_dtype
         blind_cache.put(c, our_nodes[c][0].psi.blind_table())
     offline_s = time.perf_counter() - t_off
+    print(f"blind tables ({other} embeddings would be {alt_bytes / 1e6:.1f} MB)", flush=True)
     offline_bytes = {c: blind_cache.tables[c].size_bytes() * 4 // 3 for c in clients}   # base64 on the wire
     blind_clusters = [NodeClusters(c, list(range(len(our_nodes[c][1].cluster_centroids))),
                                    np.asarray(our_nodes[c][1].cluster_centroids),
                                    ["public"] * len(our_nodes[c][1].cluster_centroids)) for c in clients]
     uid_by_doc = {d: u for c in clients for d, u in our_nodes[c][2].items()}
-    print(f"blind tables: {sum(offline_bytes.values()) / 1e6:.1f} MB for {len(clients)} hospitals "
+    print(f"blind tables ({args.blind_embedding_dtype}): {sum(offline_bytes.values()) / 1e6:.1f} MB for {len(clients)} hospitals "
           f"(largest {max(offline_bytes.values()) / 1e6:.1f} MB; per-query PSI ships {sum(psi_table_bytes.values()) / 1e6:.0f} MB "
           f"for all 8), built in {offline_s:.1f}s", flush=True)
 
@@ -434,7 +443,8 @@ def main() -> None:
         print(f"  deid {label:<32} documents altered {altered / total:.3f}", flush=True)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RESULTS_DIR / f"hyfedrag_compare_{args.partition}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    tag = args.partition + ("" if args.blind_embedding_dtype == "int8" else "_float16")
+    out = RESULTS_DIR / f"hyfedrag_compare_{tag}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
     out.with_suffix(".perquery.json").write_text(json.dumps({
         "partition": args.partition, "dirichlet_alpha": args.dirichlet_alpha, "seed": args.seed,
         "query_ids": [qid for qid, *_ in queries], "mrr": per_query}))

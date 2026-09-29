@@ -41,8 +41,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from nacl.exceptions import CryptoError
 
-from privacy.psi import (decode_passages, dummy_point, encode_cluster_id, hash_to_point, label_key, label_tag,
-                         open_envelope, random_scalar, scalar_invert, scalar_mult)
+from privacy.psi import (chunk_suffix, chunk_tag, decode_passages, dummy_point, encode_cluster_id, hash_to_point,
+                         join_payload, label_key, open_envelope, random_scalar, scalar_invert, scalar_mult)
 
 
 @dataclass
@@ -151,11 +151,16 @@ def unlock(plan: ProbePlan, node_id: str, evaluated: list[dict[str, bytes]], cac
         inverse = scalar_invert(r)
         for collection, point in evaluated[pos].items():
             out = scalar_mult(inverse, point)
-            envelope = table.entries.get(label_tag(out, node_id, collection, cluster_id=cid))
-            if envelope is None:
+            chunks, i = [], 0
+            while (envelope := table.entries.get(chunk_tag(out, node_id, collection, cid, i))) is not None:
+                chunks.append((i, envelope))
+                i += 1
+            if not chunks:
                 continue
+            key = label_key(out, node_id, collection, cluster_id=cid)
             try:
-                found[cid] = decode_passages(open_envelope(label_key(out, node_id, collection, cluster_id=cid), envelope))
+                found[cid] = decode_passages(join_payload([open_envelope(key, env, aad=chunk_suffix(j))
+                                                           for j, env in chunks]))
             except CryptoError:   # tampered entry: treated as absent
                 continue
             break

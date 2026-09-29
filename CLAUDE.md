@@ -44,8 +44,10 @@ r·G (same distribution), in sorted node order; replies are unblinded and
 envelopes opened by tag lookup. PMC-Patients (docs/46 setup): question to 0
 hospitals, topic at the floor 0.239 at every P; MRR 0.399/0.421/0.431/0.437
 at P=4/8/16/24 (HyFedRAG-style 0.444), 74–393 records disclosed, device
-22–132 ms, slowest hospital 5–29 ms, a few KB per question; 83 MB one-time
-download for 8 hospitals. Budgets count dummies. Known pieces (labeled PSI,
+22–132 ms, slowest hospital 5–29 ms, a few KB per question. One-time
+download 86 MB with the first padded layout, now 15.0 MB: tables are
+zlib-compressed, cut into 16 KB chunks with per-chunk tags, int8 embeddings
+(MRR unchanged, docs/47 addendum). Budgets count dummies. Known pieces (labeled PSI,
 PIR-style offline download, Wally-style fake queries); the multi-owner
 routing setting is the contribution — do not call it new cryptography.
 Semi-honest nodes; timing not measured; records of the P unlocked clusters

@@ -229,3 +229,60 @@ def test_every_node_is_contacted_before_anything_is_unlocked(tmp_path, monkeypat
     monkeypatch.setattr(state_module, "unlock", lambda *a, **k: events.append("unlock") or original_unlock(*a, **k))
     state.run_query("topic1 subject 1", max_nodes=2, genuine_k=1, sigma=0.0, routing_mode="blind", blind_probes=3)
     assert events == ["send"] * 4 + ["unlock"] * 4
+
+
+# --- chunked, compressed tables (docs/47 addendum) -----------------------------
+
+
+def _big_node(dtype: str = "float16") -> PSINode:
+    rng = np.random.default_rng(5)
+    node = PSINode("big")
+    node.blind_embedding_dtype = dtype
+    node.build_table({c: [{"document": " ".join(rng.choice(["fever", "rash", "cough", "troponin", "ecg"], 400)),
+                           "embedding": rng.normal(size=768).tolist()} for _ in range(4 + 12 * c)] for c in range(3)})
+    return node
+
+
+def test_large_clusters_span_several_equal_chunks_and_still_open():
+    from privacy.psi import CHUNK_BYTES
+
+    node = _big_node()
+    table = node.blind_table()
+    lengths = {len(e) for e in table["entries"].values()}
+    assert lengths == {CHUNK_BYTES + 24 + 16}                          # every envelope identical in size
+    assert len(table["entries"]) > len(node._clusters)                 # the big cluster needed several chunks
+    cache = TableCache()
+    cache.put("big", table)
+    plan = plan_probes(np.ones(8), [_clusters("big", 3)], probes=3)
+    opened = unlock(plan, "big", node.evaluate_for(plan.points["big"], ["public"]), cache)
+    assert {c: len(v) for c, v in opened.items()} == {c: len(node._clusters[c]) for c in range(3)}
+
+
+def test_a_tampered_chunk_makes_its_cluster_unopenable():
+    node = _big_node()
+    table = node.blind_table()
+    tag = next(iter(table["entries"]))
+    table["entries"][tag] = table["entries"][tag][:-1] + bytes([table["entries"][tag][-1] ^ 1])
+    cache = TableCache()
+    cache.put("big", table)
+    plan = plan_probes(np.ones(8), [_clusters("big", 3)], probes=3)
+    assert len(unlock(plan, "big", node.evaluate_for(plan.points["big"], ["public"]), cache)) == 2
+
+
+def test_int8_embeddings_halve_the_vectors_and_keep_the_ranking():
+    rng = np.random.default_rng(0)
+    passages = [{"document": f"d{i}", "embedding": (v / np.linalg.norm(v)).tolist()}
+                for i, v in enumerate(rng.normal(size=(50, 768)))]
+    back = decode_passages(encode_passages(passages, "int8"))
+    q = rng.normal(size=768)
+    exact = np.argsort(-np.array([p["embedding"] for p in passages]) @ q)[:10]
+    approx = np.argsort(-np.array([p["embedding"] for p in back]) @ q)[:10]
+    assert len(encode_passages(passages, "int8")) < 0.6 * len(encode_passages(passages, "float16"))
+    assert len(set(exact) & set(approx)) >= 9
+
+
+def test_chunked_table_is_several_times_smaller_than_padding_to_the_largest_cluster():
+    node = _big_node()
+    chunked = sum(len(e) for e in node.blind_table()["entries"].values())
+    widest = max(len(encode_passages(p)) for p in node._clusters.values())
+    assert chunked < 0.5 * widest * len(node._clusters)
