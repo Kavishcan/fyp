@@ -85,6 +85,10 @@ class QueryRequest(BaseModel):
     # blind only (docs/47): points sent to EVERY node per question, real or
     # dummy; also the number of clusters unlocked across the federation.
     blind_probes: int = Field(default=4, ge=1, le=64)
+    # Device-side ranking of returned/unlocked passages (docs/48): "hybrid"
+    # adds pool BM25 to the dense cosine. Changes nothing that leaves the device.
+    rerank: Literal["dense", "hybrid"] = "dense"
+    hybrid_weight: float = Field(default=0.5, ge=0, le=5, allow_inf_nan=False)
     # Cross-node evidence rerank (docs/40): keep only the top-k passages by
     # cosine to the query in the shared routing space, across all contacted
     # nodes, before generation. None = keep all (every node's passage).

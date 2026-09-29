@@ -36,6 +36,11 @@ Configurations:
                     node de-identification: rules + full-name NER (docs/44).
 - ours_psi_top4     PSI dispatch to the cosine top-4, no cells — separates
                     the retrieval cost of PSI bucketing from that of cells.
+- *_hybrid          the same configuration with device/server ranking by
+                    dense cosine + pool BM25 (router/hybrid_rerank.py,
+                    docs/48); HyFedRAG-style hybrid also ranks each
+                    hospital's local top-10 by hybrid (a hospital sees the
+                    question, so it may). One weight for every configuration.
 - ours_blind_P*     blind unlock (docs/47): every hospital's encrypted table
                     downloaded once (offline, reported separately); per
                     question the device unlocks the P best clusters across
@@ -75,6 +80,7 @@ from privacy.cluster_index import assign_clusters, kmeans_unit, rerank_passages
 from privacy.deidentify import presidio_backend
 from privacy.blind_unlock import NodeClusters, TableCache, plan_probes, unlock
 from privacy.psi import PSIClient
+from router.hybrid_rerank import DEFAULT_WEIGHT, hybrid_scores, tokenize
 from router.anonymity import build_cells, cell_cover
 
 CSV_PATH = REPO_ROOT / "backend" / "vendor" / "pmc_patients" / "PMC-Patients.csv"
@@ -167,6 +173,7 @@ def main() -> None:
     parser.add_argument("--skip-stock-deid", action="store_true",
                         help="skip the stock-Presidio node build (only used for the de-id damage row)")
     parser.add_argument("--embedder-model", default="BAAI/bge-base-en-v1.5")
+    parser.add_argument("--hybrid-weight", type=float, default=DEFAULT_WEIGHT)
     parser.add_argument("--only", nargs="*", default=None,
                         help="run only these configurations (e.g. ours_blind_P8); default all")
     args = parser.parse_args()
@@ -192,7 +199,10 @@ def main() -> None:
     topic = [Counter(client_of[u] for u in rel).most_common(1)[0][0] for *_, rel in queries]
 
     # Centralized reference: exact dense retrieval over everything.
-    def centralized(i):
+    def centralized(i, hybrid=False):
+        if hybrid:
+            order, _ = hybrid_top(queries[i][1], qv[i], [corpus[u] for u in uids], vecs, 10, counts=corpus_counts)
+            return [uids[j] for j in order]
         scores = vecs @ qv[i]
         return [uids[j] for j in np.argsort(-scores)[:10]]
 
@@ -241,7 +251,22 @@ def main() -> None:
         "ours_blind_P8": ("all", True, "blind", 8),
         "ours_blind_P16": ("all", True, "blind", 16),
         "ours_blind_P24": ("all", True, "blind", 24),
+        # docs/48: same configurations, hybrid (dense + pool BM25) ranking
+        "centralized_hybrid": ("central", False, "dense", 0),
+        "hyfedrag_style_hybrid": ("all", False, "text", 0),
+        "ours_psi_cells_hybrid": ("cell4", False, "psi", 2),
+        "ours_blind_P8_hybrid": ("all", True, "blind", 8),
+        "ours_blind_P16_hybrid": ("all", True, "blind", 16),
+        "ours_blind_P24_hybrid": ("all", True, "blind", 24),
     }
+    W = args.hybrid_weight
+    from collections import Counter as _Counter
+    corpus_counts = [_Counter(tokenize(corpus[u])) for u in uids]           # centralized index, built once
+    raw_counts = {c: [_Counter(tokenize(d)) for d in raw_nodes[c][0].documents] for c in clients}   # each hospital's own index
+
+    def hybrid_top(question, q, docs, vectors, k, counts=None):
+        s_ = hybrid_scores(question, q, docs, vectors, W, counts=counts)
+        return list(np.argsort(-s_)[:k]), s_
 
     # Blind unlock, offline step: every hospital's public table, downloaded
     # once per key epoch. Measured here once; not charged to any question.
@@ -263,9 +288,11 @@ def main() -> None:
         """Returns ranked uids, contacted hospitals, bytes sent, bytes received,
         passages disclosed, whether the question text reached hospitals."""
         q = qv[i]
+        question = queries[i][1]
         selection, fine, dispatch, nprobe = CONFIGS[name]
+        hybrid = name.endswith("_hybrid")
         if selection == "central":
-            return centralized(i), [], 0, 0, 0, False
+            return centralized(i, hybrid), [], 0, 0, 0, False
         if selection == "all":
             chosen = list(clients)
         elif selection == "top4":
@@ -289,7 +316,12 @@ def main() -> None:
                 pool += [p for cid in opened for p in opened[cid]]
                 device_ms += (time.perf_counter() - t_dev) * 1000
             t_dev = time.perf_counter()
-            ranked = rerank_passages(q, pool, top_n=10)
+            if hybrid and pool:
+                order, s_ = hybrid_top(question, q, [p["document"] for p in pool],
+                                       np.asarray([p["embedding"] for p in pool]), 10)
+                ranked = [(pool[j]["document"], float(s_[j])) for j in order]
+            else:
+                ranked = rerank_passages(q, pool, top_n=10)
             device_ms += (time.perf_counter() - t_dev) * 1000
             split.append((device_ms, max(node_ms)))
             sent = len(chosen) * (nprobe * 64 + 64)                # P points (hex) to every hospital + framing
@@ -298,9 +330,21 @@ def main() -> None:
         if dispatch == "text":
             # HyFedRAG and a normal router: the question goes to every contacted
             # hospital; each returns its local top-10 over its RAW index.
-            hits = [(c, h) for c in chosen for h in dense_top(raw_nodes[c][0], raw_nodes[c][2], q)]
             sent = len(queries[i][1].encode("utf-8")) * len(chosen)
             received = sum(len(raw_nodes[c][0].documents[0]) for c in chosen) * 10 // 1   # ~10 passages each
+            if hybrid:
+                # each hospital ranks its own index by hybrid (it sees the question), the
+                # server re-ranks the union by hybrid with pool statistics
+                pool_docs, pool_vecs, pool_uids = [], [], []
+                for c in chosen:
+                    node = raw_nodes[c][0]
+                    order, _ = hybrid_top(question, q, node.documents, node.document_embeddings, 10, counts=raw_counts[c])
+                    for j in order:
+                        pool_docs.append(node.documents[j]); pool_vecs.append(node.document_embeddings[j])
+                        pool_uids.append(raw_nodes[c][2][node.documents[j]])
+                order, _ = hybrid_top(question, q, pool_docs, np.asarray(pool_vecs), 10)
+                return [pool_uids[j] for j in order], chosen, sent, received, 10 * len(chosen), True
+            hits = [(c, h) for c in chosen for h in dense_top(raw_nodes[c][0], raw_nodes[c][2], q)]
             ranked = [u for _, (u, _) in sorted(hits, key=lambda x: -x[1][1])[:10]]
             return ranked, chosen, sent, received, 10 * len(chosen), True
         pool, received = [], 0
@@ -309,7 +353,11 @@ def main() -> None:
             cand = psi_top(node, profile, uid_of, q, nprobe=nprobe)
             pool += [dict(p, uid=uid_of[p["document"]]) for p in cand]
             received += psi_table_bytes[c] + nprobe * 64       # full labeled PSI: every envelope, plus OPRF replies
-        ranked = rerank_passages(q, pool, top_n=10)
+        if hybrid and pool:
+            order, s_ = hybrid_top(question, q, [p["document"] for p in pool], np.asarray([p["embedding"] for p in pool]), 10)
+            ranked = [(pool[j]["document"], float(s_[j])) for j in order]
+        else:
+            ranked = rerank_passages(q, pool, top_n=10)
         by_doc = {p["document"]: p["uid"] for p in pool}
         sent = len(chosen) * (nprobe * 64 + 64)                # blinded points (hex) + framing
         return [by_doc[d] for d, _ in ranked], chosen, sent, received, len(pool), False
@@ -329,12 +377,13 @@ def main() -> None:
             patterns.append(sorted(contacted))
         half = len(queries) // 2
         topic_acc = float("nan")
-        if name != "centralized":
+        if CONFIGS[name][0] != "central":
             labels = sorted(set(topic))
             att = HistoryAttacker().fit(list(zip(patterns[:half], topic[:half])))
             topic_acc = evaluate(att, list(zip(patterns[half:], topic[half:])), labels)["accuracy"]
         rows.append({"configuration": name, "queries": len(queries),
                      "mrr": float(np.mean(m)), "p@10": float(np.mean(p)), "ndcg@10": float(np.mean(n)),
+                     "mrr_second_half": float(np.mean(m[len(m) // 2:])),
                      "contacts": float(np.mean(contacts)), "query_text_to_hospitals": float(np.mean(exposed)),
                      "topic_inference": topic_acc,
                      "topic_majority_floor": max(Counter(topic[half:]).values()) / len(topic[half:]),
@@ -346,7 +395,7 @@ def main() -> None:
                      "offline_table_bytes_total": (float(sum(offline_bytes.values())) if CONFIGS[name][2] == "blind"
                                                    else 0.0)})
         r = rows[-1]
-        print(f"  {name:<28} MRR {r['mrr']:.4f} nDCG@10 {r['ndcg@10']:.4f} | contacts {r['contacts']:.1f} "
+        print(f"  {name:<28} MRR {r['mrr']:.4f} (2nd half {r['mrr_second_half']:.4f}) nDCG@10 {r['ndcg@10']:.4f} | contacts {r['contacts']:.1f} "
               f"| q-text {r['query_text_to_hospitals']:.2f} | topic {r['topic_inference']:.3f} (floor {r['topic_majority_floor']:.3f}) "
               f"| passages {r['passages_disclosed_per_query']:.0f} | ms {r['compute_ms_per_query']:.1f} "
               f"| sent {r['bytes_sent_per_query']:.0f} B recv {r['bytes_received_per_query'] / 1e6:.2f} MB"

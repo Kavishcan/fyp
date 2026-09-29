@@ -11,6 +11,16 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/48: device-side hybrid rerank (router/hybrid_rerank.py): z(cosine) +
+0.5·z(BM25), BM25 statistics from the pool the device holds only. API
+`rerank="dense"|"hybrid"` (default dense, earlier results unchanged;
+studio default hybrid), applies to blind pool ranking and the evidence
+rerank. PMC-Patients, matched ranking: HyFedRAG-style hybrid 0.543, blind
+unlock hybrid 0.509/0.526/0.535 at P=8/16/24 (dense 0.421/0.431/0.437),
+centralized hybrid 0.555; held-out-half MRR reported (weight chosen on the
+first half). Lead with the matched comparison; "beats HyFedRAG" is only
+true against its dense ranker and must say so. No significance test yet.
+
 Docs/47: blind unlock, `routing_mode="blind"` (privacy/blind_unlock.py;
 psi.label_tag, dummy_point, PSINode.blind_table/epoch/rotate_keys; node tool
 psi_table). Offline, every node's encrypted cluster table (OPRF-derived
@@ -297,6 +307,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/attacks/a2_topic_inference.py, backend/eval/run_leakage.py | Contacted-set → query-topic attack and the decoy ablation (docs/39) |
 | backend/eval/run_healthcare.py | Same-domain 8-client healthcare federation, hard case for routing leakage (docs/40) |
 | backend/eval/run_hyfedrag_compare.py | HyFedRAG-style design vs ours on PMC-Patients (docs/46, blind rows docs/47; `--only` runs a subset) |
+| backend/router/hybrid_rerank.py | Device-side dense + pool-BM25 rerank (docs/48); no model, no network |
 | backend/privacy/blind_unlock.py | Blind unlock: global probe planning, dummy padding, table cache, tag-lookup unlock (docs/47) |
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |

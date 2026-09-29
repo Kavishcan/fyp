@@ -48,6 +48,7 @@ export function ChatPanel() {
   const [trustWeight, setTrustWeight] = useState(0.5);
   const [evidenceTopK, setEvidenceTopK] = useState(2);
   const [blindProbes, setBlindProbes] = useState(8);
+  const [rerank, setRerank] = useState<"dense" | "hybrid">("hybrid");
   const [identity, setIdentity] = useState<IdentityState>({ active: null, available: [] });
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -85,9 +86,9 @@ export function ChatPanel() {
         genuine_k: genuineK,
         routing_mode: routingMode,
         ...(privacyModes
-          ? { decoy_policy: decoyPolicy, cell_size: 4, evidence_top_k: evidenceTopK, trust_weight: trustWeight }
+          ? { decoy_policy: decoyPolicy, cell_size: 4, evidence_top_k: evidenceTopK, trust_weight: trustWeight, rerank }
           : {}),
-        ...(routingMode === "blind" ? { blind_probes: blindProbes, evidence_top_k: evidenceTopK } : {}),
+        ...(routingMode === "blind" ? { blind_probes: blindProbes, evidence_top_k: evidenceTopK, rerank } : {}),
       });
       setMessages((m) => m.map((msg) => (msg.id === id ? { ...msg, status: "done", result } : msg)));
     } catch (err) {
@@ -327,6 +328,22 @@ export function ChatPanel() {
                     />
                   </Label>
                 </div>
+              )}
+              {(routingMode === "v2" || routingMode === "psi" || routingMode === "blind") && (
+                <Label className="flex flex-col items-start gap-1.5 text-xs">
+                  Ranking on your device
+                  <select
+                    value={rerank}
+                    onChange={(e) => setRerank(e.target.value as "dense" | "hybrid")}
+                    className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="hybrid">hybrid — meaning + keywords (docs/48)</option>
+                    <option value="dense">dense — meaning only</option>
+                  </select>
+                  <span className="text-[11px] leading-snug text-muted-foreground font-normal">
+                    Re-orders passages already on your device; nothing extra is sent.
+                  </span>
+                </Label>
               )}
               {(routingMode === "v2" || routingMode === "psi") && (
                 <Label className="flex flex-col items-start gap-1.5 text-xs">

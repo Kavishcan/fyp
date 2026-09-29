@@ -33,6 +33,7 @@ from router.smart import EvidenceTrust, SmartConfig, SmartRouter, SourceEvidence
 from router.trust import BoundedTrustUpdate
 from router.anonymity import build_cells
 from privacy.blind_unlock import NodeClusters, TableCache, plan_probes, unlock
+from router.hybrid_rerank import DEFAULT_WEIGHT, hybrid_scores
 from router.v2 import DecoyAwareEvidenceTrust, V2Config, dispatch_payload, dispatched_vector, select_dispatch
 
 from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
@@ -287,7 +288,12 @@ class AppState:
         coarse_k: int = 15, psi_nprobe: int = 2, psi_fetch_set: int | None = None,
         evidence_top_k: int | None = None, decoy_policy: str = "topic_stable", cell_size: int = 4,
         trust_weight: float = 0.0, blind_probes: int = 4,
+        rerank: str = "dense", hybrid_weight: float = DEFAULT_WEIGHT,
     ) -> dict:
+        if rerank not in {"dense", "hybrid"}:
+            raise ValueError("rerank must be dense or hybrid")
+        # Device-side ranking only (docs/48): what leaves the device is unchanged.
+        rank_weight = hybrid_weight if rerank == "hybrid" else 0.0
         if routing_mode not in {"legacy", "smart", "v2", "psi", "blind"}:
             raise ValueError("routing_mode must be legacy, smart, v2, psi or blind")
         if routing_mode in {"psi", "blind"} and sigma != 0:
@@ -341,7 +347,8 @@ class AppState:
             # exactly `blind_probes` points; which clusters (if any) are real
             # is decided locally over every node's published clusters.
             blind_outcome = self._blind_retrieve(profiles, query_embedding, probes=blind_probes,
-                                                 top_n=max(1, max_nodes))
+                                                 top_n=max(1, max_nodes), question=question,
+                                                 rank_weight=rank_weight)
             routing_details = {
                 "mode": "blind", "embedding_model": self.routing_embedder.model_name,
                 "dispatch_payload_kind": "fixed_count_blinded_points_real_or_dummy",
@@ -535,7 +542,8 @@ class AppState:
         # Only when it can matter: a cap was requested, or a generator will
         # consume the passages. Keeps the no-generation legacy path byte-identical.
         if evidence_top_k is not None or self.generator is not None:
-            citations = self._rerank_evidence(query_embedding, citations, evidence_top_k)
+            citations = self._rerank_evidence(query_embedding, citations, evidence_top_k, question=question,
+                                              rank_weight=rank_weight)
 
         answer = None
         generation_status = "not_implemented"
@@ -667,16 +675,17 @@ class AppState:
         cache[cache_key] = entries
         return entries
 
-    def _rerank_evidence(self, query_embedding: np.ndarray, citations: list[dict], top_k: int | None) -> list[dict]:
+    def _rerank_evidence(self, query_embedding: np.ndarray, citations: list[dict], top_k: int | None,
+                         question: str | None = None, rank_weight: float = 0.0) -> list[dict]:
         """Global rerank of all returned passages by cosine in the shared
-        routing space; keeps `top_k` (None = all, but still annotated)."""
+        routing space — or, with rerank="hybrid", cosine plus pool BM25
+        (router/hybrid_rerank.py, docs/48); keeps `top_k` (None = all, but
+        still annotated)."""
         if not citations:
             return citations
-        q = np.asarray(query_embedding, dtype=np.float64)
-        q = q / (np.linalg.norm(q) or 1.0)
         embeddings = self.routing_embedder.embed([c["document"] for c in citations])
-        norms = np.maximum(np.linalg.norm(embeddings, axis=1), 1e-12)
-        scores = (embeddings @ q) / norms
+        scores = hybrid_scores(question or "", query_embedding, [c["document"] for c in citations], embeddings,
+                               rank_weight if question else 0.0)
         order = np.argsort(-scores)
         ranked = []
         for i in order:
@@ -727,7 +736,8 @@ class AppState:
                 authorised=node.authorizer is not None and auth is not None))
         self.blind_cache.put(node_id, table)
 
-    def _blind_retrieve(self, profiles, query_embedding, *, probes: int, top_n: int) -> dict:
+    def _blind_retrieve(self, profiles, query_embedding, *, probes: int, top_n: int, question: str = "",
+                        rank_weight: float = 0.0) -> dict:
         """Blind unlock, playing the device (privacy/blind_unlock.py, docs/47).
 
         Contacts EVERY registered node, in sorted order, with exactly
@@ -794,7 +804,12 @@ class AppState:
         for p in pool:
             e = np.asarray(p["embedding"], dtype=np.float64)
             p["score"] = float(e @ q / max(np.linalg.norm(e), 1e-12))
-        ranked = sorted(pool, key=lambda p: -p["score"])
+        if rank_weight and pool:
+            rank_by = hybrid_scores(question, q, [p["document"] for p in pool],
+                                    np.asarray([p["embedding"] for p in pool]), rank_weight)
+            ranked = [pool[i] for i in np.argsort(-rank_by)]
+        else:
+            ranked = sorted(pool, key=lambda p: -p["score"])
         citations = [{"node_id": p["node_id"], "document": p["document"], "score": p["score"],
                       "collection": p.get("collection", "public")} for p in ranked[:top_n]]
         for node_id in plan.genuine_nodes:

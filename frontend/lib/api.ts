@@ -114,6 +114,9 @@ export interface QueryRequest {
   psi_fetch_set?: number;
   /** blind only (docs/47): points sent to EVERY node per question, real or dummy (default 4). */
   blind_probes?: number;
+  /** Device-side ranking of returned/unlocked passages (docs/48): "hybrid" adds pool BM25 to the dense cosine. */
+  rerank?: "dense" | "hybrid";
+  hybrid_weight?: number;
   /** Keep only the top-k passages across all contacted nodes (cross-node rerank) before generation. */
   evidence_top_k?: number;
   /** v2/psi: "topic_stable" hides which contact is genuine; "cells" also hides the topic (docs/40). */

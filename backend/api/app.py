@@ -159,6 +159,7 @@ def query(req: QueryRequest) -> QueryResponse:
         coarse_k=req.coarse_k, psi_nprobe=req.psi_nprobe, psi_fetch_set=req.psi_fetch_set,
         evidence_top_k=req.evidence_top_k, decoy_policy=req.decoy_policy, cell_size=req.cell_size,
         trust_weight=req.trust_weight, blind_probes=req.blind_probes,
+        rerank=req.rerank, hybrid_weight=req.hybrid_weight,
     )
     return QueryResponse(**result)
 
