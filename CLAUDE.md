@@ -11,6 +11,17 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/50: robustness, significance, sessions, answers. Blind unlock at the
+pattern floor on k-means/Dirichlet/random splits and over 5-question
+sessions (router/decoys climb to 0.50–0.57; cells leak on Dirichlet 0.294
+vs floor 0.210). Hybrid MRR vs HyFedRAG-style hybrid: P=8 94%/86%/81%,
+P=24 98%/97%/97% (k-means/Dirichlet/random); P=24 n.s. on k-means only.
+Blind beats PSI+cells by ~+0.07 on every split. MIRAGE: blind 0.613 vs
+closed-book 0.547, p=0.035; hybrid does NOT help MIRAGE (0.573); the
+broadcast rerun (0.540) is not comparable (machine contention). Result
+files archived in docs/results/. Always quote the split with a retrieval
+ratio; never "94–98%" alone.
+
 Docs/52: standalone client (backend/client/: Device, CoverTrafficScheduler,
 MCPTransport/LocalTransport, `python -m client`). The query path runs on the
 user's machine with no server; `privacy/blind_unlock.blind_round` is the one

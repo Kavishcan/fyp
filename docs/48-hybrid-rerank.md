@@ -45,6 +45,10 @@ Reading:
 - PSI + cells gains less (+0.055): its pool is fixed by the cell, not chosen
   across hospitals, so there is less for the ranker to reorder.
 
+**Task dependence (docs/50).** On MIRAGE exam-style questions the hybrid
+rank did not help (blind 0.613 dense vs 0.573 hybrid, p = 0.07): its gain is
+for case retrieval, where rare clinical terms carry relevance.
+
 ## Method
 
 `router/hybrid_rerank.py`: score = z(cosine) + w·z(BM25), z within the

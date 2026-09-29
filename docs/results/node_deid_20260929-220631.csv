@@ -1,0 +1,12 @@
+part,condition,removed_fictional_email,removed_fictional_identifier,removed_fictional_name,cases,template,records,leaked_name,leaked_mrn,leaked_dob,leaked_phone,leaked_email,corpus,docs,docs_altered,placeholders,dense_recall@10_raw,dense_recall@10_deidentified
+A,embed_only_regex (before),1.0,0.0,0.0,200,,,,,,,,,,,,,
+A,rules,1.0,1.0,1.0,200,,,,,,,,,,,,,
+A,rules + registry,1.0,1.0,1.0,200,,,,,,,,,,,,,
+B,none (before),,,,,cued,109,1.0,1.0,1.0,1.0,1.0,,,,,,
+B,rules,,,,,cued,109,0.0,0.0,0.0,0.0,0.0,,,,,,
+B,rules + registry,,,,,cued,109,0.0,0.0,0.0,0.0,0.0,,,,,,
+B,none (before),,,,,bare,111,1.0,1.0,1.0,1.0,1.0,,,,,,
+B,rules,,,,,bare,111,1.0,0.0,0.0,0.0,0.0,,,,,,
+B,rules + registry,,,,,bare,111,0.0,0.0,0.0,0.0,0.0,,,,,,
+C,rules,,,,,,,,,,,,nfcorpus,2368,0.022381756756756757,"{""URL"": 14, ""DATE"": 54, ""AGE"": 2, ""NAME"": 2}",0.8,0.8
+C,rules,,,,,,,,,,,,scifact,2000,0.033,"{""EMAIL"": 4, ""URL"": 39, ""DATE"": 46, ""AGE"": 1, ""PHONE"": 2, ""NAME"": 2}",0.85,0.85
