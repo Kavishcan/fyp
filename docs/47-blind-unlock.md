@@ -101,10 +101,18 @@ rotated its keys — for that node, whatever the question. API:
 
 ## Relation to prior work
 
-Every ingredient is known; the combination and the setting are not, as far
+Every ingredient is known — the offline/online OPRF core is unbalanced labeled PSI with precomputation; what is added is the multi-owner setting: identical real-or-dummy probes to every owner, cross-owner semantic cluster selection and per-role keys. That combination and setting are not, as far
 as a web search in September 2026 found:
 
-- Labeled PSI over an OPRF — Chen, Laine, Rindal.
+- **Unbalanced PSI with precomputation** — Kiss, Liu, Schneider, Asokan,
+  Pinkas, PoPETs 2017: the server's large set is encoded and downloaded once
+  in a setup phase; each online query costs only the client's small set
+  (OPRF). This is the core of "download once, unlock with an OPRF"; blind
+  unlock is its labeled, multi-owner form, not a new protocol.
+- Labeled PSI over an OPRF — Chen, Laine, Rindal (CCS 2018): data attached to
+  set items, released only for queried items.
+- Google Password Checkup (2019): OPRF lookup against a downloaded bucket of
+  blinded entries, with bucket-level k-anonymity.
 - Offline download, online query — standard in PIR with hints (SimplePIR,
   online–offline PIR, Tiptoe).
 - Fake queries made indistinguishable by encryption — Wally (Apple, 2024),

@@ -47,9 +47,12 @@ at P=4/8/16/24 (HyFedRAG-style 0.444), 74–393 records disclosed, device
 22–132 ms, slowest hospital 5–29 ms, a few KB per question. One-time
 download 86 MB with the first padded layout, now 15.0 MB: tables are
 zlib-compressed, cut into 16 KB chunks with per-chunk tags, int8 embeddings
-(MRR unchanged, docs/47 addendum). Budgets count dummies. Known pieces (labeled PSI,
-PIR-style offline download, Wally-style fake queries); the multi-owner
-routing setting is the contribution — do not call it new cryptography.
+(MRR unchanged, docs/47 addendum). Budgets count dummies. Known pieces: the offline/online
+OPRF core IS unbalanced labeled PSI with precomputation (Kiss et al. PoPETs
+2017; Chen-Laine-Rindal 2018), plus Wally-style fake queries; the additions
+are the multi-owner setting (identical cover probes to every owner,
+cross-owner cluster selection, per-role keys). Never call blind unlock a new
+protocol or new cryptography.
 Semi-honest nodes; timing not measured; records of the P unlocked clusters
 still reach the device (de-identified). The docs/43 budget now
 persists (docs/49).
