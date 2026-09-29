@@ -781,13 +781,18 @@ class AppState:
         pool: list[dict] = []
         request_bytes, response_bytes, contact_ms, per_node = {}, {}, {}, {}
         per_node_passages: dict[str, list[str]] = {}
+        # Phase 1: contact EVERY node before unlocking anything (docs/51).
+        # Unlocking a node's reply before contacting the next made the gap
+        # between consecutive requests longer after a node with real probes —
+        # a timing channel a network observer could read. Nothing that
+        # depends on which points were real happens until all replies are in.
+        replies: dict[str, tuple[list, str | None]] = {}
         for node_id in order:
             node = self.nodes.get(node_id)
             started = time.perf_counter()
             points = plan.points[node_id]
             auth = self.credential.sign(node_id, points) if self.credential is not None else None
             request_bytes[node_id] = len(json.dumps({"blinded": [b.hex() for b in points], "auth": auth}).encode("utf-8"))
-            opened: dict[int, list[dict]] = {}
             try:
                 if isinstance(node, MCPNodeHandle):
                     evaluated, epoch = node.psi_evaluate_epoch(points, auth)
@@ -801,17 +806,30 @@ class AppState:
                     evaluated = node.psi.evaluate_for(points, permitted_collections(
                         node.access_policy, roles, node.psi.collections, authorised=node.authorizer is not None))
                     epoch = node.psi.epoch
+                replies[node_id] = (evaluated, epoch)
                 response_bytes[node_id] = len(json.dumps(
                     [{c: e.hex() for c, e in per.items()} for per in evaluated]).encode("utf-8"))
-                if not self.blind_cache.is_current(node_id, epoch):
-                    self._blind_download(node, node_id)   # the node rotated its keys
-                opened = unlock(plan, node_id, evaluated, self.blind_cache)
             except Exception as exc:
                 errors[node_id] = type(exc).__name__
             contact_ms[node_id] = (time.perf_counter() - started) * 1000.0
+        # Table refreshes are decided by epochs alone, for every node alike.
+        for node_id, (_, epoch) in replies.items():
+            if not self.blind_cache.is_current(node_id, epoch):
+                try:
+                    self._blind_download(self.nodes.get(node_id), node_id)   # the node rotated its keys
+                except Exception as exc:
+                    errors[node_id] = type(exc).__name__
+        # Phase 2: local only.
+        for node_id in order:
+            opened: dict[int, list[dict]] = {}
+            if node_id in replies and node_id not in errors:
+                try:
+                    opened = unlock(plan, node_id, replies[node_id][0], self.blind_cache)
+                except Exception as exc:
+                    errors[node_id] = type(exc).__name__
             passages = [dict(p, node_id=node_id) for cid in sorted(opened) for p in opened[cid]]
             pool.extend(passages)
-            per_node[node_id] = {"probes_sent": len(points), "real_probes": len(plan.real[node_id]),
+            per_node[node_id] = {"probes_sent": len(plan.points[node_id]), "real_probes": len(plan.real[node_id]),
                                  "envelopes_opened": len(opened), "passages_disclosed": len(passages),
                                  "collections_readable": sorted({c for c in clusters[order.index(node_id)].collections})}
         q = np.asarray(query_embedding, dtype=np.float64)

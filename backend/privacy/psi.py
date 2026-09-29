@@ -79,11 +79,20 @@ def scalar_invert(scalar: bytes) -> bytes:
     return sodium.crypto_core_ed25519_scalar_invert(scalar)
 
 
-def label_key(oprf_output: bytes, node_id: str, collection: str = "public") -> bytes:
-    """Envelope key. "public" keeps the original derivation byte-for-byte;
-    any other collection is bound into the key as well (docs/45), so an
-    envelope of one collection can never open with another's OPRF output."""
+def _item_suffix(cluster_id: int | None) -> bytes:
+    """2HashDH binds the OPRF input into the outer hash: F_k(x) = H2(x, k·H1(x))
+    (Jarecki, Kiayias, Krawczyk). Keys and tags include the cluster id so
+    the construction is the one the standard security proof covers (docs/51)."""
+    return b"" if cluster_id is None else b"\0item:" + encode_cluster_id(cluster_id)
+
+
+def label_key(oprf_output: bytes, node_id: str, collection: str = "public", cluster_id: int | None = None) -> bytes:
+    """Envelope key. Any collection other than "public" is bound into the key
+    (docs/45), so an envelope of one collection can never open with
+    another's OPRF output; the cluster id is bound in as the 2HashDH outer
+    input (docs/51)."""
     material = oprf_output if collection == "public" else oprf_output + b"\0collection:" + collection.encode("utf-8")
+    material += _item_suffix(cluster_id)
     return hashlib.blake2b(material, key=_DOMAIN_KEY, salt=node_id.encode("utf-8")[:16].ljust(16, b"\0"),
                            digest_size=KEY_BYTES).digest()
 
@@ -92,13 +101,13 @@ def encode_cluster_id(cluster_id: int) -> bytes:
     return f"cluster:{int(cluster_id)}".encode("utf-8")
 
 
-def label_tag(oprf_output: bytes, node_id: str, collection: str = "public") -> bytes:
+def label_tag(oprf_output: bytes, node_id: str, collection: str = "public", cluster_id: int | None = None) -> bytes:
     """Blind unlock (docs/47): the envelope's lookup label, derived from the
     same OPRF output as its key under a separate domain. Only a holder of
     k·H(id) can compute it, so a published table of tags reveals no id; the
     client that has it finds its envelope by lookup instead of trying every
     envelope against every key."""
-    material = oprf_output + b"\0collection:" + collection.encode("utf-8")
+    material = oprf_output + b"\0collection:" + collection.encode("utf-8") + _item_suffix(cluster_id)
     return hashlib.blake2b(material, key=_DOMAIN_TAG, salt=node_id.encode("utf-8")[:16].ljust(16, b"\0"),
                            digest_size=TAG_BYTES).digest()
 
@@ -208,7 +217,7 @@ class PSIClient:
         decrypt; everything else is opaque. Returns cluster id -> passages.
         Envelope keys are opaque tokens (see Node.envelopes_for), so the
         client learns the cluster id of a match only from its own query."""
-        keys = {cid: label_key(out, node_id) for cid, out in zip(query.cluster_ids, oprf_outputs)}
+        keys = {cid: label_key(out, node_id, cluster_id=cid) for cid, out in zip(query.cluster_ids, oprf_outputs)}
         found: dict[int, list[dict]] = {}
         for token, envelope in envelopes.items():
             for cid, key in keys.items():
@@ -234,7 +243,7 @@ class PSIClient:
         for cid, r, per_collection in zip(query.cluster_ids, query.secrets, evaluated):
             inverse = scalar_invert(r)
             for collection, point in per_collection.items():
-                keys.append((cid, label_key(scalar_mult(inverse, point), node_id, collection)))
+                keys.append((cid, label_key(scalar_mult(inverse, point), node_id, collection, cluster_id=cid)))
         found: dict[int, list[dict]] = {}
         for envelope in envelopes.values():
             for cid, key in keys:
@@ -274,7 +283,8 @@ class PSINode:
 
     def _label_key(self, cluster_id: int, collection: str = "public") -> bytes:
         k = self.keys[collection]
-        return label_key(scalar_mult(k, hash_to_point(encode_cluster_id(cluster_id))), self.node_id, collection)
+        return label_key(scalar_mult(k, hash_to_point(encode_cluster_id(cluster_id))), self.node_id, collection,
+                         cluster_id=cluster_id)
 
     def build_table(self, clusters: dict[int, list[dict]], collection_of: dict[int, str] | None = None) -> None:
         """`clusters`: cluster id -> passages (each a JSON-serialisable dict).
@@ -352,8 +362,8 @@ class PSINode:
             collection = self.collection_of.get(cid, "public")
             out = scalar_mult(self.keys[collection], hash_to_point(encode_cluster_id(cid)))
             padded = payload + b"\0" * (width - len(payload))
-            entries[label_tag(out, self.node_id, collection)] = (
-                collection, seal_deterministic(label_key(out, self.node_id, collection), padded))
+            entries[label_tag(out, self.node_id, collection, cluster_id=cid)] = (
+                collection, seal_deterministic(label_key(out, self.node_id, collection, cluster_id=cid), padded))
         return {"epoch": self.epoch, "entries": entries}
 
     def blind_table(self, collections: list[str] | None = None) -> dict:

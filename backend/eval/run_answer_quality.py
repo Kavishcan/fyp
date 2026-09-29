@@ -19,6 +19,11 @@ device), comparing
                 keeping `--evidence-top-k` passages.
 - psi_rerank    psi routing as above plus the cross-node rerank only, to
                 separate the rerank's effect from the cells'.
+- blind         blind unlock (docs/47): every node's table cached, the best
+                `--blind-probes` clusters across ALL nodes unlocked with the
+                same number of real-or-dummy points at every node, dense
+                rank, `--evidence-top-k` passages kept.
+- blind_hybrid  the same with the hybrid device rank (docs/48).
 
 Nodes: medical BEIR corpora (nfcorpus, scifact, trec-covid) plus
 non-medical distractors (fiqa, arguana, scidocs) so routing has something to
@@ -117,7 +122,8 @@ def main() -> None:
     parser.add_argument("--nprobe", type=int, default=2)
     parser.add_argument("--top-per-node", type=int, default=2)
     parser.add_argument("--conditions", nargs="+", default=["closed_book", "psi", "broadcast"],
-                        choices=["closed_book", "psi", "broadcast", "psi_cells", "psi_rerank"])
+                        choices=["closed_book", "psi", "broadcast", "psi_cells", "psi_rerank", "blind", "blind_hybrid"])
+    parser.add_argument("--blind-probes", type=int, default=8)
     parser.add_argument("--evidence-top-k", type=int, default=2, help="psi_cells / psi_rerank: passages kept after the cross-node rerank")
     parser.add_argument("--cell-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=11)
@@ -157,6 +163,17 @@ def main() -> None:
                             max_sources=max(args.max_nodes, max(len(c) for c in cells)), genuine_k=1,
                             coarse_k=args.coarse_k, aggregation="max", decoy_policy="cells")
 
+    # Blind unlock (docs/47): tables downloaded once, before any question.
+    from privacy.blind_unlock import NodeClusters, TableCache, plan_probes, unlock
+    from router.hybrid_rerank import hybrid_rerank
+
+    blind_cache = TableCache()
+    for e, node in nodes.items():
+        blind_cache.put(e, node.psi.blind_table())
+    blind_clusters = [NodeClusters(e, list(range(len(profiles[e].cluster_centroids))),
+                                   np.asarray(profiles[e].cluster_centroids),
+                                   ["public"] * len(profiles[e].cluster_centroids)) for e in engines]
+
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = time.strftime("%Y%m%d-%H%M%S")
     per_q: list[dict] = []
@@ -165,6 +182,17 @@ def main() -> None:
         for item, vec in zip(questions, q_vecs):
             if cond == "closed_book":
                 passages, contacted = [], []
+            elif cond in {"blind", "blind_hybrid"}:
+                plan = plan_probes(vec, blind_clusters, args.blind_probes)
+                contacted = list(engines)                       # every node, identical traffic
+                pool = []
+                for e in contacted:
+                    opened = unlock(plan, e, nodes[e].psi.evaluate_for(plan.points[e], ["public"]), blind_cache)
+                    pool += [p for cid in opened for p in opened[cid]]
+                if cond == "blind_hybrid":
+                    passages = [d for d, _ in hybrid_rerank(item["question"], vec, pool, top_n=args.evidence_top_k)]
+                else:
+                    passages = [d for d, _ in rerank_passages(vec, pool, top_n=args.evidence_top_k)]
             elif cond == "broadcast":
                 contacted = list(nodes)
                 passages = [d for e in contacted for d in psi_passages(vec, nodes[e], args.top_per_node, args.nprobe)]

@@ -151,11 +151,11 @@ def unlock(plan: ProbePlan, node_id: str, evaluated: list[dict[str, bytes]], cac
         inverse = scalar_invert(r)
         for collection, point in evaluated[pos].items():
             out = scalar_mult(inverse, point)
-            envelope = table.entries.get(label_tag(out, node_id, collection))
+            envelope = table.entries.get(label_tag(out, node_id, collection, cluster_id=cid))
             if envelope is None:
                 continue
             try:
-                found[cid] = decode_passages(open_envelope(label_key(out, node_id, collection), envelope))
+                found[cid] = decode_passages(open_envelope(label_key(out, node_id, collection, cluster_id=cid), envelope))
             except CryptoError:   # tampered entry: treated as absent
                 continue
             break

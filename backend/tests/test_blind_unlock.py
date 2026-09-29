@@ -214,3 +214,18 @@ def test_blind_mode_over_real_mcp(mcp_nodes, tmp_path, monkeypatch):
     table = MCPNodeHandle("m0", mcp_nodes[0]).psi_table(None)
     again = MCPNodeHandle("m0", mcp_nodes[0]).psi_table(None)
     assert table["version"] == again["version"]                  # a fresh node process serves identical bytes
+
+
+def test_every_node_is_contacted_before_anything_is_unlocked(tmp_path, monkeypatch):
+    """docs/51: unlocking between contacts made inter-request gaps depend on
+    which nodes held real probes — a timing channel. All sends come first."""
+    import api.state as state_module
+    from privacy.psi import PSINode
+
+    state = _state(tmp_path, n_nodes=4)
+    events = []
+    original_eval, original_unlock = PSINode.evaluate_for, state_module.unlock
+    monkeypatch.setattr(PSINode, "evaluate_for", lambda self, *a, **k: events.append("send") or original_eval(self, *a, **k))
+    monkeypatch.setattr(state_module, "unlock", lambda *a, **k: events.append("unlock") or original_unlock(*a, **k))
+    state.run_query("topic1 subject 1", max_nodes=2, genuine_k=1, sigma=0.0, routing_mode="blind", blind_probes=3)
+    assert events == ["send"] * 4 + ["unlock"] * 4

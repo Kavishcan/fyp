@@ -85,16 +85,30 @@ class HistoryAttacker:
     def topics(self) -> list[str]:
         return sorted(self._topic_count)
 
-    def rank(self, contacted: list[str]) -> list[str]:
-        total = sum(self._topic_count.values())
+    def log_likelihoods(self, contacted: list[str]) -> dict[str, float]:
+        """log P(contacted set | topic) per topic, without the prior."""
         contacted_set = set(contacted)
-        scores = {}
+        out = {}
         for topic, n in self._topic_count.items():
-            log_p = math.log(n / total)
+            log_p = 0.0
             for s in self._sources:
                 p = (self._source_given_topic[topic][s] + self.alpha) / (n + 2 * self.alpha)
                 log_p += math.log(p if s in contacted_set else 1.0 - p)
-            scores[topic] = log_p
+            out[topic] = log_p
+        return out
+
+    def rank(self, contacted: list[str]) -> list[str]:
+        return self.rank_session([contacted])
+
+    def rank_session(self, session: list[list[str]]) -> list[str]:
+        """Session attack (docs/50): an observer who links several questions
+        to one user (same credential, same device, close in time) combines
+        them — prior once, one likelihood per question (naive Bayes)."""
+        total = sum(self._topic_count.values())
+        scores = {t: math.log(n / total) for t, n in self._topic_count.items()}
+        for contacted in session:
+            for t, ll in self.log_likelihoods(contacted).items():
+                scores[t] += ll
         return sorted(scores, key=scores.get, reverse=True)
 
 
