@@ -165,3 +165,72 @@ def unlock(plan: ProbePlan, node_id: str, evaluated: list[dict[str, bytes]], cac
                 continue
             break
     return found
+
+
+def cover_plan(node_ids: list[str], probes: int) -> ProbePlan:
+    """A cover round (docs/52): exactly `probes` dummy points to every node
+    and nothing real. On the wire it is the same as a real round — same
+    nodes, same order, same counts, uniformly distributed points — so a
+    device that sends one round per fixed tick, real if a question is
+    waiting and cover otherwise, hides when it actually asks."""
+    if probes < 1:
+        raise ValueError("probes must be positive")
+    return ProbePlan(points={n: [dummy_point() for _ in range(probes)] for n in sorted(node_ids)},
+                     real={n: [] for n in sorted(node_ids)}, chosen=[])
+
+
+@dataclass
+class RoundResult:
+    opened: dict[str, dict[int, list[dict]]]
+    errors: dict[str, str]
+    request_bytes: dict[str, int]
+    response_bytes: dict[str, int]
+    contact_ms: dict[str, float]
+    downloads: int
+
+
+def blind_round(plan: ProbePlan, transports: dict, cache: TableCache, credential=None) -> RoundResult:
+    """One blind-unlock round, shared by the standalone client (client/) and
+    the API coordinator. Phase 1 contacts EVERY node in sorted order before
+    anything is unlocked — unlocking between contacts made inter-request gaps
+    depend on where the real probes were (docs/51). Table refreshes are
+    decided by each node's key epoch, never by the question. Phase 2 is
+    local: unblind the real replies, look up and open their chunks."""
+    import json
+    import time
+
+    order = sorted(plan.points)
+    errors: dict[str, str] = {}
+    request_bytes, response_bytes, contact_ms = {}, {}, {}
+    replies: dict[str, tuple[list, str | None]] = {}
+    downloads_before = cache.downloads
+    for node_id in order:
+        points = plan.points[node_id]
+        auth = credential.sign(node_id, points) if credential is not None else None
+        request_bytes[node_id] = len(json.dumps({"blinded": [p.hex() for p in points], "auth": auth}).encode("utf-8"))
+        started = time.perf_counter()
+        try:
+            evaluated, epoch = transports[node_id].evaluate(points, auth)
+            replies[node_id] = (evaluated, epoch)
+            response_bytes[node_id] = len(json.dumps([{c: e.hex() for c, e in per.items()} for per in evaluated])
+                                          .encode("utf-8"))
+        except Exception as exc:
+            errors[node_id] = type(exc).__name__
+        contact_ms[node_id] = (time.perf_counter() - started) * 1000.0
+    for node_id, (_, epoch) in replies.items():
+        if not cache.is_current(node_id, epoch):
+            try:
+                auth = credential.sign(node_id, []) if credential is not None else None
+                cache.put(node_id, transports[node_id].table(auth))   # the node rotated its keys
+            except Exception as exc:
+                errors[node_id] = type(exc).__name__
+    opened: dict[str, dict[int, list[dict]]] = {}
+    for node_id in order:
+        opened[node_id] = {}
+        if node_id in replies and node_id not in errors and plan.real.get(node_id):
+            try:
+                opened[node_id] = unlock(plan, node_id, replies[node_id][0], cache)
+            except Exception as exc:
+                errors[node_id] = type(exc).__name__
+    return RoundResult(opened=opened, errors=errors, request_bytes=request_bytes, response_bytes=response_bytes,
+                       contact_ms=contact_ms, downloads=cache.downloads - downloads_before)

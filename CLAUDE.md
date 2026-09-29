@@ -11,6 +11,15 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/52: standalone client (backend/client/: Device, CoverTrafficScheduler,
+MCPTransport/LocalTransport, `python -m client`). The query path runs on the
+user's machine with no server; `privacy/blind_unlock.blind_round` is the one
+round implementation (the API coordinator calls it too). Cover rounds (P
+dummies to every node) are identical to real rounds on the wire; the
+scheduler sends one round per tick, planning happens at submit time, daily
+fetches on the tick. Per-question leakage to nodes/observers: credential id
+active at a fixed rate. Budget cost: ticks/day x P per node.
+
 Docs/49: security audit. Three no-credential holes, each confirmed on a
 real MCP node and now a regression test (tests/test_audit_fixes.py):
 Paillier scorer exposed on every node (3 requests stole all embeddings incl.
@@ -325,6 +334,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_healthcare.py | Same-domain 8-client healthcare federation, hard case for routing leakage (docs/40) |
 | backend/eval/run_hyfedrag_compare.py | HyFedRAG-style design vs ours on PMC-Patients (docs/46, blind rows docs/47; `--only` runs a subset) |
 | backend/router/hybrid_rerank.py | Device-side dense + pool-BM25 rerank (docs/48); no model, no network |
+| backend/client/ | Standalone device: Device (blind unlock, no server), CoverTrafficScheduler, node transports, CLI (docs/52) |
 | backend/privacy/blind_unlock.py | Blind unlock: global probe planning, dummy padding, table cache, tag-lookup unlock (docs/47) |
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |

@@ -27,7 +27,7 @@ keeps the planted passage out of the prompt (cited 1.000 → 0.067, docs/40).
 
 | Party | Sees | Trusted? |
 |---|---|---|
-| **Coordinator** (the API process) | raw query, embeddings, all returned passages, routing trace | **Trusted** — it plays the user's device in this prototype. Moving its device-side code to the client and reducing it to a relay is the docs/03 target, not the implementation. |
+| **Coordinator** (the API process) | raw query, embeddings, all returned passages, routing trace | **Trusted** — it plays the user's device in the studio. The deployment path is the standalone `client.Device` (docs/52): the same protocol code on the user's machine, no server in the path. |
 | **Contacted source** (MCP node) | legacy/smart: query text; v2: an invertible vector; psi: blinded group elements + a fetch set; **blind: exactly P uniform group elements per question, real or dummy, from every client alike** | Honest-but-curious about the query; may lie about content (A3) |
 | **Pattern observer** (network, relay, colluding sources) | which sources were contacted, sizes, timing | Untrusted |
 | **Malicious client** | everything a credentialed client sees | Gated: the node evaluates the OPRF only for an allow-listed credential within its daily evaluation budget (docs/43), persisted on disk since docs/49 (before, a spawn-per-call node reset it on every call); a gated node refuses unauthenticated text/vector retrieval and the experimental scorer (docs/49) |
@@ -100,6 +100,7 @@ The API default remains legacy; the studio defaults to blind unlock (P = 8) with
 | Both leaks at once | `privacy/blind_unlock`, `eval/run_hyfedrag_compare` | PMC-Patients, 986 q, 8 hospitals | MRR, question to hospitals, topic acc, records, ms, bytes | question to 0, topic at floor, MRR 0.421 (P=8) vs HyFedRAG-style 0.444, ~5 KB/q + 83 MB once — docs/47 |
 | Device ranking | `router/hybrid_rerank`, same harness | same | MRR at matched ranking | blind P=8 0.509 / P=24 0.535 vs HyFedRAG-style 0.543 (all hybrid) — docs/48 |
 | Implementation security | `tests/test_audit_fixes` | real MCP nodes | attack replays | 3 no-credential holes closed — docs/49 |
+| No server, hidden timing | `client/`, `tests/test_client` | real MCP nodes | what each node receives per round | identical points and bytes for real and cover rounds; one round per tick — docs/52 |
 
 ## Baselines
 

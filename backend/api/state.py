@@ -32,7 +32,7 @@ from router.registry import SourceRegistry
 from router.smart import EvidenceTrust, SmartConfig, SmartRouter, SourceEvidence
 from router.trust import BoundedTrustUpdate
 from router.anonymity import build_cells
-from privacy.blind_unlock import NodeClusters, TableCache, plan_probes, unlock
+from privacy.blind_unlock import NodeClusters, TableCache, blind_round, plan_probes, unlock
 from router.hybrid_rerank import DEFAULT_WEIGHT, hybrid_scores
 from router.v2 import DecoyAwareEvidenceTrust, V2Config, dispatch_payload, dispatched_vector, select_dispatch
 
@@ -41,29 +41,7 @@ from nodes.embedding import routing_embedder_name, shared_routing_embedder
 from .topic import assign_topic_key
 
 
-def _profile_from_dict(data: dict) -> SourceProfile:
-    return SourceProfile(
-        source_id=data["source_id"],
-        centroids=np.asarray(data["centroids"], dtype=np.float64),
-        trust_mean=data.get("trust_mean", 0.5),
-        trust_observations=data.get("trust_observations", 0),
-        document_count_bucket=data.get("document_count_bucket", "unknown"),
-        policy_labels=data.get("policy_labels", []),
-        expected_latency_ms=data.get("expected_latency_ms", 0.0),
-        profile_version=data.get("profile_version", 1),
-        profile_signature=bytes.fromhex(data.get("profile_signature", "")),
-        public_key=bytes.fromhex(data.get("public_key", "")),
-        description=data.get("description", ""),
-        topics=data.get("topics", []),
-        description_embedding=(np.asarray(data["description_embedding"], dtype=np.float64)
-                               if data.get("description_embedding") is not None else None),
-        metadata_method=data.get("metadata_method", ""),
-        metadata_embedding_model=data.get("metadata_embedding_model", ""),
-        cluster_centroids=(np.asarray(data["cluster_centroids"], dtype=np.float64)
-                           if data.get("cluster_centroids") is not None else None),
-        cluster_collections=data.get("cluster_collections"),
-        access_policy=data.get("access_policy"),
-    )
+from client.transport import LocalTransport, MCPTransport, profile_from_dict as _profile_from_dict  # noqa: E402
 
 
 class AppState:
@@ -731,25 +709,15 @@ class AppState:
                             np.asarray([centroids[i] for i in keep]) if keep else np.empty((0, 0)),
                             [collections[i] for i in keep])
 
+    def _transport(self, node_id: str):
+        node = self.nodes.get(node_id)
+        return MCPTransport(node) if isinstance(node, MCPNodeHandle) else LocalTransport(node, self.registry.get(node_id))
+
     def _blind_download(self, node, node_id: str) -> None:
         """Offline step: fetch one node's whole blind table (same bytes for
         every client of this role — reveals nothing about any question)."""
         auth = self.credential.sign(node_id, []) if self.credential is not None else None
-        if isinstance(node, MCPNodeHandle):
-            table = node.psi_table(auth)
-        else:
-            from privacy.credentials import Unauthorized, permitted_collections
-
-            roles: tuple[str, ...] = ()
-            if node.authorizer is not None and auth is not None:
-                try:
-                    roles = node.authorizer.roles_of(node.authorizer.check(auth, []))
-                except Unauthorized as exc:
-                    raise PermissionError(f"node {node_id!r} refused psi_table: {exc.reason}") from exc
-            table = node.psi.blind_table(permitted_collections(
-                node.access_policy, roles, node.psi.collections,
-                authorised=node.authorizer is not None and auth is not None))
-        self.blind_cache.put(node_id, table)
+        self.blind_cache.put(node_id, self._transport(node_id).table(auth))
 
     def _blind_retrieve(self, profiles, query_embedding, *, probes: int, top_n: int, question: str = "",
                         rank_weight: float = 0.0) -> dict:
@@ -778,55 +746,18 @@ class AppState:
                 clusters.append(NodeClusters(node_id, [], np.empty((0, 0)), []))
         plan = plan_probes(query_embedding, clusters, probes)
 
+        # One implementation of the round for the API and the standalone
+        # client (privacy/blind_unlock.blind_round, docs/51–52): contact every
+        # node before unlocking anything; refresh tables by epoch only.
+        transports = {n: self._transport(n) for n in order}
+        round_ = blind_round(plan, transports, self.blind_cache, self.credential)
+        errors.update(round_.errors)
+        request_bytes, response_bytes, contact_ms = round_.request_bytes, round_.response_bytes, round_.contact_ms
         pool: list[dict] = []
-        request_bytes, response_bytes, contact_ms, per_node = {}, {}, {}, {}
+        per_node: dict[str, dict] = {}
         per_node_passages: dict[str, list[str]] = {}
-        # Phase 1: contact EVERY node before unlocking anything (docs/51).
-        # Unlocking a node's reply before contacting the next made the gap
-        # between consecutive requests longer after a node with real probes —
-        # a timing channel a network observer could read. Nothing that
-        # depends on which points were real happens until all replies are in.
-        replies: dict[str, tuple[list, str | None]] = {}
         for node_id in order:
-            node = self.nodes.get(node_id)
-            started = time.perf_counter()
-            points = plan.points[node_id]
-            auth = self.credential.sign(node_id, points) if self.credential is not None else None
-            request_bytes[node_id] = len(json.dumps({"blinded": [b.hex() for b in points], "auth": auth}).encode("utf-8"))
-            try:
-                if isinstance(node, MCPNodeHandle):
-                    evaluated, epoch = node.psi_evaluate_epoch(points, auth)
-                else:
-                    roles: tuple[str, ...] = ()
-                    if node.authorizer is not None:
-                        try:
-                            roles = node.authorizer.roles_of(node.authorizer.check(auth, points))
-                        except Unauthorized as exc:
-                            raise PermissionError(f"node {node_id!r} refused psi_evaluate: {exc.reason}") from exc
-                    evaluated = node.psi.evaluate_for(points, permitted_collections(
-                        node.access_policy, roles, node.psi.collections, authorised=node.authorizer is not None))
-                    epoch = node.psi.epoch
-                replies[node_id] = (evaluated, epoch)
-                response_bytes[node_id] = len(json.dumps(
-                    [{c: e.hex() for c, e in per.items()} for per in evaluated]).encode("utf-8"))
-            except Exception as exc:
-                errors[node_id] = type(exc).__name__
-            contact_ms[node_id] = (time.perf_counter() - started) * 1000.0
-        # Table refreshes are decided by epochs alone, for every node alike.
-        for node_id, (_, epoch) in replies.items():
-            if not self.blind_cache.is_current(node_id, epoch):
-                try:
-                    self._blind_download(self.nodes.get(node_id), node_id)   # the node rotated its keys
-                except Exception as exc:
-                    errors[node_id] = type(exc).__name__
-        # Phase 2: local only.
-        for node_id in order:
-            opened: dict[int, list[dict]] = {}
-            if node_id in replies and node_id not in errors:
-                try:
-                    opened = unlock(plan, node_id, replies[node_id][0], self.blind_cache)
-                except Exception as exc:
-                    errors[node_id] = type(exc).__name__
+            opened = round_.opened.get(node_id, {})
             passages = [dict(p, node_id=node_id) for cid in sorted(opened) for p in opened[cid]]
             pool.extend(passages)
             per_node[node_id] = {"probes_sent": len(plan.points[node_id]), "real_probes": len(plan.real[node_id]),

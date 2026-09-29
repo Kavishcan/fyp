@@ -37,9 +37,9 @@ then unblinds real replies, looks up t, opens with K.
 
 | Party | Leakage per question L(q) |
 |---|---|
-| Any node i (and any coalition of nodes) | (credential id, P, the role's permitted-collection count, arrival time) |
+| Any node i (and any coalition of nodes) | (credential id, P, the role's permitted-collection count, arrival time); with the docs/52 cover schedule the arrival times are the fixed ticks, so only (credential id, P, collection count, tick rate) |
 | Network observer | (every node in Π, P points each, message sizes, send times) |
-| Device | everything (trusted — it is the user's) |
+| Device | everything (trusted — it is the user's; since docs/52 a standalone `client.Device`, no server in the path) |
 
 None of these is a function of q. Compare the measured policies:
 
