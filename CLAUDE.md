@@ -350,6 +350,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
+| knowledge/ | Obsidian vault: linked notes (concepts, mechanisms, attacks, results, claims ledger); generated summary of docs/, not a source of truth over docs/41 |
 
 Python 3.10+ is required. Keep tests independent of optional heavy model
 dependencies and downloaded corpora where possible. Existing MCP tests use

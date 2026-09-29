@@ -1,0 +1,72 @@
+{
+  "colorGroups": [
+    {
+      "query": "path:Concepts",
+      "color": {
+        "a": 1,
+        "rgb": 5020415
+      }
+    },
+    {
+      "query": "path:Mechanisms",
+      "color": {
+        "a": 1,
+        "rgb": 3584894
+      }
+    },
+    {
+      "query": "path:Attacks",
+      "color": {
+        "a": 1,
+        "rgb": 16733744
+      }
+    },
+    {
+      "query": "path:Experiments",
+      "color": {
+        "a": 1,
+        "rgb": 16755456
+      }
+    },
+    {
+      "query": "path:Results",
+      "color": {
+        "a": 1,
+        "rgb": 6640832
+      }
+    },
+    {
+      "query": "path:Code",
+      "color": {
+        "a": 1,
+        "rgb": 47321
+      }
+    },
+    {
+      "query": "path:Literature",
+      "color": {
+        "a": 1,
+        "rgb": 9016228
+      }
+    },
+    {
+      "query": "path:Future",
+      "color": {
+        "a": 1,
+        "rgb": 11778757
+      }
+    },
+    {
+      "query": "tag:#hub",
+      "color": {
+        "a": 1,
+        "rgb": 1518413
+      }
+    }
+  ],
+  "showTags": false,
+  "showAttachments": false,
+  "hideUnresolved": true,
+  "nodeSizeMultiplier": 1.2,
+  "lineSizeMultiplier": 1
+}
