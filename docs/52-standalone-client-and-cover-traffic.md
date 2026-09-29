@@ -31,6 +31,7 @@ client.Device (the user's machine)
 client.CoverTrafficScheduler(device, interval_s)
   submit(question)    → plan now (local), queue it
   tick()              → refresh daily fetches; send ONE round: queued plan or cover
+  run(N)              → pace N ticks with one monotonic clock, then finish local answers
 
 client.transport      → MCPTransport (real node process) | LocalTransport (in-process,
                         gated exactly like the MCP server)
@@ -56,6 +57,9 @@ time and on the scheduler's tick, never when a question is typed.
 - **Rate.** Timing is hidden only for questions asked no faster than the
   tick rate; a burst queues and is sent one per tick.
 - Hospital load is per tick, not per question.
+- The finite CLI example picks one random tick for its question, with cover
+  rounds before and after it. It demonstrates equal-size rounds and pacing;
+  a finite demo is not a substitute for an always-on scheduler.
 
 ## What this does not establish
 
@@ -64,6 +68,10 @@ time and on the scheduler's tick, never when a question is typed.
   of scope.
 - Network-level timing jitter was not measured; the schedule is enforced by
   the device's clock.
+- A manual sequence of `tick()` calls does not itself enforce pacing; use
+  `run()` or an always-on scheduler for the timing claim. `run()` completes
+  local generation after its scheduled rounds so generation cannot delay a
+  later network contact. A slow node or clock drift can still miss a tick.
 - The studio still uses the API coordinator as the device for the demo; the
   standalone client is the deployment path.
 

@@ -8,9 +8,9 @@ process (nodes/mcp_server.py) and receives only blinded points and the
 credential. ROUTING_EMBEDDER must match the nodes'. `--credential` is a JSON
 file {"client_id": ..., "key_hex": ..., "roles": [...]} issued by the
 federation. `--generate` answers with the local Ollama model
-(LLM_PROVIDER=ollama). With `--cover-ticks N`, the question is sent inside a
-constant-rate schedule of N rounds (the others cover rounds), one per
-`--interval` seconds, at a random tick.
+(LLM_PROVIDER=ollama). With `--cover-ticks N`, the question is sent on a
+random tick of a constant-rate schedule of N rounds (the others cover rounds),
+one per `--interval` seconds. This finite demo is not an always-on service.
 """
 from __future__ import annotations
 
@@ -54,12 +54,8 @@ def main() -> None:
 
     if args.cover_ticks:
         scheduler = CoverTrafficScheduler(device, interval_s=args.interval)
-        real_at = random.randrange(args.cover_ticks)
-        answered = []
-        for i in range(args.cover_ticks):
-            if i == real_at:
-                scheduler.submit(args.question)
-            answered += scheduler.run(1)
+        scheduler.submit(args.question)
+        answered = scheduler.run(args.cover_ticks, first_real_at=random.SystemRandom().randrange(args.cover_ticks))
         result = answered[0].result
         print(f"rounds sent: {scheduler.rounds} (identical on the wire)")
     else:

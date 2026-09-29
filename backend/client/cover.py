@@ -33,6 +33,7 @@ class CoverTrafficScheduler:
     device: object
     interval_s: float = 30.0
     _queue: deque = field(default_factory=deque)
+    _pending_finish: list = field(default_factory=list)
     rounds: list[str] = field(default_factory=list)     # "real" / "cover", device-side log only
 
     def submit(self, question: str) -> Ticket:
@@ -41,29 +42,37 @@ class CoverTrafficScheduler:
         self._queue.append((ticket, q, plan))
         return ticket
 
-    def tick(self) -> Ticket | None:
-        """Send exactly one round. Returns the ticket answered, if any."""
+    def tick(self, *, defer_finish: bool = False, allow_real: bool = True) -> Ticket | None:
+        """Send exactly one round. Defer local answer work during a timed run."""
         self.device.refresh()                         # daily fetches happen on the tick, not on a question
-        if self._queue:
+        if allow_real and self._queue:
             ticket, q, plan = self._queue.popleft()
             result = self.device.send(plan)
             self.rounds.append("real")
-            ticket.result = self.device.finish(ticket.question, q, plan, result)
+            if defer_finish:
+                self._pending_finish.append((ticket, q, plan, result))
+            else:
+                ticket.result = self.device.finish(ticket.question, q, plan, result)
             return ticket
         self.device.cover()
         self.rounds.append("cover")
         return None
 
-    def run(self, ticks: int) -> list[Ticket]:
-        """Drive `ticks` rounds at the fixed interval (for the CLI demo)."""
+    def run(self, ticks: int, *, first_real_at: int = 0) -> list[Ticket]:
+        """Drive `ticks` rounds; finish answers after the network schedule."""
+        if ticks < 1 or not 0 <= first_real_at < ticks:
+            raise ValueError("first_real_at must identify a tick in the run")
         answered = []
         next_at = time.monotonic()
-        for _ in range(ticks):
+        for i in range(ticks):
             delay = next_at - time.monotonic()
             if delay > 0:
                 time.sleep(delay)
-            ticket = self.tick()
+            ticket = self.tick(defer_finish=True, allow_real=i >= first_real_at)
             if ticket is not None:
                 answered.append(ticket)
             next_at += self.interval_s
+        for ticket, q, plan, result in self._pending_finish:
+            ticket.result = self.device.finish(ticket.question, q, plan, result)
+        self._pending_finish.clear()
         return answered

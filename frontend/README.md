@@ -14,17 +14,14 @@ when using another backend address. See the root README for backend startup.
 
 ## Current routing mode
 
-The chat panel omits routing_mode, so the backend uses legacy mode. Its diagram,
-fixed genuine/decoy controls and node trust display are legacy-oriented.
+The chat panel selects blind unlock with eight probes and hybrid reranking by
+default. It also lets you switch to legacy, smart, v2 or PSI for comparison.
+The backend API itself still defaults to legacy when routing_mode is omitted.
 
-lib/api.ts includes smart request/response types, but the studio does not yet
-offer a smart-mode selector or explain SmartDecision traces. Use the
-[smart API guide](../docs/13-smart-router-implementation.md) to run that algorithm
-now. Do not present the current visual diagram as the new algorithm.
-
-A future UI change should distinguish mode, budget, maximum contacts, adaptive
-selected count and stop reason, and should not label the consistency score as
-verified source honesty.
+The studio sends the question to the API coordinator, which plays the device
+for the demo. It does not provide the standalone client's query boundary or
+fixed-rate cover traffic; use `python -m client` from the backend for those.
+The architecture view and audit trace are explanatory, not security proofs.
 
 ## Scope
 

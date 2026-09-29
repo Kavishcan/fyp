@@ -3,47 +3,43 @@
 **Privacy-aware source routing for Federated Retrieval-Augmented Generation:
 mitigating query and access-pattern leakage.**
 
-A federated RAG system routes each question to a few of many independently
-owned knowledge sources. That routing leaks twice: the contacted sources see
-the question, and anyone watching *which* sources were contacted can infer
-what it was about. This repository measures both leaks on a standard
-federated-search benchmark, shows that the cheap fixes do not close them,
-and implements and measures two that do:
+A federated RAG system can reveal a question to contacted sources and its
+topic through the contact pattern. The recommended **blind unlock** mode
+(`backend/privacy/blind_unlock.py`) keeps question text and embeddings on
+the trusted device and sends the same number of blinded points to every
+node. Its fixed contact set puts topic inference at the majority-class floor
+on three simulated PMC-Patients splits (docs/50). Earlier PSI + anonymity
+cells reduces leakage but does not consistently close the pattern channel.
 
-- **Query content** never reaches a source: dispatch is an OPRF / labeled
-  private-set-intersection exchange over cluster ids (`backend/privacy/psi.py`).
-  On 200 synthetic privacy cases, 0 of 3 sensitive values are exposed to
-  contacted nodes, against 3 of 3 for text or vector dispatch.
-- **Query topic** is hidden from a pattern observer by fixed anonymity cells
-  (`backend/router/anonymity.py`): topic inference falls from 0.454 to 0.201
-  and source inference from 0.744 to 0.231 at the same fan-out.
+Node-side de-identification (`backend/privacy/deidentify.py`) reduces
+disclosure of patient identifiers in retrieved passages. It is **not** a
+validated clinical de-identifier: unregistered, uncued names and
+quasi-identifiers can remain (docs/44).
 
 Everything is measured, including what did not work: Gaussian perturbation,
 semantic hashing, topic-stable decoys against the topic attack, hard trust
 gates. The authoritative description of the system, threat model and claims
 is [docs/41 — current system specification](docs/41-current-system-specification.md).
 
-This is a final-year research prototype. Claims are routing-stage privacy
-against contacted sources and a pattern observer under a trusted
-coordinator; not end-to-end privacy, not differential privacy, not a proof.
+This is a final-year research prototype, not a deployment for real patient
+data. In the studio the API coordinator sees the question; the standalone
+`client.Device` keeps it on the user's machine (docs/52). Nodes still see
+the credential and activity, unless fixed-rate cover traffic is used for
+the latter. No differential privacy or end-to-end patient privacy is claimed.
 
-## Pipeline (`routing_mode="psi"`, `decoy_policy="cells"`)
+## Recommended pipeline (`routing_mode="blind"`)
 
 ```text
 question
-  → shared routing embedder                      (device side)
-  → local ranking over signed source profiles
-  → dispatch set: the fixed cell of the top source, one exposure budget
-  → per node: nearest public cluster centroids → blinded ids
-       → node OPRF-evaluates and serves encrypted envelopes   (real MCP process)
-       → only matched envelopes open on the device
-  → rerank inside and across nodes, evidence trust update
-  → local generation (Ollama, localhost only) → answer + citations
-  → per-stage latency and per-contact bytes logged
+  → local embedding and ranking of signed cluster profiles
+  → top-P clusters chosen on the device; P real-or-dummy blinded points to EVERY node
+  → nodes OPRF-evaluate; device opens matching cached envelopes
+  → device-side dense or hybrid ranking and top-k evidence
+  → local generation (when configured) → answer + citations
 ```
 
-Legacy (cosine + rerank + decoys) remains the API/dashboard default; `smart`,
-`v2` and `psi` are opt-in per request.
+The API default remains legacy for experimental controls; the studio selects
+blind mode explicitly. The standalone client is the private deployment path.
 
 ## Results index
 
@@ -59,10 +55,12 @@ Legacy (cosine + rerank + decoys) remains the API/dashboard default; `smart`,
 | Cheap defences fail | [32](docs/32-v2-attack-results.md) | inversion 1.000; noise kills utility first; trust gate deadlocks |
 | v2 vs legacy | [30](docs/30-privacy-pipeline-v2.md), [31](docs/31-mode-comparison-results.md) | v2 ties legacy; exemption leaks decoys |
 | Encrypted scoring PoC | [34](docs/34-encrypted-query-scoring.md) | Paillier, correct, ~18 s/query — experimental |
-| Comparison with HyFedRAG's design | [46](docs/46-hyfedrag-comparison.md) | on PMC-Patients: equal retrieval by broadcasting the question to every hospital, vs ours: question to none, topic near floor, MRR −0.094 |
+| Comparison with a local HyFedRAG-style baseline | [46](docs/46-hyfedrag-comparison.md), [50](docs/50-robustness-significance-sessions.md) | blind mode sends the question to no hospital; matched-ranker retrieval depends on probe budget and split |
 | Role-based access on nodes | [45](docs/45-role-based-access.md) | node serves each role only its collections, enforced inside PSI; lying about a role gains nothing |
-| Node-side de-identification | [44](docs/44-node-side-deidentification.md) | nodes served raw PII before; now 0% of cued/registered identifiers leave a node, retrieval unchanged |
+| Node-side de-identification | [44](docs/44-node-side-deidentification.md) | cued/registered canary identifiers removed; unregistered bare names can remain |
 | Credential gate on PSI | [43](docs/43-credential-gate.md) | node evaluates only for allow-listed clients within a daily budget; dumping a node takes 8–10 days, logged |
+| Blind unlock and retrieval trade-off | [47](docs/47-blind-unlock.md), [50](docs/50-robustness-significance-sessions.md) | matched hybrid MRR: P=8 retains 81–94% of the local HyFedRAG-style baseline across splits; P=24 retains 97–98% |
+| Standalone device and cover schedule | [52](docs/52-standalone-client-and-cover-traffic.md) | no API server in the standalone query path; equal-size real/cover rounds, with operational limits |
 
 Each note records its command, seeds and what it does not establish.
 
@@ -94,17 +92,17 @@ Frontend:
 cd frontend && npm install && npm run dev
 ```
 
-## Try the private path
+## Try blind mode in the studio
 
 ```sh
 curl -X POST http://localhost:8000/query \
   -H 'Content-Type: application/json' \
-  -d '{"question":"Is milk good for our bones?","routing_mode":"psi","max_nodes":4,"genuine_k":1,"decoy_policy":"cells","cell_size":4,"evidence_top_k":2}'
+  -d '{"question":"Is milk good for our bones?","routing_mode":"blind","blind_probes":8,"rerank":"hybrid","evidence_top_k":2}'
 ```
 
-`routing_details` shows the cell dispatched, per-node envelopes delivered
-and opened, and `GET /audit/{query_id}` the full trace. `GET /nodes?routing_mode=psi`
-reports that mode's trust state.
+The API process sees this question. To keep it on the user's machine, run
+`python -m client` from the backend (docs/52). `GET /audit/{query_id}` exposes
+a trace and must not be treated as a privacy boundary.
 
 ## Reproduce a result
 
@@ -159,11 +157,12 @@ Test counts are not experimental, privacy or answer-quality results.
 
 ## Limitations
 
-The coordinator is trusted and plays the user's device; separating it into
-a relay is the docs/03 target. Metadata (that a query happened, its timing
-and size) is not protected. A source that lies about its content is
-selected a third less often with the trust term, not never; the evidence rerank keeps its planted
-passage out of the prompt but does not stop the contact. PSI responses are
-linear in a node's table size. Answer quality is one model, one seed, 150
-questions. The healthcare federation is public literature partitioned by
-topic, not institutional data. Do not use real private or patient data.
+Blind unlock contacts every node and downloads an encrypted table per node;
+this has scaling and bandwidth costs. The finite CLI cover demonstration
+is not an always-on traffic-hiding service; clock jitter was not measured.
+Malicious-source selection and passage poisoning are not solved. De-identification
+is incomplete, and retrieval is below the matched local HyFedRAG-style
+baseline on most splits; at P=24 the gap is small but not universally
+statistically indistinguishable (docs/50). Answer quality is one model, one
+seed, 150 MIRAGE questions. The hospitals are simulated partitions of public
+data, not real institutions. Do not use real private or patient data.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -99,6 +100,41 @@ def test_scheduler_sends_exactly_one_round_per_tick(tmp_path):
     assert answered is ticket and "topic3" in ticket.result["citations"][0]["document"]
     scheduler.tick()
     assert scheduler.rounds == ["cover", "real", "cover"] and calls == [4, 4, 4]
+
+
+def test_timed_run_does_not_let_generation_delay_later_rounds(monkeypatch):
+    import client.cover as cover_module
+
+    clock = [0.0]
+    monkeypatch.setattr(cover_module, "time", SimpleNamespace(
+        time=lambda: clock[0], monotonic=lambda: clock[0],
+        sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds)))
+    sent_at = []
+
+    class SlowGeneratorDevice:
+        def plan(self, question):
+            return question, question
+
+        def refresh(self):
+            pass
+
+        def send(self, plan):
+            sent_at.append(clock[0])
+            return plan
+
+        def cover(self):
+            sent_at.append(clock[0])
+
+        def finish(self, question, q, plan, result):
+            clock[0] += 20.0
+            return {"answer": question}
+
+    scheduler = CoverTrafficScheduler(SlowGeneratorDevice(), interval_s=5.0)
+    ticket = scheduler.submit("private question")
+    assert scheduler.run(3, first_real_at=1) == [ticket]
+    assert sent_at == [0.0, 5.0, 10.0]
+    assert scheduler.rounds == ["cover", "real", "cover"]
+    assert ticket.result == {"answer": "private question"}
 
 
 def test_roles_hold_through_the_client(tmp_path):

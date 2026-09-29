@@ -17,7 +17,7 @@ Two leaks, two mechanisms, one budget:
 | Leak | Adversary | Mechanism | Status |
 |---|---|---|---|
 | Query content | a contacted source | OPRF / labeled-PSI over cluster ids (`privacy/psi.py`); in blind unlock no node learns even whether it was relevant | Implemented, measured: 0 of 3 sensitive values exposed (docs/37); PMC-Patients: question to 0 of 8 hospitals (docs/46–47) |
-| Contact pattern | an observer of which sources are contacted | **blind unlock** (`routing_mode="blind"`, `privacy/blind_unlock.py`): every node receives the same number of real-or-dummy blinded points (recommended, docs/47); fixed anonymity cells (`decoy_policy="cells"`, docs/40) where a node's table is too large to cache | Implemented, measured: blind — topic inference at the floor (0.239) at every P on PMC-Patients; cells — 0.454 → 0.201 on FeB4RAG, 0.318 → 0.254 on PMC-Patients |
+| Contact pattern | an observer of which sources are contacted | **blind unlock** (`routing_mode="blind"`, `privacy/blind_unlock.py`): every node receives the same number of real-or-dummy blinded points (recommended, docs/47); fixed anonymity cells (`decoy_policy="cells"`, docs/40) are an older, lower-bandwidth option | Implemented, measured: blind — topic inference at the majority floor on k-means, Dirichlet and random PMC-Patients partitions and over five-question sessions (docs/50); cells leak above floor on Dirichlet (0.294 vs 0.210) |
 
 Secondary: one malicious-source experiment (forged profile), where the
 router has no defence (selected 1.000) and the cross-node evidence rerank
@@ -32,15 +32,21 @@ keeps the planted passage out of the prompt (cited 1.000 → 0.067, docs/40).
 | **Pattern observer** (network, relay, colluding sources) | which sources were contacted, sizes, timing | Untrusted |
 | **Malicious client** | everything a credentialed client sees | Gated: the node evaluates the OPRF only for an allow-listed credential within its daily evaluation budget (docs/43), persisted on disk since docs/49 (before, a spawn-per-call node reset it on every call); a gated node refuses unauthenticated text/vector retrieval and the experimental scorer (docs/49) |
 
-Protected assets: patient identifiers in node documents (from every client — de-identified before indexing, docs/44); query text and embedding (from sources, psi); query topic
-(from the observer, cells); which contact is genuine (cells / topic-stable
-decoys). Not protected: that a query happened, its size and timing; the
-coordinator's view; source truthfulness; generation when a hosted provider
-is configured.
+Protected assets: some identifiers in node documents (best-effort
+de-identification before indexing, docs/44); query text and embedding from
+sources (PSI/blind); query topic and genuine-source identity from a contact
+observer (blind). Blind sends the same-size request to every source;
+fixed-rate cover can additionally hide whether a question was asked on a
+given tick (docs/52). Not protected: the active credential, device-local
+side channels, uncaught identifiers or re-identifying combinations, source
+truthfulness, or generation when a hosted provider is configured. The
+studio API coordinator sees the question; standalone `client.Device` does not
+put a server on the query path.
 
 Claims are **routing-stage privacy** against contacted sources and a pattern
-observer. Not "end-to-end", not differential privacy, not a proof beyond
-reduction to DDH and the AEAD.
+observer under the stated threat model (docs/51), plus measured partial
+node-side de-identification. Not end-to-end patient privacy or differential
+privacy; network jitter and clinical re-identification were not evaluated.
 
 ## Pipeline as implemented — recommended (`routing_mode="blind"`, `rerank="hybrid"`)
 
@@ -99,6 +105,8 @@ The API default remains legacy; the studio defaults to blind unlock (P = 8) with
 | Enumeration | `eval/run_psi_enumeration` | synthetic, real gate | queries / days to open a table | ⌈C/nprobe⌉ ungated; 8–10 days gated at 20/day — docs/37, 43 (holds on real MCP nodes only since docs/49) |
 | Both leaks at once | `privacy/blind_unlock`, `eval/run_hyfedrag_compare` | PMC-Patients, 986 q, 8 hospitals | MRR, question to hospitals, topic acc, records, ms, bytes | question to 0, topic at floor, MRR 0.421 (P=8) vs HyFedRAG-style 0.444, ~5 KB/q + 83 MB once — docs/47 |
 | Device ranking | `router/hybrid_rerank`, same harness | same | MRR at matched ranking | blind P=8 0.509 / P=24 0.535 vs HyFedRAG-style 0.543 (all hybrid) — docs/48 |
+| Split robustness and significance | `eval/run_hyfedrag_compare`, `eval/bootstrap_compare` | 986 PMC-Patients queries, 8 simulated hospitals, three partitions | matched hybrid MRR, paired bootstrap | blind P=8 retains 81–94% of local HyFedRAG-style MRR; P=24 retains 97–98%; only k-means P=24 is statistically indistinguishable — docs/50 |
+| Blind-mode answers | `eval/run_answer_quality` | 150 MIRAGE questions, local Qwen3.5-9B | MCQ accuracy, paired bootstrap | blind dense 0.613 vs closed-book 0.547 (p=0.035); hybrid 0.573, not a universal gain — docs/50 |
 | Implementation security | `tests/test_audit_fixes` | real MCP nodes | attack replays | 3 no-credential holes closed — docs/49 |
 | No server, hidden timing | `client/`, `tests/test_client` | real MCP nodes | what each node receives per round | identical points and bytes for real and cover rounds; one round per tick — docs/52 |
 
@@ -135,6 +143,11 @@ BEIR corpora under `backend/vendor/` are regenerated, not committed.
   remains for nodes too large to cache.
 - Blind unlock discloses the P unlocked clusters' records (74–393 per
   question at P = 4–24; HyFedRAG-style 80).
+- Blind retrieval is not uniformly equal to or better than the matched
+  baseline: P=8 retains 81–94% of its MRR across partitions, P=24 retains
+  97–98% (docs/50). The HyFedRAG-style baseline is a local reimplementation.
+- A finite cover-traffic demo is not an always-on anonymity service;
+  credential identity and network jitter remain outside its demonstrated claim.
 - Open findings from the audit (docs/49): cell churn and self-declared cell
   labels, a shared HMAC key across nodes, replay within a day, the
   psi_envelopes size leak, unauthenticated node registration, prompt

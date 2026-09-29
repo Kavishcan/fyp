@@ -118,9 +118,9 @@ export function ChatPanel() {
             <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 py-24">
               <h2 className="text-lg font-medium">Ask FedSafeRouter something</h2>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Default is the proposed configuration: private (PSI) dispatch with anonymity cells.
-                Each answer shows what a caller would see — citations and which sources were
-                contacted, never which were genuine. Switch to legacy in settings to compare.
+                The studio starts in blind-unlock mode: every node receives the same number of
+                blinded points. The studio server still sees your question; use the standalone
+                device client to keep it on your machine. Switch modes in settings to compare.
               </p>
             </div>
           )}
