@@ -28,7 +28,9 @@ import hashlib
 import hmac
 import json
 import os
+import sqlite3
 import time
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,11 +82,59 @@ class ClientPolicy:
 
 @dataclass
 class Authorizer:
-    """Node side. Allow-list + per-client per-day evaluation counter + audit."""
+    """Node side. Allow-list + per-client per-day evaluation counter + audit.
+
+    With `state_path` the counter and the audit log live in a SQLite file
+    next to the node's data (0600), updated in one IMMEDIATE transaction per
+    request, so every process of the node — a fresh one per MCP call, or one
+    after a restart — enforces the same budget. Without it (tests, in-process
+    simulation) they are in memory. Before this (audit, docs/49) the budget
+    was in memory only and a spawn-per-call node reset it on every call."""
     node_id: str
     policies: dict[str, ClientPolicy] = field(default_factory=dict)
     usage: dict[tuple[str, str], int] = field(default_factory=dict)   # (client_id, day) -> evaluations
     audit: list[dict] = field(default_factory=list)
+    state_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.state_path is not None:
+            with closing(self._db()) as db:
+                db.execute("CREATE TABLE IF NOT EXISTS usage (client_id TEXT, day TEXT, evaluations INTEGER, "
+                           "PRIMARY KEY (client_id, day))")
+                db.execute("CREATE TABLE IF NOT EXISTS audit (ts REAL, client_id TEXT, outcome TEXT, evaluations INTEGER)")
+            os.chmod(self.state_path, 0o600)
+
+    def _db(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.state_path, timeout=30, isolation_level=None)
+
+    def _persisted_check(self, client_id: str, day: str, n: int, budget: int) -> bool:
+        """Atomically charge `n` evaluations if they fit; log either way."""
+        db = self._db()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT evaluations FROM usage WHERE client_id = ? AND day = ?", (client_id, day)).fetchone()
+            used = row[0] if row else 0
+            ok = used + n <= budget
+            if ok:
+                db.execute("INSERT INTO usage VALUES (?, ?, ?) ON CONFLICT(client_id, day) DO UPDATE SET evaluations = ?",
+                           (client_id, day, used + n, used + n))
+            db.execute("INSERT INTO audit VALUES (?, ?, ?, ?)",
+                       (time.time(), client_id, "ok" if ok else "budget_exhausted", n))
+            db.execute("COMMIT")
+            self.usage[(client_id, day)] = used + n if ok else used
+            return ok
+        except Exception:
+            db.execute("ROLLBACK")
+            raise
+        finally:
+            db.close()
+
+    def persisted_audit(self) -> list[dict]:
+        if self.state_path is None:
+            return list(self.audit)
+        with closing(self._db()) as db:
+            return [{"ts": ts, "client_id": c, "outcome": o, "evaluations": n}
+                    for ts, c, o, n in db.execute("SELECT ts, client_id, outcome, evaluations FROM audit ORDER BY rowid")]
 
     def check(self, auth: dict | None, blinded: list[bytes], now: float | None = None) -> str:
         """Validates the credential and charges the evaluations. Returns the
@@ -104,6 +154,13 @@ class Authorizer:
         if not hmac.compare_digest(expected, mac):
             self._log(client_id, "bad_signature", len(blinded))
             raise Unauthorized("bad_signature")
+        if self.state_path is not None:
+            if not self._persisted_check(client_id, day, len(blinded), policy.daily_evaluation_budget):
+                self.audit.append({"ts": time.time(), "client_id": client_id, "outcome": "budget_exhausted",
+                                   "evaluations": len(blinded)})
+                raise Unauthorized("budget_exhausted")
+            self.audit.append({"ts": time.time(), "client_id": client_id, "outcome": "ok", "evaluations": len(blinded)})
+            return client_id
         used = self.usage.get((client_id, day), 0)
         if used + len(blinded) > policy.daily_evaluation_budget:
             self._log(client_id, "budget_exhausted", len(blinded))
@@ -120,11 +177,21 @@ class Authorizer:
         policy = self.policies.get(client_id)
         if policy is None:
             return 0
-        return max(0, policy.daily_evaluation_budget - self.usage.get((client_id, utc_day(now)), 0))
+        day = utc_day(now)
+        used = self.usage.get((client_id, day), 0)
+        if self.state_path is not None:
+            with closing(self._db()) as db:
+                row = db.execute("SELECT evaluations FROM usage WHERE client_id = ? AND day = ?", (client_id, day)).fetchone()
+            used = row[0] if row else 0
+        return max(0, policy.daily_evaluation_budget - used)
 
     def _log(self, client_id: str | None, outcome: str, evaluations: int) -> None:
         # Who asked, when, how many probes, and the outcome — never what.
-        self.audit.append({"ts": time.time(), "client_id": client_id, "outcome": outcome, "evaluations": evaluations})
+        entry = {"ts": time.time(), "client_id": client_id, "outcome": outcome, "evaluations": evaluations}
+        self.audit.append(entry)
+        if self.state_path is not None:
+            with closing(self._db()) as db:
+                db.execute("INSERT INTO audit VALUES (?, ?, ?, ?)", (entry["ts"], client_id, outcome, evaluations))
 
 
 # --- allow-list file -----------------------------------------------------------
@@ -133,7 +200,9 @@ class Authorizer:
 # Absent file = open node (the prototype's behaviour, stated in docs/43).
 
 
-def load_authorizer(node_id: str, path: Path) -> Authorizer | None:
+def load_authorizer(node_id: str, path: Path, state_path: Path | None = None) -> Authorizer | None:
+    """`state_path`: where the budget counter and audit log persist (the MCP
+    node passes `<node>.usage.sqlite`); None keeps them in memory."""
     if not path.exists():
         return None
     spec = json.loads(path.read_text())
@@ -142,7 +211,7 @@ def load_authorizer(node_id: str, path: Path) -> Authorizer | None:
                           roles=tuple(entry.get("roles", ())))
         for cid, entry in spec.get("clients", {}).items()
     }
-    return Authorizer(node_id=node_id, policies=policies)
+    return Authorizer(node_id=node_id, policies=policies, state_path=state_path)
 
 
 def write_allow_list(path: Path, clients: dict[str, ClientPolicy]) -> None:

@@ -93,7 +93,8 @@ def test_encrypted_scoring_over_real_mcp(tmp_path):
 
     documents = ["tumour chemo protocol", "tax filing invoice", "cardiac response"]
     path = tmp_path / "encrypted-node.json"
-    path.write_text(json.dumps(dict(node_id="encrypted-node", documents=documents)))
+    path.write_text(json.dumps(dict(node_id="encrypted-node", documents=documents,
+                                    experimental_private_scoring=True)))   # off by default (docs/49)
     embedder = HashingEmbedder(model_name=SHARED_ROUTING_MODEL, n_features=256)
     q = embedder.embed(["tumour chemo protocol"])[0]
     coordinator = CoordinatorSession(q, SHARED_ROUTING_MODEL)

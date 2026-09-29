@@ -1,5 +1,10 @@
 # Credential gate on the PSI step
 
+> **Correction (docs/49):** the budget below was measured with an in-process
+> authorizer. On a real spawn-per-call MCP node the budget lived in process
+> memory and reset on every call, so the bound did not hold there. The budget
+> and audit log now persist in SQLite next to the node, and the bound holds.
+
 ## Verdict
 
 **"The node serves only credentialed clients" is now true of the code, and

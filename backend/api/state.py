@@ -206,12 +206,24 @@ class AppState:
         # Re-publishing an existing node bumps profile_version so the
         # registry's stale-version rejection (router/registry.py) doesn't fire.
         existing = self.registry.get(node_id)
-        if existing is not None:
-            profile.profile_version = existing.profile_version + 1
-        self.smart_trust.reset(node_id)
-        self.v2_trust.reset(node_id)
+        # Re-publishing under the SAME signing key keeps earned trust (audit,
+        # docs/49): resetting it let a low-trust node launder its record back
+        # to the 0.5 prior by re-registering. A new or unsigned identity starts fresh.
+        same_identity = bool(existing is not None and existing.public_key and profile.public_key == existing.public_key)
+        if not same_identity:
+            self.smart_trust.reset(node_id)
+            self.v2_trust.reset(node_id)
         self.nodes[node_id] = node
         self.node_local_models[node_id] = local_model
+        if same_identity and profile.profile_version <= existing.profile_version:
+            # A signed node re-served its current profile: a refresh. Bumping the
+            # version here (the old behaviour) invalidated the node's signature,
+            # so re-registering any signed node failed.
+            if profile.profile_signature != existing.profile_signature:
+                self.registry.publish(profile)   # same version, different content: the registry refuses it
+            return
+        if existing is not None and not profile.profile_signature:
+            profile.profile_version = existing.profile_version + 1   # unsigned: the coordinator versions it
         self.registry.publish(profile)
 
     def remove_node(self, node_id: str) -> bool:
@@ -654,10 +666,13 @@ class AppState:
         if isinstance(node, MCPNodeHandle):
             result = node.get_restricted_centroids(auth)
             payload = {k: result[k] for k in ("node_id", "client_id", "day", "clusters") if k in result}
-            if result.get("signature") and profile.public_key:
+            if profile.public_key:
+                # Fail closed (audit, docs/49): a node that signs its profile
+                # must sign its restricted centroids too; a missing signature
+                # is refused, not skipped.
                 from nodes.signing import verify_payload
 
-                if not verify_payload(profile.public_key, payload, result["signature"]):
+                if not result.get("signature") or not verify_payload(profile.public_key, payload, result["signature"]):
                     raise PermissionError(f"node {profile.source_id!r}: restricted centroids failed signature check")
             entries = result.get("clusters", [])
         else:

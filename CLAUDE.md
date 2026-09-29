@@ -11,6 +11,18 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/49: security audit. Three no-credential holes, each confirmed on a
+real MCP node and now a regression test (tests/test_audit_fixes.py):
+Paillier scorer exposed on every node (3 requests stole all embeddings incl.
+restricted) — now off by default, never on gated nodes, public rows only;
+open text/vector retrieve on gated nodes (top_n=100000 dumped the corpus) —
+refused unless `open_retrieval`, top_n capped 20; budget/audit in memory
+(spawn-per-call served 6 of a budget of 2) — now SQLite `<node>.usage.sqlite`.
+docs/43's enumeration bound was not true of real MCP nodes before this fix.
+Unfixed and stated: cell churn and self-declared cell labels, shared HMAC
+key across nodes, replay within a day, psi_envelopes size leak, Sybil
+registration, prompt injection, de-identification gaps.
+
 Docs/48: device-side hybrid rerank (router/hybrid_rerank.py): z(cosine) +
 0.5·z(BM25), BM25 statistics from the pool the device holds only. API
 `rerank="dense"|"hybrid"` (default dense, earlier results unchanged;
@@ -37,8 +49,8 @@ download for 8 hospitals. Budgets count dummies. Known pieces (labeled PSI,
 PIR-style offline download, Wally-style fake queries); the multi-owner
 routing setting is the contribution — do not call it new cryptography.
 Semi-honest nodes; timing not measured; records of the P unlocked clusters
-still reach the device (de-identified). The docs/43 budget is still
-in-memory (audit: spawn-per-call resets it) until fixed.
+still reach the device (de-identified). The docs/43 budget now
+persists (docs/49).
 
 Docs/46: HyFedRAG-style design (broadcast, raw edge retrieval, server
 fusion, stock Presidio) vs this project on PMC-Patients (545 MB CSV, user

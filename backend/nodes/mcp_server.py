@@ -37,6 +37,10 @@ from nodes.profile import build_profile, embed_documents  # noqa: E402
 from nodes.simulator import InProcessNode  # noqa: E402
 from nodes.metadata import attach_metadata  # noqa: E402
 
+# Largest top_n any open retrieve call may ask for (audit, docs/49): a
+# retrieve with top_n = 100000 used to return a node's whole public corpus.
+MAX_TOP_N = 20
+
 
 def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     spec = json.loads(data_file.read_text())
@@ -126,7 +130,16 @@ def load_node(data_file: Path) -> tuple[InProcessNode, dict, str]:
     # daily evaluation budget. No file = open node (prototype behaviour).
     from privacy.credentials import load_authorizer  # noqa: E402
 
-    node.authorizer = load_authorizer(node_id, data_file.with_suffix(".clients.json"))
+    node.authorizer = load_authorizer(node_id, data_file.with_suffix(".clients.json"),
+                                      state_path=data_file.with_suffix(".usage.sqlite"))
+    # Serving policy (docs/49). A gated node (allow-list present) serves only
+    # the credentialed private paths — psi/blind — unless its operator opts
+    # the unauthenticated text/vector tools back in; otherwise the gate could
+    # be walked around. The experimental Paillier scorer (docs/34) is off
+    # unless enabled, never on a gated node, and scores public rows only:
+    # with chosen plaintexts it returns every scored row's embedding exactly.
+    node.open_retrieval = bool(spec.get("open_retrieval", node.authorizer is None))
+    node.private_scoring = bool(spec.get("experimental_private_scoring", False)) and node.authorizer is None
     node.signing_key = load_or_create_key_file(data_file.with_suffix(".key"))
     sign_profile(profile, node.signing_key)
     return node, profile.__dict__, local_model
@@ -138,6 +151,7 @@ def _load_or_create_psi_keys(path: Path, collections: list[str], generate) -> di
     "public" collection's key."""
     keys: dict[str, bytes] = {}
     if path.exists():
+        path.chmod(0o600)   # files written before the 0600 rule stayed world-readable (audit, docs/49)
         text = path.read_text().strip()
         if text.startswith("{"):
             keys = {c: bytes.fromhex(h) for c, h in json.loads(text).items()}
@@ -191,7 +205,9 @@ def main() -> None:
     @server.tool()
     def retrieve(query: str, top_n: int = 5) -> str:
         """Retrieve the top-n locally-held passages for `query` (raw text; legacy/smart modes)."""
-        passages = node.retrieve_from_text(query, top_n=top_n)
+        if not node.open_retrieval:
+            return json.dumps({"error": "open_retrieval_disabled"})
+        passages = node.retrieve_from_text(query, top_n=max(1, min(int(top_n), MAX_TOP_N)))
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
 
     @server.tool()
@@ -199,7 +215,10 @@ def main() -> None:
         """Experimental full-index encrypted scoring; no document fetch."""
         from privacy.encrypted_scoring import score_encrypted
 
-        return json.dumps(score_encrypted(request, node.routing_embeddings, SHARED_ROUTING_MODEL))
+        if not node.private_scoring:
+            return json.dumps({"error": "private_scoring_disabled"})
+        public = np.array([c == "public" for c in node.collections])
+        return json.dumps(score_encrypted(request, node.routing_embeddings[public], SHARED_ROUTING_MODEL))
 
     @server.tool()
     def retrieve_vector(vector: list[float], top_n: int = 5) -> str:
@@ -208,7 +227,9 @@ def main() -> None:
         This node never sees the query string in this mode. It is hardening,
         not secrecy — the vector can still be inverted toward the query.
         """
-        passages = node.retrieve_vector(np.asarray(vector, dtype=np.float64), top_n=top_n)
+        if not node.open_retrieval:
+            return json.dumps({"error": "open_retrieval_disabled"})
+        passages = node.retrieve_vector(np.asarray(vector, dtype=np.float64), top_n=max(1, min(int(top_n), MAX_TOP_N)))
         return json.dumps([{"document": p.document, "score": p.score} for p in passages])
 
     @server.tool()

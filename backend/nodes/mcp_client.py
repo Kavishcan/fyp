@@ -72,13 +72,18 @@ class MCPNodeHandle:
     async def get_profile_async(self) -> dict:
         return json.loads(await self._call_tool("get_profile", {}))
 
+    def _refused(self, tool: str, result):
+        if isinstance(result, dict) and "error" in result:
+            raise PermissionError(f"node {self.node_id!r} refused {tool}: {result['error']}")
+        return result
+
     async def retrieve_async(self, query: str, top_n: int = 5) -> list[dict]:
-        return json.loads(await self._call_tool("retrieve", {"query": query, "top_n": top_n}))
+        return self._refused("retrieve", json.loads(await self._call_tool("retrieve", {"query": query, "top_n": top_n})))
 
     async def retrieve_vector_async(self, vector, top_n: int = 5) -> list[dict]:
         """v2 dispatch: send a shared-routing-space vector, never the query text."""
         payload = {"vector": [float(x) for x in vector], "top_n": top_n}
-        return json.loads(await self._call_tool("retrieve_vector", payload))
+        return self._refused("retrieve_vector", json.loads(await self._call_tool("retrieve_vector", payload)))
 
     async def psi_evaluate_async(self, blinded: list[bytes], auth: dict | None = None) -> list[dict[str, bytes]]:
         """PSI dispatch: blinded group elements out, evaluated elements back.
@@ -148,7 +153,8 @@ class MCPNodeHandle:
 
     def score_encrypted_query(self, request: dict) -> dict:
         """Separate protocol: never falls back to plaintext/vector retrieval."""
-        return json.loads(asyncio.run(self._call_tool("score_encrypted_query", {"request": request})))
+        return self._refused("score_encrypted_query",
+                             json.loads(asyncio.run(self._call_tool("score_encrypted_query", {"request": request}))))
 
 
 class PersistentMCPNodeHandle(MCPNodeHandle):
