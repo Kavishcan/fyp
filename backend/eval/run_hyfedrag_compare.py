@@ -174,6 +174,10 @@ def main() -> None:
                         help="skip the stock-Presidio node build (only used for the de-id damage row)")
     parser.add_argument("--embedder-model", default="BAAI/bge-base-en-v1.5")
     parser.add_argument("--hybrid-weight", type=float, default=DEFAULT_WEIGHT)
+    parser.add_argument("--partition", choices=["kmeans", "dirichlet", "random"], default="kmeans",
+                        help="how patients are split into hospitals: k-means in the routing embedding (docs/46), "
+                             "Dirichlet non-IID over k-means topics, or uniform random (robustness, docs/50)")
+    parser.add_argument("--dirichlet-alpha", type=float, default=0.5)
     parser.add_argument("--only", nargs="*", default=None,
                         help="run only these configurations (e.g. ours_blind_P8); default all")
     args = parser.parse_args()
@@ -188,6 +192,19 @@ def main() -> None:
     vecs = embedder.embed([corpus[u] for u in uids])
     vecs = vecs / np.maximum(np.linalg.norm(vecs, axis=1, keepdims=True), 1e-12)
     _, assign = kmeans_unit(vecs, args.clients, args.seed)
+    if args.partition != "kmeans":
+        # Robustness (docs/50): k-means in the routing embedding makes both
+        # routing and topic inference easy. "dirichlet": each k-means topic's
+        # patients are spread over hospitals with proportions ~ Dir(alpha)
+        # (the usual non-IID federated split); "random": uniform (IID).
+        prng = np.random.default_rng(args.seed + 1000)
+        topic_of = assign.copy()
+        assign = np.empty_like(topic_of)
+        for t in np.unique(topic_of):
+            idx = np.where(topic_of == t)[0]
+            props = (prng.dirichlet([args.dirichlet_alpha] * args.clients) if args.partition == "dirichlet"
+                     else np.full(args.clients, 1.0 / args.clients))
+            assign[idx] = prng.choice(args.clients, size=len(idx), p=props)
     client_of = {u: f"hospital_{int(a)}" for u, a in zip(uids, assign.tolist())}
     client_docs: dict[str, list[tuple[str, str]]] = {}
     for u in uids:
@@ -363,6 +380,7 @@ def main() -> None:
         return [by_doc[d] for d, _ in ranked], chosen, sent, received, len(pool), False
 
     rows = []
+    per_query: dict[str, list[float]] = {}   # configuration -> per-query MRR (for paired bootstrap, docs/50)
     split: list[tuple[float, float]] = []   # blind: (device ms, slowest hospital ms) per question
     for name in [c for c in CONFIGS if args.only is None or c in args.only]:
         m, p, n, contacts, sent, recv, disclosed, exposed, patterns, times = ([] for _ in range(10))
@@ -375,6 +393,7 @@ def main() -> None:
             contacts.append(len(contacted)); sent.append(s_b); recv.append(r_b); disclosed.append(disc)
             exposed.append(1.0 if text_sent and contacted else 0.0)
             patterns.append(sorted(contacted))
+        per_query[name] = [float(x) for x in m]
         half = len(queries) // 2
         topic_acc = float("nan")
         if CONFIGS[name][0] != "central":
@@ -415,7 +434,10 @@ def main() -> None:
         print(f"  deid {label:<32} documents altered {altered / total:.3f}", flush=True)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out = RESULTS_DIR / f"hyfedrag_compare_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    out = RESULTS_DIR / f"hyfedrag_compare_{args.partition}_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    out.with_suffix(".perquery.json").write_text(json.dumps({
+        "partition": args.partition, "dirichlet_alpha": args.dirichlet_alpha, "seed": args.seed,
+        "query_ids": [qid for qid, *_ in queries], "mrr": per_query}))
     with out.open("w", newline="") as h:
         w = csv.DictWriter(h, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
         w.writeheader()

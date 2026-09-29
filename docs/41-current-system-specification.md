@@ -16,8 +16,8 @@ Two leaks, two mechanisms, one budget:
 
 | Leak | Adversary | Mechanism | Status |
 |---|---|---|---|
-| Query content | a contacted source | OPRF / labeled-PSI dispatch over cluster ids (`privacy/psi.py`) | Implemented, measured: 0 of 3 sensitive values exposed (docs/37); ~10 ms, ~170 KB per contact (docs/37) |
-| Contact pattern | an observer of which sources are contacted | fixed anonymity cells (`router/anonymity.build_cells`, `decoy_policy="cells"`) | Implemented, measured: topic inference 0.454 → 0.201, source attack 0.744 → 0.231 on FeB4RAG (docs/40) |
+| Query content | a contacted source | OPRF / labeled-PSI over cluster ids (`privacy/psi.py`); in blind unlock no node learns even whether it was relevant | Implemented, measured: 0 of 3 sensitive values exposed (docs/37); PMC-Patients: question to 0 of 8 hospitals (docs/46–47) |
+| Contact pattern | an observer of which sources are contacted | **blind unlock** (`routing_mode="blind"`, `privacy/blind_unlock.py`): every node receives the same number of real-or-dummy blinded points (recommended, docs/47); fixed anonymity cells (`decoy_policy="cells"`, docs/40) where a node's table is too large to cache | Implemented, measured: blind — topic inference at the floor (0.239) at every P on PMC-Patients; cells — 0.454 → 0.201 on FeB4RAG, 0.318 → 0.254 on PMC-Patients |
 
 Secondary: one malicious-source experiment (forged profile), where the
 router has no defence (selected 1.000) and the cross-node evidence rerank
@@ -28,9 +28,9 @@ keeps the planted passage out of the prompt (cited 1.000 → 0.067, docs/40).
 | Party | Sees | Trusted? |
 |---|---|---|
 | **Coordinator** (the API process) | raw query, embeddings, all returned passages, routing trace | **Trusted** — it plays the user's device in this prototype. Moving its device-side code to the client and reducing it to a relay is the docs/03 target, not the implementation. |
-| **Contacted source** (MCP node) | legacy/smart: query text; v2: an invertible vector; **psi: blinded group elements + a fetch set** | Honest-but-curious about the query; may lie about content (A3) |
+| **Contacted source** (MCP node) | legacy/smart: query text; v2: an invertible vector; psi: blinded group elements + a fetch set; **blind: exactly P uniform group elements per question, real or dummy, from every client alike** | Honest-but-curious about the query; may lie about content (A3) |
 | **Pattern observer** (network, relay, colluding sources) | which sources were contacted, sizes, timing | Untrusted |
-| **Malicious client** | everything a credentialed client sees | Gated: the node evaluates the OPRF only for an allow-listed credential within its daily evaluation budget (docs/43); dumping a 150–200-cluster node takes 8–10 days of one credential's budget and is logged under that id |
+| **Malicious client** | everything a credentialed client sees | Gated: the node evaluates the OPRF only for an allow-listed credential within its daily evaluation budget (docs/43), persisted on disk since docs/49 (before, a spawn-per-call node reset it on every call); a gated node refuses unauthenticated text/vector retrieval and the experimental scorer (docs/49) |
 
 Protected assets: patient identifiers in node documents (from every client — de-identified before indexing, docs/44); query text and embedding (from sources, psi); query topic
 (from the observer, cells); which contact is genuine (cells / topic-stable
@@ -42,7 +42,23 @@ Claims are **routing-stage privacy** against contacted sources and a pattern
 observer. Not "end-to-end", not differential privacy, not a proof beyond
 reduction to DDH and the AEAD.
 
-## Pipeline as implemented (`routing_mode="psi"`, `decoy_policy="cells"`)
+## Pipeline as implemented — recommended (`routing_mode="blind"`, `rerank="hybrid"`)
+
+```text
+offline, once per key epoch (same bytes for every client of a role)
+  every node → its encrypted cluster table (OPRF-derived tags, padded float16 payloads;
+               restricted collections only to permitted roles) → device cache
+question
+  → shared routing embedder (bge-base in the demo and every experiment)
+  → score every published cluster of every node locally → global top-P (default 4 API, 8 studio)
+  → EVERY node, in sorted order: exactly P blinded points, real r·H(c) or dummy r·G
+  → node OPRF-evaluates per permitted collection, charges P to the persisted budget
+  → device unblinds real replies → tag lookup in the cache → open envelopes
+  → hybrid rank (cosine + pool BM25, router/hybrid_rerank.py) → top-k evidence
+  → local generation → answer; per-stage latency and bytes logged
+```
+
+## Pipeline as implemented — per-query PSI (`routing_mode="psi"`, `decoy_policy="cells"`)
 
 ```text
 question
@@ -60,13 +76,13 @@ question
   → per-stage latency and per-contact bytes logged for every query
 ```
 
-The API default remains legacy; the studio defaults to psi + cells with every mode selectable.
+The API default remains legacy; the studio defaults to blind unlock (P = 8) with hybrid ranking, every mode selectable.
 
 ## Labels
 
 | Implemented and measured | Experimental | Planned / not built |
 |---|---|---|
-| local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with per-client evaluation budget, role-based access to node collections (per-collection OPRF keys), node-side de-identification at load (rules + registry + optional NER), persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
+| blind unlock (offline tables, fixed-count real/dummy probes, tag lookup, key epochs), hybrid device rerank, local routing, budget, signing, topic-stable decoys, anonymity cells, PSI dispatch, cluster index, credential gate with persisted per-client evaluation budget, role-based access to node collections (per-collection OPRF keys), node-side de-identification at load (rules + registry + optional NER), persistent MCP, cross-node rerank, local generation, per-query instrumentation | Paillier encrypted scoring (`POST /query/private-score`, docs/34): correct, ~18 s/query keygen, ≤128 rows — the in-cluster tier if ever needed | relay separated from the device code; key authority (issuance/revocation) and anonymous credentials; TLS (deployment); sublinear PSI (APSI); in-cluster HE scoring; RAGRoute reproduction; better trust signal |
 
 ## Traceability
 
@@ -80,7 +96,10 @@ The API default remains legacy; the studio defaults to psi + cells with every mo
 | Answer quality | `eval/run_answer_quality` | 150 MIRAGE questions, Qwen3.5-9B local | MCQ accuracy | closed 0.547 / psi 0.580 / broadcast 0.627 — docs/38 |
 | Efficiency | `eval/run_scaling`, `eval/run_mcp_transport` | 30–300 virtual; 30 real MCP processes | ms, bytes, contacts | psi 61 ms/query persistent; 102 KB (v2) vs 1 KB (psi) request — docs/33, 36–37 |
 | Malicious source | `eval/run_privacy_cases` attack section, `eval/run_v2_a3` | 60 attack cases; 24 shards | selected, cited, honest recall | selected 1.000; cited 0.067 with rerank — docs/32, 40 |
-| Enumeration | `eval/run_psi_enumeration` | synthetic, real gate | queries / days to open a table | ⌈C/nprobe⌉ ungated; 8–10 days gated at 20/day — docs/37, 43 |
+| Enumeration | `eval/run_psi_enumeration` | synthetic, real gate | queries / days to open a table | ⌈C/nprobe⌉ ungated; 8–10 days gated at 20/day — docs/37, 43 (holds on real MCP nodes only since docs/49) |
+| Both leaks at once | `privacy/blind_unlock`, `eval/run_hyfedrag_compare` | PMC-Patients, 986 q, 8 hospitals | MRR, question to hospitals, topic acc, records, ms, bytes | question to 0, topic at floor, MRR 0.421 (P=8) vs HyFedRAG-style 0.444, ~5 KB/q + 83 MB once — docs/47 |
+| Device ranking | `router/hybrid_rerank`, same harness | same | MRR at matched ranking | blind P=8 0.509 / P=24 0.535 vs HyFedRAG-style 0.543 (all hybrid) — docs/48 |
+| Implementation security | `tests/test_audit_fixes` | real MCP nodes | attack replays | 3 no-credential holes closed — docs/49 |
 
 ## Baselines
 
@@ -109,7 +128,16 @@ BEIR corpora under `backend/vendor/` are regenerated, not committed.
 - E10 is one model, one seed, 150 questions; ±8-point intervals.
 - Cells cost one genuine contact and 0.12–0.13 of utility; 2-genuine cells
   are measurably weaker.
-- PSI response size is linear in the node's table (~170 KB per 40-doc node).
+- PSI response size is linear in the node's table (~170 KB per 40-doc node);
+  blind unlock moves that to a one-time download that grows with the
+  federation (83 MB for 5,000 PMC patients) — per-query PSI with cells
+  remains for nodes too large to cache.
+- Blind unlock discloses the P unlocked clusters' records (74–393 per
+  question at P = 4–24; HyFedRAG-style 80).
+- Open findings from the audit (docs/49): cell churn and self-declared cell
+  labels, a shared HMAC key across nodes, replay within a day, the
+  psi_envelopes size leak, unauthenticated node registration, prompt
+  injection, de-identification gaps.
 - No routing-level defence against a forged profile.
 - Node-side de-identification is rules + the node's registry + optional NER (docs/44):
   cued and registered identifiers do not leave the node; ~13% of uncued,

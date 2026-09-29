@@ -19,7 +19,7 @@ type DecoyPolicy = "topic_stable" | "cells";
 const MODE_HELP: Record<RoutingMode, string> = {
   blind:
     "Blind unlock (docs/47). Encrypted tables downloaded once; every node receives the same number of blinded points, real or dummy — it cannot tell whether it was relevant.",
-  psi: "Proposed. Local routing; nodes receive blinded cluster ids over OPRF/PSI — never the question or a vector.",
+  psi: "Per-query PSI. Nodes receive blinded cluster ids over OPRF/PSI — never the question or a vector — but only the contacted ones.",
   v2: "Local routing; nodes receive an invertible routing-space vector.",
   smart: "Adaptive budgeted selection, no decoys; nodes receive the question text.",
   legacy: "Control. Cosine shortlist, rerank, decoys; nodes receive the question text.",
@@ -40,10 +40,10 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [maxNodes, setMaxNodes] = useState(4);
   const [genuineK, setGenuineK] = useState(1);
-  // The studio defaults to the proposed configuration (docs/41): psi dispatch,
-  // anonymity cells, cross-node rerank. The API's own default stays legacy;
+  // The studio defaults to the recommended configuration (docs/41): blind
+  // unlock (docs/47) with hybrid device ranking (docs/48). The API's own default stays legacy;
   // every mode is selectable here so the control can be shown side by side.
-  const [routingMode, setRoutingMode] = useState<RoutingMode>("psi");
+  const [routingMode, setRoutingMode] = useState<RoutingMode>("blind");
   const [decoyPolicy, setDecoyPolicy] = useState<DecoyPolicy>("cells");
   const [trustWeight, setTrustWeight] = useState(0.5);
   const [evidenceTopK, setEvidenceTopK] = useState(2);
@@ -248,8 +248,8 @@ export function ChatPanel() {
                   onChange={(e) => setRoutingMode(e.target.value as RoutingMode)}
                   className="h-8 w-full rounded-md border bg-background px-2 text-sm"
                 >
-                  <option value="psi">psi — private dispatch (proposed)</option>
-                  <option value="blind">blind — blind unlock, identical traffic to every node</option>
+                  <option value="psi">psi — per-query private dispatch</option>
+                  <option value="blind">blind — blind unlock, identical traffic to every node (recommended)</option>
                   <option value="v2">v2 — vector dispatch</option>
                   <option value="smart">smart</option>
                   <option value="legacy">legacy (control)</option>

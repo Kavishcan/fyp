@@ -98,19 +98,19 @@ function buildGraph(sources: NodeStatus[]): { nodes: Node[]; edges: Edge[] } {
       id: "router",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT * 2 },
-      data: { title: "Router", subtitle: "signed profiles, one budget, trust term" },
+      data: { title: "Plan probes", subtitle: "best clusters across every hospital, on device" },
     },
     {
       id: "decoys",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT * 3 },
-      data: { title: "Anonymity cell", subtitle: "fixed cover — hides topic + source" },
+      data: { title: "Same traffic to all", subtitle: "P points per hospital, real or dummy" },
     },
     {
       id: "merge",
       type: "stage",
       position: { x: centerX, y: ROW_HEIGHT * 5 },
-      data: { title: "PSI + rerank", subtitle: "blinded ids in, envelopes out; rerank across nodes" },
+      data: { title: "Unlock + hybrid rank", subtitle: "cached encrypted tables; meaning + keywords" },
     },
     {
       id: "llm",
