@@ -12,11 +12,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { PrivacyDetails } from "@/components/privacy-details";
 import { api, ApiError, type AuditResponse, type IdentityState, type QueryResponse } from "@/lib/api";
 
-type RoutingMode = "legacy" | "smart" | "v2" | "psi";
+type RoutingMode = "legacy" | "smart" | "v2" | "psi" | "blind";
 type DecoyPolicy = "topic_stable" | "cells";
 
 /** What a contacted node receives in each mode — the fact the mode selector exists to make visible. */
 const MODE_HELP: Record<RoutingMode, string> = {
+  blind:
+    "Blind unlock (docs/47). Encrypted tables downloaded once; every node receives the same number of blinded points, real or dummy — it cannot tell whether it was relevant.",
   psi: "Proposed. Local routing; nodes receive blinded cluster ids over OPRF/PSI — never the question or a vector.",
   v2: "Local routing; nodes receive an invertible routing-space vector.",
   smart: "Adaptive budgeted selection, no decoys; nodes receive the question text.",
@@ -45,6 +47,7 @@ export function ChatPanel() {
   const [decoyPolicy, setDecoyPolicy] = useState<DecoyPolicy>("cells");
   const [trustWeight, setTrustWeight] = useState(0.5);
   const [evidenceTopK, setEvidenceTopK] = useState(2);
+  const [blindProbes, setBlindProbes] = useState(8);
   const [identity, setIdentity] = useState<IdentityState>({ active: null, available: [] });
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -84,6 +87,7 @@ export function ChatPanel() {
         ...(privacyModes
           ? { decoy_policy: decoyPolicy, cell_size: 4, evidence_top_k: evidenceTopK, trust_weight: trustWeight }
           : {}),
+        ...(routingMode === "blind" ? { blind_probes: blindProbes, evidence_top_k: evidenceTopK } : {}),
       });
       setMessages((m) => m.map((msg) => (msg.id === id ? { ...msg, status: "done", result } : msg)));
     } catch (err) {
@@ -244,6 +248,7 @@ export function ChatPanel() {
                   className="h-8 w-full rounded-md border bg-background px-2 text-sm"
                 >
                   <option value="psi">psi — private dispatch (proposed)</option>
+                  <option value="blind">blind — blind unlock, identical traffic to every node</option>
                   <option value="v2">v2 — vector dispatch</option>
                   <option value="smart">smart</option>
                   <option value="legacy">legacy (control)</option>
@@ -283,6 +288,31 @@ export function ChatPanel() {
                       step={0.5}
                       value={trustWeight}
                       onChange={(e) => setTrustWeight(Number(e.target.value))}
+                      className="h-8 text-sm"
+                    />
+                  </Label>
+                  <Label className="flex flex-col items-start gap-1.5 text-xs">
+                    Evidence kept
+                    <Input
+                      type="number"
+                      min={1}
+                      value={evidenceTopK}
+                      onChange={(e) => setEvidenceTopK(Number(e.target.value))}
+                      className="h-8 text-sm"
+                    />
+                  </Label>
+                </div>
+              )}
+              {routingMode === "blind" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Label className="flex flex-col items-start gap-1.5 text-xs">
+                    Probes per node
+                    <Input
+                      type="number"
+                      min={1}
+                      max={64}
+                      value={blindProbes}
+                      onChange={(e) => setBlindProbes(Number(e.target.value))}
                       className="h-8 text-sm"
                     />
                   </Label>

@@ -73,6 +73,9 @@ export interface NodePrivacy {
   envelopes_delivered: number | null;
   envelopes_opened: number | null;
   collections_readable: string[] | null;
+  /** blind (docs/47): points this node received (same for every node), and how many were real — device-only knowledge. */
+  probes_sent?: number | null;
+  real_probes?: number | null;
   error: string | null;
 }
 
@@ -102,13 +105,15 @@ export interface QueryRequest {
   /** "v2" (docs/30) dispatches a shared-space vector instead of the query text
    * and counts genuine + decoy contacts against one budget. Opt-in; "legacy"
    * remains the default. */
-  routing_mode?: "legacy" | "smart" | "v2" | "psi";
+  routing_mode?: "legacy" | "smart" | "v2" | "psi" | "blind";
   /** v2/psi: candidate pool decoys are drawn from. */
   coarse_k?: number;
   /** psi only: nearest published centroids probed per node (default 2). */
   psi_nprobe?: number;
   /** psi only: envelope anonymity-set size per node; omit for all envelopes. */
   psi_fetch_set?: number;
+  /** blind only (docs/47): points sent to EVERY node per question, real or dummy (default 4). */
+  blind_probes?: number;
   /** Keep only the top-k passages across all contacted nodes (cross-node rerank) before generation. */
   evidence_top_k?: number;
   /** v2/psi: "topic_stable" hides which contact is genuine; "cells" also hides the topic (docs/40). */

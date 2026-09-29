@@ -85,6 +85,11 @@ class MCPNodeHandle:
         Neither the query text nor its vector is ever an argument here.
         `auth` is the credential signature (privacy/credentials.Credential.sign);
         a refusal raises PermissionError with the node's reason."""
+        return (await self.psi_evaluate_epoch_async(blinded, auth))[0]
+
+    async def psi_evaluate_epoch_async(self, blinded: list[bytes], auth: dict | None = None):
+        """As psi_evaluate, plus the node's key epoch (docs/47), so a blind
+        unlock device knows when its cached table is stale."""
         args = {"blinded": [b.hex() for b in blinded]}
         if auth is not None:
             args["auth"] = auth
@@ -93,7 +98,23 @@ class MCPNodeHandle:
             raise PermissionError(f"node {self.node_id!r} refused psi_evaluate: {result['error']}")
         # docs/45: one evaluation per collection the node's policy lets this
         # credential read (always at least "public" on an open node).
-        return [{c: bytes.fromhex(h) for c, h in per.items()} for per in result["evaluations"]]
+        return [{c: bytes.fromhex(h) for c, h in per.items()} for per in result["evaluations"]], result.get("epoch")
+
+    def psi_evaluate_epoch(self, blinded: list[bytes], auth: dict | None = None):
+        return asyncio.run(self.psi_evaluate_epoch_async(blinded, auth))
+
+    async def psi_table_async(self, auth: dict | None = None) -> dict:
+        """Blind unlock offline download (docs/47): tag -> envelope."""
+        import base64
+
+        result = json.loads(await self._call_tool("psi_table", {"auth": auth}))
+        if "error" in result:
+            raise PermissionError(f"node {self.node_id!r} refused psi_table: {result['error']}")
+        result["entries"] = {bytes.fromhex(t): base64.b64decode(e) for t, e in result["entries"].items()}
+        return result
+
+    def psi_table(self, auth: dict | None = None) -> dict:
+        return asyncio.run(self.psi_table_async(auth))
 
     async def get_restricted_centroids_async(self, auth: dict | None) -> dict:
         result = json.loads(await self._call_tool("get_restricted_centroids", {"auth": auth}))

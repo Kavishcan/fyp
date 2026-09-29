@@ -49,6 +49,10 @@ NONCE_BYTES = sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES
 KEY_BYTES = sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES
 _DOMAIN_H2C = b"fedsaferouter/psi/h2c/v1"
 _DOMAIN_KEY = b"fedsaferouter/psi/label-key/v1"
+_DOMAIN_TAG = b"fedsaferouter/psi/lookup-tag/v1"
+_DOMAIN_NONCE = b"fedsaferouter/psi/nonce/v1"
+_DOMAIN_EPOCH = b"fedsaferouter/psi/epoch/v1"
+TAG_BYTES = 16
 
 
 # --- group helpers ------------------------------------------------------------
@@ -86,6 +90,72 @@ def label_key(oprf_output: bytes, node_id: str, collection: str = "public") -> b
 
 def encode_cluster_id(cluster_id: int) -> bytes:
     return f"cluster:{int(cluster_id)}".encode("utf-8")
+
+
+def label_tag(oprf_output: bytes, node_id: str, collection: str = "public") -> bytes:
+    """Blind unlock (docs/47): the envelope's lookup label, derived from the
+    same OPRF output as its key under a separate domain. Only a holder of
+    k·H(id) can compute it, so a published table of tags reveals no id; the
+    client that has it finds its envelope by lookup instead of trying every
+    envelope against every key."""
+    material = oprf_output + b"\0collection:" + collection.encode("utf-8")
+    return hashlib.blake2b(material, key=_DOMAIN_TAG, salt=node_id.encode("utf-8")[:16].ljust(16, b"\0"),
+                           digest_size=TAG_BYTES).digest()
+
+
+def dummy_point() -> bytes:
+    """A cover probe. A real blinded point r·H(id) with r uniform mod the
+    group order is a uniform element of the prime-order group (H(id) is a
+    generator of it); r·G with r uniform is the same distribution, so a node
+    cannot tell the two apart. Fixed-base multiplication is ~7x cheaper than
+    blinding a hashed point, and the dummy is most of the per-query work."""
+    return sodium.crypto_scalarmult_ed25519_base_noclamp(random_scalar())
+
+
+# --- compact envelope payload (blind unlock tables) ---------------------------
+#
+# JSON with float64 embedding lists is ~20 bytes per coordinate; the blind
+# table stores embeddings as float16 (2 bytes) after a small JSON header, and
+# pads every payload of a table to one length so envelope sizes carry no
+# cluster size. Format: b"FSR1" | u32 header length | header JSON |
+# float16[n, dim] | zero padding.
+
+_COMPACT_MAGIC = b"FSR1"
+
+
+def encode_passages(passages: list[dict]) -> bytes:
+    import numpy as np
+
+    header = json.dumps({"documents": [p["document"] for p in passages],
+                         "collections": [p.get("collection", "public") for p in passages],
+                         "dim": len(passages[0]["embedding"]) if passages else 0}).encode("utf-8")
+    embeddings = (np.asarray([p["embedding"] for p in passages], dtype=np.float16).tobytes() if passages else b"")
+    return _COMPACT_MAGIC + len(header).to_bytes(4, "big") + header + embeddings
+
+
+def decode_passages(payload: bytes) -> list[dict]:
+    """Inverse of encode_passages (padding ignored); JSON payloads of the
+    per-query PSI table are accepted too."""
+    import numpy as np
+
+    if not payload.startswith(_COMPACT_MAGIC):
+        return json.loads(payload)
+    size = int.from_bytes(payload[4:8], "big")
+    header = json.loads(payload[8:8 + size])
+    n, dim = len(header["documents"]), header["dim"]
+    flat = np.frombuffer(payload[8 + size:8 + size + 2 * n * dim], dtype=np.float16).astype(np.float64)
+    vectors = flat.reshape(n, dim) if n else np.empty((0, dim))
+    return [{"document": d, "collection": c, "embedding": v.tolist()}
+            for d, c, v in zip(header["documents"], header["collections"], vectors)]
+
+
+def seal_deterministic(key: bytes, plaintext: bytes) -> bytes:
+    """AEAD with the nonce derived from (key, plaintext). Each blind-table key
+    seals exactly one plaintext per epoch, so there is no nonce reuse across
+    different messages, and every process of a node rebuilds a byte-identical
+    table — the device's cached copy stays valid across node restarts."""
+    nonce = hashlib.blake2b(plaintext, key=key, person=_DOMAIN_NONCE[:16], digest_size=NONCE_BYTES).digest()
+    return nonce + sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(plaintext, None, nonce, key)
 
 
 # --- AEAD envelopes -----------------------------------------------------------
@@ -171,7 +241,7 @@ class PSIClient:
                 if cid in found:
                     continue
                 try:
-                    found[cid] = json.loads(open_envelope(key, envelope))
+                    found[cid] = decode_passages(open_envelope(key, envelope))
                     break
                 except CryptoError:
                     continue
@@ -212,6 +282,8 @@ class PSINode:
         Each envelope is sealed under its own collection's key. Tokens are
         random, so their order/value reveals nothing about ids or collections."""
         self.table, self.tokens, self.collection_of = {}, {}, {}
+        self._clusters = clusters
+        self._blind = None
         for cid, passages in clusters.items():
             collection = (collection_of or {}).get(cid, "public")
             if collection not in self.keys:
@@ -250,3 +322,52 @@ class PSINode:
 
     def table_bytes(self) -> int:
         return sum(len(v) for v in self.table.values())
+
+    # --- blind unlock (docs/47) -------------------------------------------------
+
+    @property
+    def epoch(self) -> str:
+        """Public identifier of the current key set: a keyed hash of the
+        OPRF keys (reveals nothing about them). Changes exactly when the keys
+        rotate, so a device knows its cached table is stale."""
+        h = hashlib.blake2b(key=_DOMAIN_EPOCH, digest_size=8)
+        for c in sorted(self.keys):
+            h.update(c.encode("utf-8") + b"\0" + self.keys[c])
+        return h.hexdigest()
+
+    def rotate_keys(self) -> None:
+        """New OPRF keys for every collection and a rebuilt table. Every
+        cached copy of the old table becomes permanently unopenable: the node
+        no longer evaluates under the keys its envelopes were sealed with."""
+        self.keys = {c: random_scalar() for c in self.keys}
+        self.build_table(self._clusters, self.collection_of)
+
+    def _build_blind(self) -> dict:
+        """Tag -> (collection, envelope) for every cluster, payloads padded to
+        one length. Deterministic in (keys, clusters)."""
+        payloads = {cid: encode_passages(p) for cid, p in self._clusters.items()}
+        width = max((len(v) for v in payloads.values()), default=0)
+        entries = {}
+        for cid, payload in payloads.items():
+            collection = self.collection_of.get(cid, "public")
+            out = scalar_mult(self.keys[collection], hash_to_point(encode_cluster_id(cid)))
+            padded = payload + b"\0" * (width - len(payload))
+            entries[label_tag(out, self.node_id, collection)] = (
+                collection, seal_deterministic(label_key(out, self.node_id, collection), padded))
+        return {"epoch": self.epoch, "entries": entries}
+
+    def blind_table(self, collections: list[str] | None = None) -> dict:
+        """The offline download: every envelope of the permitted collections
+        (None = public only), keyed by lookup tag. Every client of the same
+        role receives the same bytes, so the download says nothing about any
+        question. Restricted collections are served only to roles that may
+        read them, so an outsider does not learn their size (audit #6)."""
+        if self._blind is None or self._blind["epoch"] != self.epoch:
+            self._blind = self._build_blind()
+        allowed = set(collections or ["public"])
+        entries = {t: env for t, (c, env) in self._blind["entries"].items() if c in allowed}
+        digest = hashlib.blake2b(digest_size=16)
+        for tag in sorted(entries):
+            digest.update(tag + entries[tag])
+        return {"node_id": self.node_id, "epoch": self._blind["epoch"], "version": digest.hexdigest(),
+                "entries": entries}

@@ -36,6 +36,11 @@ Configurations:
                     node de-identification: rules + full-name NER (docs/44).
 - ours_psi_top4     PSI dispatch to the cosine top-4, no cells — separates
                     the retrieval cost of PSI bucketing from that of cells.
+- ours_blind_P*     blind unlock (docs/47): every hospital's encrypted table
+                    downloaded once (offline, reported separately); per
+                    question the device unlocks the P best clusters across
+                    ALL hospitals and sends exactly P points — real or dummy —
+                    to every hospital.
 
 Measured per configuration: retrieval (MRR, P@10, nDCG@10), contacts per
 query, whether contacted hospitals receive the query text, topic inference
@@ -68,6 +73,7 @@ from eval.sweep import REPO_ROOT, RESULTS_DIR, SentenceTransformerEmbedder
 from nodes.simulator import build_simulated_source
 from privacy.cluster_index import assign_clusters, kmeans_unit, rerank_passages
 from privacy.deidentify import presidio_backend
+from privacy.blind_unlock import NodeClusters, TableCache, plan_probes, unlock
 from privacy.psi import PSIClient
 from router.anonymity import build_cells, cell_cover
 
@@ -142,6 +148,7 @@ def dense_top(node, uid_of, qvec, k=10) -> list[tuple[str, float]]:
 
 
 def psi_top(node, profile, uid_of, qvec, nprobe=2) -> list[dict]:
+    """One in-process PSI contact: assign, blind, OPRF, open (real crypto)."""
     wanted = assign_clusters(qvec, profile.cluster_centroids, nprobe=nprobe)
     q = PSIClient.blind(wanted)
     opened = PSIClient.open_matches_multi(q, node.psi.evaluate_for(q.blinded, ["public"]), node.source_id,
@@ -157,7 +164,11 @@ def main() -> None:
     parser.add_argument("--router-k", type=int, default=4)
     parser.add_argument("--cell-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=11)
+    parser.add_argument("--skip-stock-deid", action="store_true",
+                        help="skip the stock-Presidio node build (only used for the de-id damage row)")
     parser.add_argument("--embedder-model", default="BAAI/bge-base-en-v1.5")
+    parser.add_argument("--only", nargs="*", default=None,
+                        help="run only these configurations (e.g. ours_blind_P8); default all")
     args = parser.parse_args()
 
     t0 = time.perf_counter()
@@ -186,10 +197,10 @@ def main() -> None:
         return [uids[j] for j in np.argsort(-scores)[:10]]
 
     ner = presidio_backend()
-    stock = presidio_backend(entities=("PERSON", "LOCATION"), full_names_only=False)
+    stock = None if args.skip_stock_deid else presidio_backend(entities=("PERSON", "LOCATION"), full_names_only=False)
     print("building nodes: no de-id / stock Presidio (HyFedRAG-style) / rules + full-name NER (ours)", flush=True)
     raw_nodes = build_nodes(client_docs, embedder, args.seed, None, deidentify=False)
-    hy_nodes = build_nodes(client_docs, embedder, args.seed, stock, deidentify=True)
+    hy_nodes = None if stock is None else build_nodes(client_docs, embedder, args.seed, stock, deidentify=True)
     our_nodes = build_nodes(client_docs, embedder, args.seed, ner, deidentify=True)
     print(f"nodes ready ({time.perf_counter() - t0:.0f}s)", flush=True)
 
@@ -200,44 +211,121 @@ def main() -> None:
     router.register_sources([our_nodes[c][1] for c in clients])
     cells = build_cells(clients, {c: c for c in clients}, args.cell_size)
 
-    def run(name, i):
-        q = qv[i]
-        if name == "centralized":
-            return centralized(i), [], 0, False
-        if name == "hyfedrag_style":
-            # HyFedRAG's edge retriever works over the hospital's raw local data
-            # and de-identifies only what it sends on; so rank on the raw index
-            # (its de-identification cost is reported separately below).
-            hits = [h for c in clients for h in dense_top(raw_nodes[c][0], raw_nodes[c][2], q)]
-            return [u for u, _ in sorted(hits, key=lambda x: -x[1])[:10]], clients, len(queries[i][1]) * len(clients), True
-        if name == "cosine_router":
-            chosen = list(router.rank(q, top_k=args.router_k).ranked_source_ids)
-            hits = [h for c in chosen for h in dense_top(raw_nodes[c][0], raw_nodes[c][2], q)]
-            return [u for u, _ in sorted(hits, key=lambda x: -x[1])[:10]], chosen, len(queries[i][1]) * len(chosen), True
-        if name in ("ours_psi_cells", "ours_psi_top4"):
-            if name == "ours_psi_cells":
-                top = list(router.rank(q, top_k=1).ranked_source_ids)
-                chosen = cell_cover(top, cells, max(len(c) for c in cells))
-            else:   # PSI dispatch to the cosine top-k, no cells: isolates PSI's retrieval cost from the cells'
-                chosen = list(router.rank(q, top_k=args.router_k).ranked_source_ids)
-            pool, bytes_ = [], 0
-            for c in chosen:
-                node, profile, uid_of = our_nodes[c]
-                cand = psi_top(node, profile, uid_of, q)
-                pool += [dict(p, uid=uid_of[p["document"]]) for p in cand]
-                bytes_ += 2 * 32 * 2 + 64          # two blinded points, hex-encoded, plus framing
-            ranked = rerank_passages(q, pool, top_n=10)
-            by_doc = {p["document"]: p["uid"] for p in pool}
-            return [by_doc[d] for d, _ in ranked], chosen, bytes_, False
-        raise ValueError(name)
+    cells2 = build_cells(clients, {c: c for c in clients}, 2)
+    psi_table_bytes = {c: 2 * sum(len(v) for v in our_nodes[c][0].psi.table.values()) for c in clients}  # hex on the wire
 
-    rows, per_q = [], {}
-    for name in ("centralized", "hyfedrag_style", "cosine_router", "ours_psi_top4", "ours_psi_cells"):
-        m, p, n, contacts, sent, exposed, patterns = [], [], [], [], [], [], []
+    def rank_hospitals(q, k, fine: bool) -> list[str]:
+        """coarse: the profile's few routing centroids (router/v2 default).
+        fine: each hospital's best-matching PUBLIC cluster centroid — finer
+        information the device already holds for PSI; no new disclosure."""
+        if not fine:
+            return list(router.rank(q, top_k=k).ranked_source_ids)
+        scores = {c: float(np.max(np.asarray(our_nodes[c][1].cluster_centroids) @ q)) for c in clients}
+        return sorted(scores, key=lambda c: -scores[c])[:k]
+
+    # name -> (selection, fine routing, dispatch, nprobe)
+    CONFIGS = {
+        "centralized": ("central", False, "dense", 0),
+        "hyfedrag_style": ("all", False, "text", 0),
+        "cosine_router": ("top4", False, "text", 0),
+        "cosine_router_fine": ("top4", True, "text", 0),
+        "ours_psi_top4": ("top4", False, "psi", 2),
+        "ours_psi_cells": ("cell4", False, "psi", 2),
+        "ours_psi_cells_fine": ("cell4", True, "psi", 2),
+        "ours_psi_cells_fine_np3": ("cell4", True, "psi", 3),
+        "ours_psi_cells_fine_np4": ("cell4", True, "psi", 4),
+        "ours_psi_cells2x2_fine_np3": ("cell2x2", True, "psi", 3),
+        "ours_psi_broadcast_np2": ("all", True, "psi", 2),
+        "ours_psi_broadcast_np3": ("all", True, "psi", 3),
+        "ours_blind_P4": ("all", True, "blind", 4),
+        "ours_blind_P8": ("all", True, "blind", 8),
+        "ours_blind_P16": ("all", True, "blind", 16),
+        "ours_blind_P24": ("all", True, "blind", 24),
+    }
+
+    # Blind unlock, offline step: every hospital's public table, downloaded
+    # once per key epoch. Measured here once; not charged to any question.
+    t_off = time.perf_counter()
+    blind_cache = TableCache()
+    for c in clients:
+        blind_cache.put(c, our_nodes[c][0].psi.blind_table())
+    offline_s = time.perf_counter() - t_off
+    offline_bytes = {c: blind_cache.tables[c].size_bytes() * 4 // 3 for c in clients}   # base64 on the wire
+    blind_clusters = [NodeClusters(c, list(range(len(our_nodes[c][1].cluster_centroids))),
+                                   np.asarray(our_nodes[c][1].cluster_centroids),
+                                   ["public"] * len(our_nodes[c][1].cluster_centroids)) for c in clients]
+    uid_by_doc = {d: u for c in clients for d, u in our_nodes[c][2].items()}
+    print(f"blind tables: {sum(offline_bytes.values()) / 1e6:.1f} MB for {len(clients)} hospitals "
+          f"(largest {max(offline_bytes.values()) / 1e6:.1f} MB; per-query PSI ships {sum(psi_table_bytes.values()) / 1e6:.0f} MB "
+          f"for all 8), built in {offline_s:.1f}s", flush=True)
+
+    def run(name, i):
+        """Returns ranked uids, contacted hospitals, bytes sent, bytes received,
+        passages disclosed, whether the question text reached hospitals."""
+        q = qv[i]
+        selection, fine, dispatch, nprobe = CONFIGS[name]
+        if selection == "central":
+            return centralized(i), [], 0, 0, 0, False
+        if selection == "all":
+            chosen = list(clients)
+        elif selection == "top4":
+            chosen = rank_hospitals(q, args.router_k, fine)
+        elif selection == "cell4":
+            chosen = cell_cover(rank_hospitals(q, 1, fine), cells, max(len(c) for c in cells))
+        else:  # cell2x2: whole cells of size 2 for the top-2 hospitals
+            chosen = cell_cover(rank_hospitals(q, 2, fine), cells2, 2 * max(len(c) for c in cells2))
+        if dispatch == "blind":
+            t_dev = time.perf_counter()
+            plan = plan_probes(q, blind_clusters, nprobe)
+            device_ms = (time.perf_counter() - t_dev) * 1000
+            pool, node_ms = [], []
+            for c in chosen:
+                node = our_nodes[c][0]
+                t_node = time.perf_counter()
+                evaluated = node.psi.evaluate_for(plan.points[c], ["public"])    # the hospital's work
+                node_ms.append((time.perf_counter() - t_node) * 1000)
+                t_dev = time.perf_counter()
+                opened = unlock(plan, c, evaluated, blind_cache)
+                pool += [p for cid in opened for p in opened[cid]]
+                device_ms += (time.perf_counter() - t_dev) * 1000
+            t_dev = time.perf_counter()
+            ranked = rerank_passages(q, pool, top_n=10)
+            device_ms += (time.perf_counter() - t_dev) * 1000
+            split.append((device_ms, max(node_ms)))
+            sent = len(chosen) * (nprobe * 64 + 64)                # P points (hex) to every hospital + framing
+            received = len(chosen) * (nprobe * 64 + 64)            # P evaluations back; tables are cached
+            return [uid_by_doc[d] for d, _ in ranked], chosen, sent, received, len(pool), False
+        if dispatch == "text":
+            # HyFedRAG and a normal router: the question goes to every contacted
+            # hospital; each returns its local top-10 over its RAW index.
+            hits = [(c, h) for c in chosen for h in dense_top(raw_nodes[c][0], raw_nodes[c][2], q)]
+            sent = len(queries[i][1].encode("utf-8")) * len(chosen)
+            received = sum(len(raw_nodes[c][0].documents[0]) for c in chosen) * 10 // 1   # ~10 passages each
+            ranked = [u for _, (u, _) in sorted(hits, key=lambda x: -x[1][1])[:10]]
+            return ranked, chosen, sent, received, 10 * len(chosen), True
+        pool, received = [], 0
+        for c in chosen:
+            node, profile, uid_of = our_nodes[c]
+            cand = psi_top(node, profile, uid_of, q, nprobe=nprobe)
+            pool += [dict(p, uid=uid_of[p["document"]]) for p in cand]
+            received += psi_table_bytes[c] + nprobe * 64       # full labeled PSI: every envelope, plus OPRF replies
+        ranked = rerank_passages(q, pool, top_n=10)
+        by_doc = {p["document"]: p["uid"] for p in pool}
+        sent = len(chosen) * (nprobe * 64 + 64)                # blinded points (hex) + framing
+        return [by_doc[d] for d, _ in ranked], chosen, sent, received, len(pool), False
+
+    rows = []
+    split: list[tuple[float, float]] = []   # blind: (device ms, slowest hospital ms) per question
+    for name in [c for c in CONFIGS if args.only is None or c in args.only]:
+        m, p, n, contacts, sent, recv, disclosed, exposed, patterns, times = ([] for _ in range(10))
+        split.clear()
         for i, (qid, _, rel) in enumerate(queries):
-            ranked, contacted, bytes_, text_sent = run(name, i)
+            t_q = time.perf_counter()
+            ranked, contacted, s_b, r_b, disc, text_sent = run(name, i)
+            times.append((time.perf_counter() - t_q) * 1000)
             m.append(mrr(ranked, rel)); p.append(p_at(ranked, rel)); n.append(ndcg_at(ranked, rel))
-            contacts.append(len(contacted)); sent.append(bytes_); exposed.append(1.0 if text_sent and contacted else 0.0)
+            contacts.append(len(contacted)); sent.append(s_b); recv.append(r_b); disclosed.append(disc)
+            exposed.append(1.0 if text_sent and contacted else 0.0)
             patterns.append(sorted(contacted))
         half = len(queries) // 2
         topic_acc = float("nan")
@@ -250,14 +338,25 @@ def main() -> None:
                      "contacts": float(np.mean(contacts)), "query_text_to_hospitals": float(np.mean(exposed)),
                      "topic_inference": topic_acc,
                      "topic_majority_floor": max(Counter(topic[half:]).values()) / len(topic[half:]),
-                     "bytes_sent_per_query": float(np.mean(sent))})
+                     "passages_disclosed_per_query": float(np.mean(disclosed)),
+                     "bytes_sent_per_query": float(np.mean(sent)), "bytes_received_per_query": float(np.mean(recv)),
+                     "compute_ms_per_query": float(np.mean(times)), "compute_ms_p95": float(np.percentile(times, 95)),
+                     "device_ms_per_query": float(np.mean([d for d, _ in split])) if split else float("nan"),
+                     "slowest_hospital_ms_per_query": float(np.mean([h for _, h in split])) if split else float("nan"),
+                     "offline_table_bytes_total": (float(sum(offline_bytes.values())) if CONFIGS[name][2] == "blind"
+                                                   else 0.0)})
         r = rows[-1]
-        print(f"  {name:<16} MRR {r['mrr']:.4f} P@10 {r['p@10']:.4f} nDCG@10 {r['ndcg@10']:.4f} | contacts {r['contacts']:.1f} "
-              f"| query text to hospitals {r['query_text_to_hospitals']:.2f} | topic inference {r['topic_inference']:.3f} "
-              f"(floor {r['topic_majority_floor']:.3f}) | bytes {r['bytes_sent_per_query']:.0f}", flush=True)
+        print(f"  {name:<28} MRR {r['mrr']:.4f} nDCG@10 {r['ndcg@10']:.4f} | contacts {r['contacts']:.1f} "
+              f"| q-text {r['query_text_to_hospitals']:.2f} | topic {r['topic_inference']:.3f} (floor {r['topic_majority_floor']:.3f}) "
+              f"| passages {r['passages_disclosed_per_query']:.0f} | ms {r['compute_ms_per_query']:.1f} "
+              f"| sent {r['bytes_sent_per_query']:.0f} B recv {r['bytes_received_per_query'] / 1e6:.2f} MB"
+              + (f" | device {r['device_ms_per_query']:.1f} ms, slowest hospital {r['slowest_hospital_ms_per_query']:.1f} ms"
+                 if split else ""), flush=True)
 
     # De-identification damage on clean clinical prose (no real PII present).
     for label, nodes in (("stock Presidio (HyFedRAG-style)", hy_nodes), ("rules + full-name NER (ours)", our_nodes)):
+        if nodes is None:
+            continue
         altered = total = 0
         for c in clients:
             orig = [t for _, t in client_docs[c]]

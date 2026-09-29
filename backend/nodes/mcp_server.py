@@ -232,8 +232,33 @@ def main() -> None:
         allowed = permitted_collections(node.access_policy, roles, node.psi.collections,
                                         authorised=node.authorizer is not None)
         evaluated = node.psi.evaluate_for(points, allowed)
-        return json.dumps({"collections": allowed,
+        return json.dumps({"collections": allowed, "epoch": node.psi.epoch,
                            "evaluations": [{c: e.hex() for c, e in per.items()} for per in evaluated]})
+
+    @server.tool()
+    def psi_table(auth: dict | None = None) -> str:
+        """Blind unlock, offline step (docs/47): this node's whole encrypted
+        cluster table, keyed by OPRF-derived tags, envelopes padded to one
+        length. Public collection for anyone; restricted collections only
+        for a credential whose roles may read them (their size is not shown
+        to anyone else). Same bytes for every caller of the same role, and
+        charges no evaluations. Base64 on the wire."""
+        import base64
+
+        from privacy.credentials import Unauthorized, permitted_collections  # noqa: E402
+
+        roles: tuple[str, ...] = ()
+        if node.authorizer is not None and auth is not None:
+            try:
+                roles = node.authorizer.roles_of(node.authorizer.check(auth, []))
+            except Unauthorized as exc:
+                return json.dumps({"error": exc.reason})
+        allowed = permitted_collections(node.access_policy, roles, node.psi.collections,
+                                        authorised=node.authorizer is not None and auth is not None)
+        table = node.psi.blind_table(allowed)
+        return json.dumps({"node_id": table["node_id"], "epoch": table["epoch"], "version": table["version"],
+                           "entries": {t.hex(): base64.b64encode(e).decode("ascii")
+                                       for t, e in table["entries"].items()}})
 
     @server.tool()
     def get_restricted_centroids(auth: dict | None = None) -> str:

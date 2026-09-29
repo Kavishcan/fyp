@@ -19,7 +19,8 @@ function fmtMs(n: number | null | undefined): string {
  * contacted node the bytes, time, envelopes and readable collections. */
 export function PrivacyDetails({ privacy }: { privacy: PrivacySummary }) {
   const nodes = Object.entries(privacy.per_node);
-  const isPsi = privacy.routing_mode === "psi";
+  const isBlind = privacy.routing_mode === "blind";
+  const isPsi = privacy.routing_mode === "psi" || isBlind;
   return (
     <details className="text-xs">
       <summary className="cursor-pointer text-muted-foreground select-none inline-flex items-center gap-1">
@@ -34,7 +35,11 @@ export function PrivacyDetails({ privacy }: { privacy: PrivacySummary }) {
           {privacy.decoy_policy && (
             <span>
               <span className="text-muted-foreground">cover: </span>
-              {privacy.decoy_policy === "cells" ? "fixed anonymity cell" : "topic-stable decoys"}
+              {privacy.decoy_policy === "cells"
+                ? "fixed anonymity cell"
+                : privacy.decoy_policy === "blind_unlock"
+                  ? "every node, same number of points (real or dummy)"
+                  : "topic-stable decoys"}
             </span>
           )}
           <span>
@@ -60,7 +65,7 @@ export function PrivacyDetails({ privacy }: { privacy: PrivacySummary }) {
                   <th className="font-normal pr-3">sent</th>
                   <th className="font-normal pr-3">received</th>
                   <th className="font-normal pr-3">time</th>
-                  {isPsi && <th className="font-normal pr-3">envelopes opened</th>}
+                  {isPsi && <th className="font-normal pr-3">{isBlind ? "points (real)" : "envelopes opened"}</th>}
                   {isPsi && <th className="font-normal pr-3">passages disclosed</th>}
                   {isPsi && <th className="font-normal">readable collections</th>}
                 </tr>
@@ -77,7 +82,9 @@ export function PrivacyDetails({ privacy }: { privacy: PrivacySummary }) {
                         {n.error ? (
                           <Badge variant="destructive" className="text-[10px]">{n.error}</Badge>
                         ) : (
-                          `${n.envelopes_opened ?? "—"} of ${n.envelopes_delivered ?? "—"}`
+                          isBlind
+                            ? `${n.probes_sent ?? "—"} (${n.real_probes ?? 0} real)`
+                            : `${n.envelopes_opened ?? "—"} of ${n.envelopes_delivered ?? "—"}`
                         )}
                       </td>
                     )}

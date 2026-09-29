@@ -75,13 +75,16 @@ class QueryRequest(BaseModel):
     max_nodes: int = Field(default=5, ge=0)  # hard fan-out cap in smart mode
     genuine_k: int = Field(default=2, ge=0)  # legacy mode only
     sigma: float = Field(default=0.0, ge=0, allow_inf_nan=False)
-    routing_mode: Literal["legacy", "smart", "v2", "psi"] = "legacy"
+    routing_mode: Literal["legacy", "smart", "v2", "psi", "blind"] = "legacy"
     coarse_k: int = Field(default=15, ge=0)  # v2/psi: candidate pool decoys are drawn from
     # psi only (docs/03 target, docs/35): nearest published centroids probed,
     # and the size of the envelope anonymity set fetched per node (None = all
     # envelopes, i.e. plain labeled PSI; the node learns nothing about the match).
     psi_nprobe: int = Field(default=2, ge=1)
     psi_fetch_set: Optional[int] = Field(default=None, ge=1)
+    # blind only (docs/47): points sent to EVERY node per question, real or
+    # dummy; also the number of clusters unlocked across the federation.
+    blind_probes: int = Field(default=4, ge=1, le=64)
     # Cross-node evidence rerank (docs/40): keep only the top-k passages by
     # cosine to the query in the shared routing space, across all contacted
     # nodes, before generation. None = keep all (every node's passage).
@@ -122,8 +125,10 @@ class QueryRequest(BaseModel):
                 raise ValueError("metadata relevance requires smart mode")
             if self.genuine_k > self.max_nodes:
                 raise ValueError("genuine_k cannot exceed max_nodes in v2 mode")
-        if self.routing_mode == "psi" and self.sigma != 0:
-            raise ValueError("psi mode dispatches no vector to perturb")
+        if self.routing_mode in {"psi", "blind"} and self.sigma != 0:
+            raise ValueError(f"{self.routing_mode} mode dispatches no vector to perturb")
+        if self.routing_mode == "blind" and (self.selection_policy != "overlap" or self.relevance_mode != "centroid"):
+            raise ValueError("smart-only knobs have no meaning in blind mode")
         return self
 
 

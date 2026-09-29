@@ -32,6 +32,7 @@ from router.registry import SourceRegistry
 from router.smart import EvidenceTrust, SmartConfig, SmartRouter, SourceEvidence
 from router.trust import BoundedTrustUpdate
 from router.anonymity import build_cells
+from privacy.blind_unlock import NodeClusters, TableCache, plan_probes, unlock
 from router.v2 import DecoyAwareEvidenceTrust, V2Config, dispatch_payload, dispatched_vector, select_dispatch
 
 from .embedder import SHARED_ROUTING_MODEL, HashingEmbedder
@@ -93,6 +94,9 @@ class AppState:
         # are in their own allow-lists.
         self.demo_identities: dict = {}
         self.instrumentation = Instrumentation(instrumentation_path)
+        # Blind unlock (docs/47): the device's copies of every node's
+        # encrypted table, refreshed only when a node's key epoch changes.
+        self.blind_cache = TableCache()
         self._rng = np.random.default_rng()
         # Demo-only, external-API generation — see backend/generation/base.py
         # docstring for why this is NOT the research pipeline's design.
@@ -232,7 +236,7 @@ class AppState:
         for profile in self.registry.all_profiles():
             if routing_mode == "smart":
                 trust, observations = self.smart_trust.get(profile.source_id)
-            elif routing_mode in {"v2", "psi"}:
+            elif routing_mode in {"v2", "psi", "blind"}:
                 trust, observations = self.v2_trust.get(profile.source_id)
             else:
                 trust = self.trust_update.get(profile.source_id, default=profile.trust_mean)
@@ -270,6 +274,7 @@ class AppState:
         else:
             raise KeyError(client_id)
         self.__dict__.pop("_restricted_cache", None)
+        self.blind_cache = TableCache()   # tables are role-scoped (docs/47)
         return self.credential
 
     def run_query(
@@ -281,12 +286,12 @@ class AppState:
         selection_policy: str = "overlap", relative_score_floor: float = 0.8,
         coarse_k: int = 15, psi_nprobe: int = 2, psi_fetch_set: int | None = None,
         evidence_top_k: int | None = None, decoy_policy: str = "topic_stable", cell_size: int = 4,
-        trust_weight: float = 0.0,
+        trust_weight: float = 0.0, blind_probes: int = 4,
     ) -> dict:
-        if routing_mode not in {"legacy", "smart", "v2", "psi"}:
-            raise ValueError("routing_mode must be legacy, smart, v2 or psi")
-        if routing_mode == "psi" and sigma != 0:
-            raise ValueError("psi mode dispatches no vector to perturb")
+        if routing_mode not in {"legacy", "smart", "v2", "psi", "blind"}:
+            raise ValueError("routing_mode must be legacy, smart, v2, psi or blind")
+        if routing_mode in {"psi", "blind"} and sigma != 0:
+            raise ValueError(f"{routing_mode} mode dispatches no vector to perturb")
         if routing_mode == "legacy" and selection_policy != "overlap":
             raise ValueError("relative selection requires smart mode")
         if routing_mode == "smart" and sigma != 0:
@@ -326,10 +331,30 @@ class AppState:
         topic_key = "smart-no-decoys" if routing_mode == "smart" else assign_topic_key(query_embedding, profiles)
 
         routing_details = None
+        blind_outcome = None
         # The single vector v2 dispatches; None in every other mode. Built once
         # so every contacted node receives an identical payload.
         v2_vector = None
-        if routing_mode in {"v2", "psi"}:
+        if routing_mode == "blind":
+            # Blind unlock (docs/47): no source selection leaves the device.
+            # Every registered node is contacted, in a fixed order, with
+            # exactly `blind_probes` points; which clusters (if any) are real
+            # is decided locally over every node's published clusters.
+            blind_outcome = self._blind_retrieve(profiles, query_embedding, probes=blind_probes,
+                                                 top_n=max(1, max_nodes))
+            routing_details = {
+                "mode": "blind", "embedding_model": self.routing_embedder.model_name,
+                "dispatch_payload_kind": "fixed_count_blinded_points_real_or_dummy",
+                "dispatched_source_ids": blind_outcome["contacted"],
+                "genuine_source_ids": blind_outcome["genuine"],
+                "blind": {k: v for k, v in blind_outcome.items() if k not in {"citations", "per_node_passages"}},
+            }
+            result = PipelineResult(
+                dispatched_source_ids=blind_outcome["contacted"],
+                genuine_source_ids=blind_outcome["genuine"],
+                coarse_candidate_ids=blind_outcome["contacted"],
+            )
+        elif routing_mode in {"v2", "psi"}:
             # psi (docs/03 target): identical LOCAL routing to v2, but the
             # dispatch stage is the OPRF/labeled-PSI protocol in privacy/psi.py
             # — no query text and no query vector ever reaches a node. In this
@@ -396,7 +421,16 @@ class AppState:
         request_bytes: dict[str, int] = {}
         response_bytes: dict[str, int] = {}
         retrieval_started = time.perf_counter()
-        for node_id in result.dispatched_source_ids:
+        if blind_outcome is not None:
+            citations = blind_outcome["citations"]
+            request_bytes, response_bytes = blind_outcome["request_bytes"], blind_outcome["response_bytes"]
+            retrieval_ms, retrieval_errors = blind_outcome["contact_ms"], blind_outcome["errors"]
+            for node_id, texts in blind_outcome["per_node_passages"].items():
+                # Trust observes only nodes that served a REAL probe; a node
+                # that only saw dummies returned nothing by construction.
+                embeddings = self.routing_embedder.embed(texts) if texts else np.empty((0, 0))
+                self.v2_trust.observe(node_id, self.registry.get(node_id), embeddings)
+        for node_id in ([] if blind_outcome is not None else result.dispatched_source_ids):
             node = self.nodes.get(node_id)
             if node is None:
                 continue
@@ -532,8 +566,10 @@ class AppState:
         studio. Descriptive of this run; the measured guarantees are docs/36–45."""
         payload = {"legacy": "the question text", "smart": "the question text",
                    "v2": "a routing-space vector (invertible, docs/32)",
-                   "psi": "blinded cluster ids over OPRF — never the question or a vector"}[routing_mode]
-        psi_nodes = ((routing_details or {}).get("psi") or {}).get("per_node", {})
+                   "psi": "blinded cluster ids over OPRF — never the question or a vector",
+                   "blind": "the same number of blinded points as every other node, real or dummy — "
+                            "never the question, a vector, or whether it was relevant"}[routing_mode]
+        psi_nodes = ((routing_details or {}).get("psi") or (routing_details or {}).get("blind") or {}).get("per_node", {})
         per_node = {}
         for node_id in result.dispatched_source_ids:
             info = psi_nodes.get(node_id, {})
@@ -543,12 +579,16 @@ class AppState:
                 "passages_disclosed": info.get("passages_disclosed"),
                 "envelopes_delivered": info.get("envelopes_delivered"), "envelopes_opened": info.get("envelopes_opened"),
                 "collections_readable": info.get("collections_readable"),
+                # blind (docs/47): every node gets the same count; how many were
+                # real is known only to the device, shown here because the studio IS the device.
+                "probes_sent": info.get("probes_sent"), "real_probes": info.get("real_probes"),
                 "error": retrieval_errors.get(node_id) if retrieval_errors else None,
             }
         return {
             "routing_mode": routing_mode,
             "node_receives": payload,
-            "decoy_policy": decoy_policy if routing_mode in {"v2", "psi"} else None,
+            "decoy_policy": (decoy_policy if routing_mode in {"v2", "psi"}
+                             else "blind_unlock" if routing_mode == "blind" else None),
             "identity": ({"client_id": self.credential.client_id, "roles": list(self.credential.roles)}
                          if self.credential is not None else None),
             "contacts": len(result.dispatched_source_ids),
@@ -644,6 +684,133 @@ class AppState:
             entry["rerank_score"] = float(scores[int(i)])
             ranked.append(entry)
         return ranked if top_k is None else ranked[: max(0, top_k)]
+
+    def _blind_clusters(self, node, profile) -> NodeClusters:
+        """Every cluster of this node the current credential may read: public
+        ones from the signed profile, restricted ones fetched with the
+        credential (docs/45)."""
+        from privacy.credentials import permitted_collections
+
+        pub = getattr(profile, "cluster_centroids", None)
+        ids = list(range(0 if pub is None else len(pub)))
+        centroids = [] if pub is None else [np.asarray(v, dtype=np.float64) for v in np.asarray(pub)]
+        collections = list(getattr(profile, "cluster_collections", None) or ["public"] * len(ids))
+        for entry in self._restricted_centroids(node, profile):
+            ids.append(int(entry["id"]))
+            centroids.append(np.asarray(entry["centroid"], dtype=np.float64))
+            collections.append(entry["collection"])
+        roles = self.credential.roles if self.credential is not None else ()
+        readable = set(permitted_collections(getattr(profile, "access_policy", None), roles,
+                                             sorted(set(collections)), authorised=self.credential is not None))
+        keep = [i for i, c in enumerate(collections) if c in readable]
+        return NodeClusters(profile.source_id, [ids[i] for i in keep],
+                            np.asarray([centroids[i] for i in keep]) if keep else np.empty((0, 0)),
+                            [collections[i] for i in keep])
+
+    def _blind_download(self, node, node_id: str) -> None:
+        """Offline step: fetch one node's whole blind table (same bytes for
+        every client of this role — reveals nothing about any question)."""
+        auth = self.credential.sign(node_id, []) if self.credential is not None else None
+        if isinstance(node, MCPNodeHandle):
+            table = node.psi_table(auth)
+        else:
+            from privacy.credentials import Unauthorized, permitted_collections
+
+            roles: tuple[str, ...] = ()
+            if node.authorizer is not None and auth is not None:
+                try:
+                    roles = node.authorizer.roles_of(node.authorizer.check(auth, []))
+                except Unauthorized as exc:
+                    raise PermissionError(f"node {node_id!r} refused psi_table: {exc.reason}") from exc
+            table = node.psi.blind_table(permitted_collections(
+                node.access_policy, roles, node.psi.collections,
+                authorised=node.authorizer is not None and auth is not None))
+        self.blind_cache.put(node_id, table)
+
+    def _blind_retrieve(self, profiles, query_embedding, *, probes: int, top_n: int) -> dict:
+        """Blind unlock, playing the device (privacy/blind_unlock.py, docs/47).
+
+        Contacts EVERY registered node, in sorted order, with exactly
+        `probes` points each. Tables are downloaded when missing or when a
+        node's key epoch changed — for all nodes alike, never because a
+        particular question needed one. Returns citations (global top-n over
+        every unlocked passage) and per-node accounting."""
+        from privacy.credentials import Unauthorized, permitted_collections
+
+        order = sorted(p.source_id for p in profiles)
+        profile_of = {p.source_id: p for p in profiles}
+        errors: dict[str, str] = {}
+        downloads_before, bytes_before = self.blind_cache.downloads, self.blind_cache.downloaded_bytes
+        clusters = []
+        for node_id in order:
+            node = self.nodes.get(node_id)
+            try:
+                if not self.blind_cache.is_current(node_id, None):
+                    self._blind_download(node, node_id)
+                clusters.append(self._blind_clusters(node, profile_of[node_id]))
+            except Exception as exc:
+                errors[node_id] = type(exc).__name__
+                clusters.append(NodeClusters(node_id, [], np.empty((0, 0)), []))
+        plan = plan_probes(query_embedding, clusters, probes)
+
+        pool: list[dict] = []
+        request_bytes, response_bytes, contact_ms, per_node = {}, {}, {}, {}
+        per_node_passages: dict[str, list[str]] = {}
+        for node_id in order:
+            node = self.nodes.get(node_id)
+            started = time.perf_counter()
+            points = plan.points[node_id]
+            auth = self.credential.sign(node_id, points) if self.credential is not None else None
+            request_bytes[node_id] = len(json.dumps({"blinded": [b.hex() for b in points], "auth": auth}).encode("utf-8"))
+            opened: dict[int, list[dict]] = {}
+            try:
+                if isinstance(node, MCPNodeHandle):
+                    evaluated, epoch = node.psi_evaluate_epoch(points, auth)
+                else:
+                    roles: tuple[str, ...] = ()
+                    if node.authorizer is not None:
+                        try:
+                            roles = node.authorizer.roles_of(node.authorizer.check(auth, points))
+                        except Unauthorized as exc:
+                            raise PermissionError(f"node {node_id!r} refused psi_evaluate: {exc.reason}") from exc
+                    evaluated = node.psi.evaluate_for(points, permitted_collections(
+                        node.access_policy, roles, node.psi.collections, authorised=node.authorizer is not None))
+                    epoch = node.psi.epoch
+                response_bytes[node_id] = len(json.dumps(
+                    [{c: e.hex() for c, e in per.items()} for per in evaluated]).encode("utf-8"))
+                if not self.blind_cache.is_current(node_id, epoch):
+                    self._blind_download(node, node_id)   # the node rotated its keys
+                opened = unlock(plan, node_id, evaluated, self.blind_cache)
+            except Exception as exc:
+                errors[node_id] = type(exc).__name__
+            contact_ms[node_id] = (time.perf_counter() - started) * 1000.0
+            passages = [dict(p, node_id=node_id) for cid in sorted(opened) for p in opened[cid]]
+            pool.extend(passages)
+            per_node[node_id] = {"probes_sent": len(points), "real_probes": len(plan.real[node_id]),
+                                 "envelopes_opened": len(opened), "passages_disclosed": len(passages),
+                                 "collections_readable": sorted({c for c in clusters[order.index(node_id)].collections})}
+        q = np.asarray(query_embedding, dtype=np.float64)
+        q = q / (np.linalg.norm(q) or 1.0)
+        for p in pool:
+            e = np.asarray(p["embedding"], dtype=np.float64)
+            p["score"] = float(e @ q / max(np.linalg.norm(e), 1e-12))
+        ranked = sorted(pool, key=lambda p: -p["score"])
+        citations = [{"node_id": p["node_id"], "document": p["document"], "score": p["score"],
+                      "collection": p.get("collection", "public")} for p in ranked[:top_n]]
+        for node_id in plan.genuine_nodes:
+            top = next((p["document"] for p in ranked if p["node_id"] == node_id), None)
+            per_node_passages[node_id] = [top] if top else []
+        return {
+            "contacted": order, "genuine": plan.genuine_nodes, "probes_per_node": probes,
+            "chosen_clusters": [{"node_id": n, "cluster": c, "score": s} for n, c, s in plan.chosen],
+            "passages_disclosed": len(pool), "per_node": per_node,
+            "table_downloads_this_query": self.blind_cache.downloads - downloads_before,
+            "table_bytes_downloaded_this_query": self.blind_cache.downloaded_bytes - bytes_before,
+            "cached_table_bytes": sum(t.size_bytes() for t in self.blind_cache.tables.values()),
+            "citations": citations, "per_node_passages": per_node_passages,
+            "request_bytes": request_bytes, "response_bytes": response_bytes,
+            "contact_ms": contact_ms, "errors": errors,
+        }
 
     def _psi_retrieve(self, node, profile, query_embedding, *, top_n: int, nprobe: int, fetch_set_size: int | None):
         """One PSI contact, playing the device role (privacy/psi.py):

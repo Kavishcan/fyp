@@ -11,6 +11,25 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/47: blind unlock, `routing_mode="blind"` (privacy/blind_unlock.py;
+psi.label_tag, dummy_point, PSINode.blind_table/epoch/rotate_keys; node tool
+psi_table). Offline, every node's encrypted cluster table (OPRF-derived
+lookup tags, float16 payloads padded to one length, deterministic sealing,
+restricted collections only to permitted roles) is downloaded once per key
+epoch. Per question the device takes the global top-P clusters across all
+nodes and sends EXACTLY P blinded points to EVERY node, real r·H(c) or dummy
+r·G (same distribution), in sorted node order; replies are unblinded and
+envelopes opened by tag lookup. PMC-Patients (docs/46 setup): question to 0
+hospitals, topic at the floor 0.239 at every P; MRR 0.399/0.421/0.431/0.437
+at P=4/8/16/24 (HyFedRAG-style 0.444), 74–393 records disclosed, device
+22–132 ms, slowest hospital 5–29 ms, a few KB per question; 83 MB one-time
+download for 8 hospitals. Budgets count dummies. Known pieces (labeled PSI,
+PIR-style offline download, Wally-style fake queries); the multi-owner
+routing setting is the contribution — do not call it new cryptography.
+Semi-honest nodes; timing not measured; records of the P unlocked clusters
+still reach the device (de-identified). The docs/43 budget is still
+in-memory (audit: spawn-per-call resets it) until fixed.
+
 Docs/46: HyFedRAG-style design (broadcast, raw edge retrieval, server
 fusion, stock Presidio) vs this project on PMC-Patients (545 MB CSV, user
 approved; backend/vendor/pmc_patients/), patient-to-patient retrieval with
@@ -212,7 +231,7 @@ The earlier instruction prohibiting a new router is superseded.
 
 - Preserve the legacy pipeline and published baseline semantics as independent
   controls. Do not silently change old experiment outputs or call legacy RAGRoute.
-- Smart, v2 and psi are opt-in through POST /query; legacy remains the API
+- Smart, v2, psi and blind are opt-in through POST /query; legacy remains the API
   default. The studio defaults to psi + cells (docs/41) and shows the mode on
   every answer. Update documentation and tests if either default changes.
 - Every smart source contact must fit the positive-cost per-query budget.
@@ -227,7 +246,8 @@ The earlier instruction prohibiting a new router is superseded.
 - The coordinator (the API process) sees raw queries and returned passages in
   every mode; in the demo it plays the user's device. What a contacted node
   receives depends on the mode: raw query text (legacy, smart), an invertible
-  routing-space vector (v2), or blinded cluster ids over OPRF/PSI (psi, docs/36).
+  routing-space vector (v2), blinded cluster ids over OPRF/PSI (psi, docs/36), or
+  the same number of real-or-dummy blinded points at every node (blind, docs/47).
   Privacy claims are against contacted nodes and a routing-pattern observer,
   never against the coordinator; moving the device-side code to the client is
   the docs/03 target, not the implementation. Do not say "end-to-end".
@@ -276,7 +296,8 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/eval/run_answer_quality.py | E10 MIRAGE answer quality, closed-book vs psi vs broadcast (docs/38) |
 | backend/attacks/a2_topic_inference.py, backend/eval/run_leakage.py | Contacted-set → query-topic attack and the decoy ablation (docs/39) |
 | backend/eval/run_healthcare.py | Same-domain 8-client healthcare federation, hard case for routing leakage (docs/40) |
-| backend/eval/run_hyfedrag_compare.py | HyFedRAG-style design vs ours on PMC-Patients (docs/46) |
+| backend/eval/run_hyfedrag_compare.py | HyFedRAG-style design vs ours on PMC-Patients (docs/46, blind rows docs/47; `--only` runs a subset) |
+| backend/privacy/blind_unlock.py | Blind unlock: global probe planning, dummy padding, table cache, tag-lookup unlock (docs/47) |
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |

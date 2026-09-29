@@ -52,6 +52,45 @@ two cells, and a naive-Bayes observer trained on ~150 queries is unstable;
 the 1,000-query figure is the one to report, and the small-sample swing is
 itself a caution about attack estimates at this scale.
 
+## Addendum: improvement sweep with time and bytes
+
+Same data, partition and seed; every configuration now also reports records
+disclosed, compute time and bytes both ways. Compute is in-process and
+sequential (device and hospitals on one core); "received" for PSI is the
+full envelope table of every contacted hospital (hex on the wire).
+
+| Configuration | MRR | nDCG@10 | Contacts | Question to hospitals | Topic (floor 0.239) | Records disclosed / q | ms / q (p95) | Sent / q | Received / q |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| centralized | 0.443 | 0.409 | — | — | — | — | 0.6 (0.7) | — | — |
+| HyFedRAG-style | 0.444 | 0.409 | 8 | **all 8** | 0.239 | 80 | 1.6 (1.7) | 22.0 KB | 0.24 MB |
+| cosine router top-4 | 0.444 | 0.408 | 4 | 4 | 0.318 | 40 | 0.9 (1.0) | 11.0 KB | 0.13 MB |
+| cosine router top-4, fine routing | 0.442 | 0.407 | 4 | 4 | 0.345 | 40 | 0.9 (1.0) | 11.0 KB | 0.13 MB |
+| PSI top-4 | 0.382 | 0.342 | 4 | 0 | 0.318 | 143 | 272 (350) | 768 B | 105 MB |
+| PSI + cells (docs/41 default) | 0.350 | 0.305 | 4 | 0 | 0.254 | 143 | 268 (357) | 768 B | 103 MB |
+| PSI + cells, fine routing | 0.361 | 0.318 | 4 | 0 | 0.304 | 142 | 269 (359) | 768 B | 103 MB |
+| PSI + cells, fine, nprobe 3 | 0.385 | 0.345 | 4 | 0 | 0.304 | 209 | 403 (526) | 1.0 KB | 103 MB |
+| PSI + cells, fine, nprobe 4 | 0.394 | 0.351 | 4 | 0 | 0.304 | 276 | 539 (688) | 1.3 KB | 103 MB |
+| PSI + 2×2 cells, fine, nprobe 3 | 0.400 | 0.360 | 3.6 | 0 | 0.318 | 192 | 370 (502) | 934 B | 93 MB |
+| PSI to all 8, nprobe 2 | 0.384 | 0.344 | 8 | 0 | 0.239 | 285 | 534 (623) | 1.5 KB | 198 MB |
+| PSI to all 8, nprobe 3 | 0.409 | 0.373 | 8 | 0 | 0.239 | 426 | 789 (898) | 2.0 KB | 198 MB |
+| **blind unlock, P = 8 (docs/47)** | **0.421** | 0.379 | 8 | **0** | **0.239** | 140 | 116 (125) | 4.6 KB | 4.6 KB |
+
+Reading:
+
+- **More probes recover most of PSI's bucketing loss** (nprobe 2 → 4: MRR
+  0.361 → 0.394 inside cells) at the price of more records disclosed.
+- **Fine routing (a hospital's best public cluster) helps retrieval but
+  raises the topic leak** under cells (0.254 → 0.304): with 8 hospitals
+  there are only two cells, and a sharper top-1 choice makes the cell
+  choice more topic-correlated.
+- **PSI to every hospital closes the pattern leak** (floor) with better
+  retrieval than cells, but costs ~200 MB and ~0.8 s per question — the
+  per-query table download, not the cryptography.
+- **Blind unlock (docs/47) removes that cost**: tables downloaded once
+  (83 MB for all 8), then every hospital gets the same number of real or
+  dummy points. Both leaks at zero, MRR 0.421 at P = 8, a few KB per
+  question.
+
 ## Setup
 
 `eval/run_hyfedrag_compare.py`. PMC-Patients CSV (Zhao et al., 167k patient
@@ -72,9 +111,8 @@ question text reaches every hospital. Its stock-Presidio edge
 de-identification is measured separately as damage to the delivered text.
 Ours: cosine rank over public profiles → the fixed cell (size 4) of the top
 hospital → PSI (nprobe 2) at each → decrypted passages reranked on the
-device → top 10. Bytes are the request payload sent to hospitals; PSI
-response sizes (the encrypted envelope tables, docs/36–37) are larger and not
-included here.
+device → top 10. Bytes in the first table are the request payload only; the addendum
+reports both directions.
 
 ## What this does not establish
 
@@ -88,8 +126,11 @@ included here.
   to replicate.
 - One seed; one partition; 8 hospitals. Answer quality was not measured on
   PMC-Patients (no QA labels).
-- Response bytes, and any comparison of HyFedRAG's server-side trust
-  assumption, are argued in docs/41 and the thesis text, not measured here.
+- HyFedRAG's server-side trust assumption is argued in docs/41 and the
+  thesis text, not measured here.
+- The 8-hospital partition is k-means in the routing embedding, which makes
+  both routing and topic inference easier than in a real federation; a
+  random or Dirichlet partition is the stated robustness check, not run.
 
 ## Reproduce
 

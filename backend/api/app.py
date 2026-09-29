@@ -111,7 +111,7 @@ def register_node(req: NodeRegisterRequest) -> NodeRegisterResponse:
 
 
 @app.get("/nodes", response_model=list[NodeStatus])
-def list_nodes(routing_mode: str = Query(default="legacy", pattern="^(legacy|smart|v2|psi)$")) -> list[NodeStatus]:
+def list_nodes(routing_mode: str = Query(default="legacy", pattern="^(legacy|smart|v2|psi|blind)$")) -> list[NodeStatus]:
     """Trust columns reflect `routing_mode`'s own trust state (see AppState.node_status)."""
     return [NodeStatus(**s) for s in state.node_status(routing_mode)]
 
@@ -158,7 +158,7 @@ def query(req: QueryRequest) -> QueryResponse:
         selection_policy=req.selection_policy, relative_score_floor=req.relative_score_floor,
         coarse_k=req.coarse_k, psi_nprobe=req.psi_nprobe, psi_fetch_set=req.psi_fetch_set,
         evidence_top_k=req.evidence_top_k, decoy_policy=req.decoy_policy, cell_size=req.cell_size,
-        trust_weight=req.trust_weight,
+        trust_weight=req.trust_weight, blind_probes=req.blind_probes,
     )
     return QueryResponse(**result)
 
