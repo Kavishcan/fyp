@@ -138,7 +138,25 @@ as a web search in September 2026 found:
   crypto; hospital compute is timed but hospitals would run in parallel on
   their own hardware.
 
-## Reproduce
+## Future work (decided: not part of this project)
+
+Blind unlock is the project's solution as built and measured. The following
+were designed or discussed and are deliberately left as future work:
+
+| Area | Future work | What it would address |
+|---|---|---|
+| Download size | fixed-size chunked envelopes + compression (measured estimate: 86 MB → ~16 MB for the PMC federation) | the one-time download, ~5× smaller |
+| Scale | blind unlock inside groups of nodes, cells between groups; PIR for envelope fetch | federations of hundreds to thousands of nodes |
+| Disclosure | two-level unlock (sub-cluster round) or k-out-of-K oblivious transfer | records released per probe (~10 → ~2–3) |
+| Key lifecycle | scheduled rotation with secure deletion of old secrets; threshold OPRF keys (split across servers); hardware-held keys (HSM/TEE) | a leaked old secret opening cached copies |
+| Device hygiene | purge old tables on epoch change; keep opened records and derived keys in memory only | copies and plaintext left on the device |
+| Credentials | short-lived credentials, a revoke command, usage alerts from the audit log; anonymous role tokens | stolen credentials; nodes learning who asked |
+| Malicious nodes | verifiable OPRF (DLEQ proofs of the published key) | key substitution by a node |
+| Lighter modes | relay-based fetch (Oblivious HTTP style) for weak devices, stating its weaker guarantee | devices that cannot hold the tables |
+
+What cannot be solved by any design: records a user legitimately opened
+cannot be un-revealed; minimising and auditing them is the only lever.
+
 
 ```
 python -m eval.run_hyfedrag_compare --queries 1000 --skip-stock-deid \
