@@ -109,8 +109,12 @@ _MONTHS = {"January", "February", "March", "April", "May", "June", "July", "Augu
 _SH_LABELLED = re.compile(
     r"\b(?i:account|acct|a/c|billing|policy|member(?:ship)?|insurance|insurer|health plan|beneficiary|subscriber|"
     r"claim|driving licen[cs]e|licen[cs]e|certificate|registration|number plate|licen[cs]e plate|plate|VIN|chassis|"
-    r"serial|S/N|IMEI|badge|employee|staff)"
-    r"(?:\s+(?i:no|number|num|id|code|#))?\.?\s*(?:[:#]\s*)?"
+    r"serial|S/N|IMEI|badge|employee|staff|"
+    # record and identity-card labels with compound connectors ("Medical record number: ...", "record #...")
+    r"medical record|health record|record|chart|case file|file|identity card|ID card|national identity card|UHID)"
+    # connectors may carry a full stop ("No."), the label itself may not, so a
+    # match never runs into the next sentence
+    r"(?:\s+(?i:no|number|num|id|code|#)\.?){0,2}\s*(?:[:#]\s*)?"
     r"(?=[A-Z0-9/ -]{0,30}?\d[A-Z0-9/ -]{0,30}?\d[A-Z0-9/ -]{0,30}?\d)"
     r"[A-Z0-9](?:[A-Z0-9/-]|\s(?=[A-Z0-9]))*[A-Z0-9]")
 _SH_FAX = re.compile(r"\b(?i:fax)\.?\s*(?i:no|number)?\.?\s*:?\s*\+?[\d()][\d ()-]{6,18}\d")
@@ -155,11 +159,50 @@ _SH_NAME_CUES: list[re.Pattern] = [
     re.compile(r"\b(?:NAME|PATIENT|PT NAME|PATIENT NAME|[Nn]ame|[Pp]atient|[Pp]atient [Nn]ame)\s*:\s*"
                r"([A-Z][A-Za-z'-]+,?\s+[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)?)"),
 ]
+# Words writers use in lower case (from PMC-Patients, eval/build_common_words.py).
+# A capitalised word whose lower-case form is NOT common is a proper noun: a
+# town or a person, essentially never a clinical term.
+_COMMON_WORDS: set[str] | None = None
+
+
+def _common_words() -> set[str]:
+    global _COMMON_WORDS
+    if _COMMON_WORDS is None:
+        import gzip
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parent / "data" / "common_words.txt.gz"
+        with gzip.open(path, "rt", encoding="utf-8") as h:
+            _COMMON_WORDS = set(h.read().split())
+    return _COMMON_WORDS
+
+
+# Eponyms (Graves disease, Kaplan Meier curves) are uncommon capitalised words
+# too; what follows them gives them away.
+_EPONYM_NEXT = (r"(?![-'\u2019]|\s*\d|\s+(?:disease|syndrome|sign|signs|test|score|criteria|classification|scale|"
+                r"type|stage|grade|lymphoma|sarcoma|tumou?r|procedure|operation|method|technique|stain|staining|"
+                r"reaction|phenomenon|cells?|nodes?|fracture|ulcer|palsy|dystrophy|anomaly|malformation|catheter|"
+                r"tube|mano?euvre|maneuver|approach|incision|flap|repair|index|formula|equation|curves?|analysis|"
+                r"correction|coefficient|virus|agar|medium|solution|tablets?|capsules?|injection|spp|sp|proteins?|bodies|body|"
+                # ethnicity and nationality are clinical descriptors, not identifiers
+                r"male|female|man|woman|men|women|boy|girl|patient|patients|descent|origin|ancestry|heritage|"
+                r"birth|diet|population|child|children|infant|adult|lady|gentleman|family|nationals?|"
+                r"[a-z]+(?:us|um|is|ae|ii|i|a)\b))")
+# "of"/"to" are left out: after them a proper noun is usually an eponym
+# (tetralogy of Fallot, circle of Willis, according to Edwards).
+_SH_UNCUED_PLACE = re.compile(r"\b(?:from|in|at|near)\s+([A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?)\b" + _EPONYM_NEXT)
+_SH_UNCOMMON_PAIR = re.compile(rf"\b({_NAME}\s+{_NAME})\b" + _EPONYM_NEXT)
+_SH_APPOSITIVE = re.compile(rf"\b(?:[Tt]he|[Oo]ur|[Aa]|[Tt]his)\s+(?:patient|man|woman|boy|girl|mother|father|husband|"
+                            rf"wife|son|daughter|infant|child|proband|gentleman|lady),\s+({_FULLNAME}),")
+_SH_FIRST_NAME_LEFT = re.compile(rf"\[NAME\],\s+({_NAME})\b(?!\s+[a-z])")
+
+
 _NOT_NAME_WORDS = _NOT_NAMES | _MONTHS | {
     "Patient", "Patients", "Case", "Cases", "Our", "Their", "His", "Her", "Its", "Physical", "Clinical", "Report",
     "Emergency", "Department", "Hospital", "Medical", "Center", "Centre", "University", "General", "Type",
     "Group", "Table", "Figure", "Fig", "Disease", "Syndrome", "Doctor", "Mother", "Father", "Baby", "Infant",
-    "Boy", "Girl", "Man", "Woman", "Subject", "Proband", "Index", "Control", "Controls", "Twin", "Donor"}
+    "Boy", "Girl", "Man", "Woman", "Subject", "Proband", "Index", "Control", "Controls", "Twin", "Donor",
+    "Fig", "Figs", "Figure", "Figures", "Table", "Tables", "Supplementary", "Appendix", "Video", "Panel"}
 
 
 @dataclass
@@ -231,9 +274,25 @@ class Deidentifier:
         for pattern in _NAME_CUES:
             text = pattern.sub(self._name_sub, text)
         if sh:
-            for pattern in _SH_NAME_CUES:
+            for pattern in (*_SH_NAME_CUES, _SH_APPOSITIVE, _SH_FIRST_NAME_LEFT):
                 text = pattern.sub(self._sh_name_sub, text)
+            text = _SH_UNCOMMON_PAIR.sub(self._uncommon_sub("NAME"), text)
+            text = _SH_UNCUED_PLACE.sub(self._uncommon_sub("LOCATION"), text)
         return text
+
+    def _uncommon_sub(self, label: str):
+        """Replace group 1 only if every word in it is a proper noun: not a
+        common lower-case word, not a month or a known non-name."""
+        common = _common_words()
+
+        def sub(match: re.Match) -> str:
+            words = match.group(1).split()
+            if any(w.lower() in common or w in _NOT_NAME_WORDS for w in words):
+                return match.group(0)
+            self.counts[label] += 1
+            return (match.group(0)[: match.start(1) - match.start(0)] + f"[{label}]"
+                    + match.group(0)[match.end(1) - match.start(0):])
+        return sub
 
     def _sub(self, pattern: re.Pattern, label: str, text: str) -> str:
         text, n = pattern.subn(f"[{label}]", text)

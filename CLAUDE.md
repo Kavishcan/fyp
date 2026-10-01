@@ -11,16 +11,41 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/56: Gap 3, source content released per question (eval/run_release.py,
+PMC 986 q, hybrid). Default blind (clusters 10/5, P=8) unlocks 140 records
+for a top-10 (14x, release precision 1.2%); broadcast returns 80 (but every
+hospital reads the question). Clusters 5/5 at P=16: MRR 0.5274 vs 0.5248 for
+10/5 P=16 (n.s.) with 218 vs 268 records (-19%), same 5-patient minimum.
+Smaller minimums cut release (3/2 P=8: 57) but centroids within cosine 0.95
+of one patient rise 3.6% -> 7.2% (5/5) -> 17.2% (5/3) -> 49.4% (3/2); none
+within 0.99. Defaults unchanged. Scope (2026-10-02): privacy + retrieval
+quality only; generation/MIRAGE is not headline evidence.
+
+Docs/55: large hospitals. Blind unlock's per-question cost is independent
+of corpus size; the one-time table download is not (~1.1x the text; 100 GB
+text -> ~110 GB). Tier 2 (privacy/pir.py SimplePIR, n=1024, q=2^32, p=256;
+PSINode.pir_database, blind_unlock.pir_unlock, recommended_tier): download
+a fixed hint (per_column x 67 MB) + tag map, fetch sealed chunks with exactly
+F PIR queries per hospital (padded), OPRF unchanged. PMC 986 q: identical
+top-10 100%, MRR 0.5062 both, but tier 2 costs 538 MB hints vs 11.3 MB
+tables (small hospitals stay tier 1). Measured 1 GB: 67 MB hint, 2.5 MB/q,
+0.6 s hospital; 2 GB: 135 MB, 1.2 s. 100 GB EXTRAPOLATED: ~1.2 GB once,
+~22 MB/q, ~66 s one core per question. Not wired into MCP/client; numpy
+prototype; never call it new (SimplePIR, Tiptoe).
+
 Docs/54: `Deidentifier(level="safe_harbor")` (opt-in; node JSON
 "deid_level"; default "basic" byte-identical) adds labelled
 account/plan/licence/vehicle/device numbers, fax, partial dates (month-year
 -> year), institutions, residence/postcodes, uncued names. Held-out synthetic
-benchmark on real PMC prose (eval/run_deid_benchmark.py, dev/test templates
-and name pools disjoint, test run once): recall 0.528 (basic + NER, the
-docs/46-53 node setting) -> 0.928 (safe_harbor + NER) -> 0.975 (+ registry);
-clean reports altered 13.8% -> 24.2% (mostly real dates/hospitals);
-centralized PMC MRR 0.4433 -> 0.4404 (n.s.). Known test gaps (MRN compound
-labels 0.53, residence 0.72, bare names 0.75) were NOT fixed. Not a validated
+benchmark on real PMC prose (eval/run_deid_benchmark.py; dev/test/test2
+templates and name pools disjoint). Headline = FRESH test2, run once:
+recall 0.459 (basic + NER, the docs/46-53 node setting) -> 0.832
+(safe_harbor + NER) -> 0.853 (+ registry). test v1 was 0.528 -> 0.975 before
+its gaps were fixed (now 1.000, no longer held out). Rules do not generalise
+to unseen phrasing; NER (spaCy sm) added nothing on test2. Uncued
+towns/names use privacy/data/common_words.txt.gz (eval/build_common_words.py).
+Clean reports altered 13.8% -> 28.9% (mostly real dates/places/companies);
+centralized PMC MRR 0.4433 -> 0.4401 (n.s.). Not a validated
 de-identifier; never "HIPAA compliant".
 
 Docs/53: published systems on PMC (593 test queries, 30/10/60 split for
@@ -376,6 +401,8 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/router/hybrid_rerank.py | Device-side dense + pool-BM25 rerank (docs/48); no model, no network |
 | backend/client/ | Standalone device: Device (blind unlock, no server), CoverTrafficScheduler, node transports, CLI (docs/52) |
 | backend/privacy/blind_unlock.py | Blind unlock: global probe planning, dummy padding, table cache, tag-lookup unlock (docs/47) |
+| backend/privacy/pir.py, backend/eval/run_pir_tier.py | Tier 2 for large hospitals: SimplePIR fetch of blind-unlock chunks instead of full download (docs/55) |
+| backend/eval/run_release.py | Gap 3: records released per question vs top-10, cluster granularity x P frontier, centroid proximity (docs/56) |
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |

@@ -220,3 +220,34 @@ def test_default_level_is_unchanged():
     assert Deidentifier().redact(text) == text
     with pytest.raises(ValueError):
         Deidentifier(level="hipaa")
+
+
+@pytest.mark.parametrize("text,gone", [
+    ("Medical record number: 21843143.", "21843143"),
+    ("Filed under record #4482019.", "4482019"),
+    ("Identity card 196999497577.", "196999497577"),
+    ("A fisherman from Matara was brought in.", "Matara"),
+    ("The patient, Nadia Petrov, consented to publication.", "Petrov"),
+    ("Patient name: Petrov, Lucas.", "Lucas"),
+    ("We thank Liam Walsh for his help.", "Walsh"),
+])
+def test_safe_harbor_closes_the_docs54_test_gaps(text, gone):
+    assert gone not in SH.redact(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Kaplan Meier curves were drawn.",
+    "A diagnosis of tetralogy of Fallot was made; the circle of Willis was normal.",
+    "Bence Jones protein was detected in Graves disease.",
+    "Cultures from Escherichia coli grew; Parkinson disease was excluded.",
+    "A 63-year-old African American female was admitted.",
+    "She is of Mexican descent, as shown in Figs.",
+    "Galle General Hospital. MRN 1234567.",
+])
+def test_safe_harbor_uncommon_word_rules_spare_eponyms_and_descriptors(text):
+    out = SH.redact(text)
+    for word in ("Kaplan", "Fallot", "Willis", "Bence", "Escherichia", "Parkinson", "African", "Mexican", "Figs"):
+        if word in text:
+            assert word in out
+    if "MRN" in text:
+        assert out == "[ORGANIZATION]. [ID]."

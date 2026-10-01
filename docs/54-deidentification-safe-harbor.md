@@ -2,23 +2,39 @@
 
 ## Verdict
 
-| | Before (docs/44, the node setting in docs/46–53) | Now (`level="safe_harbor"` + NER) | + the hospital's registry |
+| Held-out recall (2,400 injected identifiers per set) | Before (docs/44 rules + NER, the docs/46–53 node setting) | Safe-harbor rules + NER | + the hospital's registry |
 |---|---|---|---|
-| Held-out recall, 2,400 injected identifiers, 15 categories | **0.528** | **0.928** | **0.975** |
-| Categories fully missed | 8 (accounts, licences, vehicles, devices, postcodes, residence, partial dates, institutions) | 0 | 0 |
-| Clean PMC reports altered | 13.8% | 24.2% (most of the rise is real dates and hospital names, see below) | — |
-| Dense retrieval (PMC, centralized MRR; raw 0.4433) | 0.4433 | 0.4404 (−0.003, 95% CI [−0.007, +0.001], p = 0.12, n.s.) | — |
-| Cost | 46 ms per document (NER) | 46 ms per document | 47 ms |
+| **Test v2: fresh set, written after the last rule change, run once** | **0.459** | **0.832** | **0.853** |
+| Test v1: first held-out run, before its gaps were fixed | 0.528 | 0.928 | 0.975 |
+| Test v1 after fixing its gaps (no longer held out) | — | 1.000 | 1.000 |
+| Dev (tuned on) | 0.618 | 1.000 | 1.000 |
 
-**Safe sentence:** "Node-side de-identification (rules for the HIPAA Safe
-Harbor identifier types + full-name NER + the hospital's registry) removed
-97.5% of 2,400 injected identifiers on held-out templates and names (92.8%
-without a registry). It is a synthetic benchmark on real case-report text,
-not a validated clinical de-identifier."
+| Cost | Before | Safe-harbor + NER |
+|---|---|---|
+| Clean PMC reports altered | 13.8% | 28.9% (mostly real dates, hospitals and places; see below) |
+| Centralized PMC MRR (raw 0.4433) | 0.4433 | 0.4401 (−0.003, 95% CI [−0.008, +0.001], p = 0.12, n.s.) |
+| Time per document | 48 ms | 48 ms |
 
-Do not say "PII is removed" or "HIPAA compliant". Safe Harbor also
-requires no actual knowledge of re-identifiability, and quasi-identifiers
-(rare disease + age + town) are not handled.
+**The finding:** rules close every gap they are shown, but a fresh set with
+new surface forms still leaks about 15%. The new forms were:
+- "12-Mar-1984" and "95 years of age"
+- "Cochlear implant SN …" and a plate with no label
+- "St Joseph Hospital, Bristol"
+- "a Kegalle resident" and "travelling home to …"
+
+Rule-based de-identification does not generalise to unseen phrasing. The
+small spaCy NER added nothing on the fresh set (0.832 with and without). A
+trained clinical de-identification model is the next step, not more rules.
+
+**Safe sentence:** "Node-side de-identification (HIPAA Safe Harbor rules +
+NER + the hospital's registry) removed 85% of 2,400 injected identifiers on
+a fresh held-out set (46% for the earlier rules), with no significant
+retrieval loss. Rules do not generalise to unseen phrasing; it is not a
+validated clinical de-identifier."
+
+Do not say "PII is removed" or "HIPAA compliant". Safe Harbor also requires
+no actual knowledge of re-identifiability, and quasi-identifiers (rare
+disease + age + town) are not handled.
 
 ## What changed
 
@@ -37,6 +53,9 @@ JSON (nodes/mcp_server) or `deid_level=` (nodes/simulator).
 | Email, URL, IP, SSN, MRN, national IDs | yes | — |
 | Health-plan, account, certificate/licence, vehicle, device numbers | only if labelled ID/MRN | any value with ≥ 3 digits after a label (policy, member, account, licence, registration, plate, VIN, serial, S/N, …) |
 | Institutions (i2b2 category) | — | "… Hospital / Medical Center / Clinic / Infirmary …" |
+| Record / identity-card numbers with compound labels | one connector only | "Medical record number: …", "record #…", "Identity card …" (labels never cross a full stop) |
+| Uncued towns and names | — | a capitalised word whose lower-case form is NOT a common PMC word (`privacy/data/common_words.txt.gz`, 31,388 words from 30,000 reports not used by the benchmark; `eval/build_common_words.py`) after from/in/at/near, or two such words together; eponyms (followed by disease, syndrome, test, curves …), ethnicity (followed by male, descent …) and Fig/Table are excluded. "of"/"to" are not cues (tetralogy of Fallot) |
+| Appositive and surname-first names | — | "The patient, Nadia Petrov, …"; the first name left after "Petrov, Lucas" |
 | Biometrics, photos | not text | — |
 
 With the safe-harbor level, NER runs after the rules, so it cannot split an
@@ -61,7 +80,17 @@ How leaks are counted:
 
 ## Results
 
-### Held-out TEST split (2,400 identifiers)
+### Fresh held-out TEST v2 (2,400 identifiers, run once)
+
+| Condition | Recall | Misses (recall) |
+|---|---|---|
+| basic | 0.390 | patient name 0, partial dates 0, device 0, institution 0, licence 0, postcode 0, residence 0, vehicle 0.01, … |
+| basic + NER (docs/46–53 setting) | 0.459 | same zeros except patient name 0.68 |
+| safe_harbor | 0.832 | age > 89 0.43 ("95 years of age"), device 0.43 ("SN"), residence 0.47 ("a Kegalle resident", "home to"), date 0.54 ("12-Mar-1984"), vehicle 0.59 (no label), institution 0.67 ("St Joseph Hospital, Bristol"), patient name 0.80, address 0.96 |
+| safe_harbor + NER | 0.832 | same (NER added nothing here) |
+| **safe_harbor + NER + registry** | **0.853** | same minus patient name |
+
+### TEST v1 (2,400 identifiers; first held-out run, BEFORE the gap fixes)
 
 Categories not listed under misses are at 1.00.
 
@@ -73,7 +102,8 @@ Categories not listed under misses are at 1.00.
 | **safe_harbor + NER** | **0.928** | patient name 0.75, MRN 0.53, residence 0.72, SSN/NIC 0.91, relative 0.98, address 0.99 |
 | **safe_harbor + NER + registry** | **0.975** | residence 0.72, SSN/NIC 0.91, address 0.99 |
 
-DEV split, for the record: 0.618 → 1.000. It was tuned on, so it is not evidence.
+After its misses were fixed, TEST v1 scores 1.000 in every safe_harbor
+condition; it is no longer held out. DEV: 0.618 → 1.000 (tuned on).
 
 ### Cost on 1,000 untouched PMC case reports
 
@@ -81,10 +111,12 @@ DEV split, for the record: 0.618 → 1.000. It was tuned on, so it is not eviden
 |---|---|---|---|
 | basic | 4.5% | 0.31 | DATE 80 |
 | basic + NER | 13.8% | 0.62 | NAME 124, DATE 80 |
-| safe_harbor | 16.7% | 1.17 | DATE 315, ORGANIZATION 82, LOCATION 16 |
-| safe_harbor + NER | 24.2% | 1.48 | DATE 315, NAME 125, ORGANIZATION 82 |
+| safe_harbor | 24.1% | 1.58 | DATE 315, NAME 129, ORGANIZATION 82, LOCATION 52 |
+| safe_harbor + NER | 28.9% | 1.84 | DATE 315, NAME 232, ORGANIZATION 82, LOCATION 52 |
 
-Most of the rise is not a false positive. Journals leave in month-year
+The uncommon-word rules mostly hit real places and manufacturer names
+("San Diego", "Biosense Webster"). That is over-removal, but harmless for
+retrieval (below). Most of the rise is not a false positive. Journals leave in month-year
 dates ("In March 2015 …"), treatment dates and real hospital and city
 names, all of which are identifiers under Safe Harbor or i2b2. Lab ranges
 ("12.0-16.0"), "from 3.2 mEq/L" and pain scores ("7/10") were false
@@ -97,28 +129,34 @@ bge, corpus de-identified, queries not):
 |---|---|
 | raw | 0.4433 |
 | basic + NER | 0.4433 |
-| safe_harbor + NER | 0.4404 (paired bootstrap vs raw: −0.003 [−0.007, +0.001], p = 0.12) |
+| safe_harbor + NER (final rules) | 0.4401 (paired bootstrap vs raw: −0.003 [−0.008, +0.001], p = 0.12) |
 
-## Known gaps (from the TEST misses, not fixed)
+## Known gaps (TEST v2 misses, not fixed)
 
-| Gap | Example | Why |
-|---|---|---|
-| MRN with a compound label | "Medical record number: 12345678", "record #1234567" | the basic ID rule allows only one connector after the label |
-| Bare names in a new frame | "The patient, Liam Walsh, consented to publication." | no cue the rules know; small-model NER misses about a quarter. The registry catches the hospital's own patients |
-| Residence with an uncued preposition | "A fisherman from Matara …" | "from" alone is too broad to act on |
-| 12-digit NIC after "Identity card" | "Identity card 199012345678" | the unlabelled NIC rule requires birth year 19xx/20xx followed by 0–8 |
-| Quasi-identifiers | rare disease + age + town | needs k-anonymity reasoning, not pattern matching |
+| Gap | Example |
+|---|---|
+| Day-month-name-year with hyphens | "DOB 12-Mar-1984" |
+| Age over 89 in words | "95 years of age" |
+| Bare serial labels | "Cochlear implant SN 48213390" |
+| Unlabelled plates | "his motorcycle (KLM 4821)" |
+| Saint-hospital-comma-town | "St Joseph Hospital, Bristol" |
+| Town as an adjective, or after "to" | "A Kegalle resident", "travelling home to Chilaw" |
+| Bare names with common first names | "We are grateful to Oliver Hughes …" |
+| Quasi-identifiers | rare disease + age + town |
 
-Fixing these would need a fresh held-out set to report again.
+Fixing them would make TEST v2 a development set too. The honest next
+step is a trained clinical de-identifier, e.g. a ~440 MB transformer
+fine-tuned on i2b2, evaluated on a TEST v3. Not installed: it needs the
+user's approval to download.
 
 ## Reproduce
 
 ```
 cd backend
-OMP_NUM_THREADS=1 python -m eval.run_deid_benchmark            # both splits + clean cost + retrieval
+OMP_NUM_THREADS=1 python -m eval.run_deid_benchmark            # dev, test, test2 + clean cost + retrieval
 python -m eval.run_deid_benchmark --split dev --skip-retrieval   # development loop
 ```
 
-Result file: `docs/results/deid_benchmark_both_*.csv`. Tests:
+Result files: `docs/results/deid_benchmark_all_20261001-185248.csv` (final: dev, v1 after fixes, v2 fresh) and `deid_benchmark_both_20261001-181506.csv` (the first held-out run of v1). Tests:
 `tests/test_deidentify.py` (safe_harbor cases, clinical values left alone,
 default level unchanged).

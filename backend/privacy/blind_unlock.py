@@ -167,6 +167,58 @@ def unlock(plan: ProbePlan, node_id: str, evaluated: list[dict[str, bytes]], cac
     return found
 
 
+def pir_unlock(plan: ProbePlan, node_id: str, evaluated: list[dict[str, bytes]], client, answer_fn,
+               columns: int, rng: random.Random | None = None) -> tuple[dict[int, list[dict]], dict]:
+    """Tier 2 (docs/55): like `unlock`, but the sealed chunks are fetched
+    with PIR instead of read from a downloaded table. Exactly `columns` PIR
+    queries go to the node on every question — the columns holding the real
+    clusters' chunks, padded with random other columns — so the number of
+    queries says nothing about how many probes were real. `client` is the
+    node's privacy.pir.PIRClient, `answer_fn` sends a query matrix to the
+    node. A cover round sends `columns` queries for random columns."""
+    if len(evaluated) != len(plan.points[node_id]):
+        raise ValueError("evaluated points do not match the probes sent")
+    rng = rng or random.SystemRandom()
+    layout = client.layout
+    wanted = []                                   # (cid, collection, out, [(chunk, col, slot)])
+    for pos, cid, r in plan.real[node_id]:
+        inverse = scalar_invert(r)
+        for collection, point in evaluated[pos].items():
+            out = scalar_mult(inverse, point)
+            located, i = [], 0
+            while (where := layout.position.get(chunk_tag(out, node_id, collection, cid, i))) is not None:
+                located.append((i, *where))
+                i += 1
+            if located:
+                wanted.append((cid, collection, out, located))
+                break
+    needed: list[int] = []
+    for *_, located in wanted:                    # probe order = best cluster first
+        for _, col, _ in located:
+            if col not in needed:
+                needed.append(col)
+    fetch = needed[:columns]
+    others = [c for c in range(layout.cols) if c not in set(fetch)]
+    fetch += rng.sample(others, min(columns - len(fetch), len(others)))
+    rng.shuffle(fetch)
+    got = client.fetch(fetch, answer_fn)
+    found: dict[int, list[dict]] = {}
+    truncated = 0
+    for cid, collection, out, located in wanted:
+        if any(col not in got for _, col, _ in located):
+            truncated += 1
+            continue
+        key = label_key(out, node_id, collection, cluster_id=cid)
+        try:
+            found[cid] = decode_passages(join_payload([
+                open_envelope(key, client.record(got[col], slot), aad=chunk_suffix(i)) for i, col, slot in located]))
+        except CryptoError:
+            continue
+    stats = {"columns_needed": len(needed), "columns_sent": len(fetch), "clusters_truncated": truncated,
+             "query_bytes": len(fetch) * layout.cols * 4, "answer_bytes": len(fetch) * layout.rows * 4}
+    return found, stats
+
+
 def cover_plan(node_ids: list[str], probes: int) -> ProbePlan:
     """A cover round (docs/52): exactly `probes` dummy points to every node
     and nothing real. On the wire it is the same as a real round — same

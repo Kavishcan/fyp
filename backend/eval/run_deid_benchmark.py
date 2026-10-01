@@ -65,6 +65,17 @@ POOLS = {
         "saint": ["Luke", "Thomas"],
         "country": ["Sri Lanka", "England"],
     },
+    "test2": {
+        # fresh held-out set (docs/54): written after the gap fixes, run once
+        "first": ["Ishara", "Nuwan", "Mei", "Oliver", "Ananya", "Kwame", "Elena", "Farhan", "Sunethra", "Diego",
+                  "Ingrid", "Rohan", "Harini", "Pavel", "Chiara", "Malith"],
+        "last": ["Senanayake", "Abeysekara", "Lin", "Hughes", "Krishnan", "Mensah", "Popescu", "Chowdhury",
+                 "Ekanayake", "Romero", "Lindqvist", "Mehta", "Ratnayake", "Volkov", "Bianchi", "Weerasinghe"],
+        "town": ["Kegalle", "Polonnaruwa", "Negombo", "Vavuniya", "Bristol", "Fresno", "Monaragala", "Chilaw"],
+        "street": ["Main", "Park", "Mill", "Bauddhaloka"],
+        "saint": ["Joseph", "Michael"],
+        "country": ["Sri Lanka", "Wales"],
+    },
 }
 
 
@@ -93,7 +104,7 @@ def _templates():
     def date_parts(r):
         return r.randint(1, 28), r.randint(1, 12), r.randint(1995, 2023)
 
-    T = {"dev": [], "test": []}
+    T = {"dev": [], "test": [], "test2": []}
 
     def add(split, cat, fn):
         T[split].append((cat, fn))
@@ -197,6 +208,56 @@ def _templates():
     add("test", "INSTITUTION", lambda r, p: (lambda t: (f"She was referred from {t} Base Hospital.", [t]))(r.choice(p["town"])))
     add("test", "INSTITUTION", lambda r, p: (lambda t: (f"He is followed at the {t} Diabetes Clinic.", [t]))(r.choice(p["town"])))
     add("test", "INSTITUTION", lambda r, p: (lambda s: (f"Imaging was done at Saint {s} Hospital.", [s]))(r.choice(p["saint"])))
+    # --- test2: fresh held-out templates (new surface forms, several with no cue at all) ---
+    MON3 = [m[:3] for m in MONTHS]
+    add("test2", "PATIENT_NAME", lambda r, p: (lambda f, l: (f"We are grateful to {f} {l} for agreeing to share this story.", [f, l]))(*person(r, p)))
+    add("test2", "PATIENT_NAME", lambda r, p: (lambda f, l: (f"Re: {f} {l}.", [f, l]))(*person(r, p)))
+    add("test2", "PATIENT_NAME", lambda r, p: (lambda f, l: (f"Our patient, {f} {l}, is a schoolteacher.", [f, l]))(*person(r, p)))
+    add("test2", "PATIENT_NAME", lambda r, p: (lambda f, l: (f"{f} {l} underwent a CT scan of the abdomen.", [f, l]))(*person(r, p)))
+    add("test2", "PATIENT_NAME", lambda r, p: (lambda f, l: (f"{l}, {f} - date of birth withheld.", [f, l]))(*person(r, p)))
+    add("test2", "RELATIVE", lambda r, p: (lambda f, l: (f"Her husband, {f} {l}, signed the consent form.", [f, l]))(*person(r, p)))
+    add("test2", "RELATIVE", lambda r, p: (lambda f, l: (f"The child's mother {f} noticed the rash.", [f]))(*person(r, p)))
+    add("test2", "CLINICIAN", lambda r, p: (lambda f, l: (f"Operating surgeon: {f} {l}.", [f, l]))(*person(r, p)))
+    add("test2", "CLINICIAN", lambda r, p: (lambda f, l: (f"The case was reviewed with Dr {l} (radiology).", [l]))(*person(r, p)))
+    add("test2", "DATE", lambda r, p: (lambda d, m, y: (f"DOB {d:02d}-{MON3[m - 1]}-{y}.", [f"{d:02d}-{MON3[m - 1]}-{y}"]))(*date_parts(r)))
+    add("test2", "DATE", lambda r, p: (lambda d, m, y: (f"Seen in clinic {MONTHS[m - 1]} {d} {y}.", [f"{MONTHS[m - 1]} {d}"]))(*date_parts(r)))
+    add("test2", "DATE_PARTIAL", lambda r, p: (lambda d, m, y: (f"She was seen again on the {ordinal(d)} of {MONTHS[m - 1]}.", [f"{ordinal(d)} of {MONTHS[m - 1]}"]))(*date_parts(r)))
+    add("test2", "DATE_PARTIAL", lambda r, p: (lambda d, m, y: (f"The rash appeared in early {MONTHS[m - 1]} {y}.", [f"{MONTHS[m - 1]} {y}"]))(*date_parts(r)))
+    add("test2", "DATE_PARTIAL", lambda r, p: (lambda d, m, y: (f"Sutures were removed on {MON3[m - 1]} {d}.", [f"{MON3[m - 1]} {d}"]))(*date_parts(r)))
+    add("test2", "AGE_OVER_89", lambda r, p: (lambda a: (f"A {a}-year-old nonagenarian was assessed.", [f"{a}-year-old"]))(r.randint(90, 99)))
+    add("test2", "AGE_OVER_89", lambda r, p: (lambda a: (f"She was {a} years of age.", [f"{a} years"]))(r.randint(90, 104)))
+    add("test2", "PHONE", lambda r, p: (lambda v: (f"Tel: {v}.", num_keys(v)))(f"0{digits(r, 3)} {digits(r, 6)}"))
+    add("test2", "PHONE", lambda r, p: (lambda v: (f"Call (+94) {v} for appointments.", num_keys(v)))(f"71 {digits(r, 3)} {digits(r, 4)}"))
+    add("test2", "FAX", lambda r, p: (lambda v: (f"Fax +44 117 {v}.", num_keys(v)))(f"{digits(r, 3)} {digits(r, 4)}"))
+    add("test2", "EMAIL", lambda r, p: (lambda f, l: (lambda v: (f"Reply to {v}.", [v]))(f"{f.lower()}_{l.lower()}@yahoo.co.uk"))(*person(r, p)))
+    add("test2", "URL", lambda r, p: (lambda f, l: (lambda v: (f"Updates were shared on {v}.", [v]))(f"http://{l.lower()}family.org/updates"))(*person(r, p)))
+    add("test2", "IP", lambda r, p: (lambda v: (f"The device reported to server address {v}.", [v]))(f"10.{r.randint(0, 255)}.{r.randint(0, 255)}.{r.randint(1, 254)}"))
+    add("test2", "SSN_NIC", lambda r, p: (lambda v: (f"NIC No: {v}.", num_keys(v)))(f"{digits(r, 9)}V"))
+    add("test2", "SSN_NIC", lambda r, p: (lambda v: (f"SSN: {v}.", num_keys(v)))(f"{digits(r, 3)} {digits(r, 2)} {digits(r, 4)}"))
+    add("test2", "MRN", lambda r, p: (lambda v: (f"Hospital record: {v}.", num_keys(v)))(digits(r, 7)))
+    add("test2", "MRN", lambda r, p: (lambda v: (f"MRN: {v}.", num_keys(v)))(f"{letters(r, 2)}{digits(r, 6)}"))
+    add("test2", "MRN", lambda r, p: (lambda v: (f"Clinic file no. {v} was reopened.", num_keys(v)))(digits(r, 6)))
+    add("test2", "HEALTH_PLAN", lambda r, p: (lambda v: (f"Insurance policy {v} covered the stay.", num_keys(v)))(f"{letters(r, 2)}/{digits(r, 6)}/{digits(r, 2)}"))
+    add("test2", "HEALTH_PLAN", lambda r, p: (lambda v: (f"Medicaid ID {v}.", num_keys(v)))(f"{letters(r, 1)}{digits(r, 8)}"))
+    add("test2", "ACCOUNT", lambda r, p: (lambda v: (f"Acct: {v}.", num_keys(v)))(digits(r, 8)))
+    add("test2", "ACCOUNT", lambda r, p: (lambda v: (f"Refund to bank account {v}.", num_keys(v)))(f"{digits(r, 4)}-{digits(r, 6)}"))
+    add("test2", "LICENSE", lambda r, p: (lambda v: (f"Nursing licence number {v}.", num_keys(v)))(f"RN{digits(r, 6)}"))
+    add("test2", "LICENSE", lambda r, p: (lambda v: (f"DEA certificate {v}.", num_keys(v)))(f"{letters(r, 2)}{digits(r, 7)}"))
+    add("test2", "VEHICLE", lambda r, p: (lambda v: (f"The registration plate {v} was noted by police.", num_keys(v)))(f"{letters(r, 2)}-{digits(r, 4)}"))
+    add("test2", "VEHICLE", lambda r, p: (lambda v: (f"He was riding his motorcycle ({v}) when struck.", num_keys(v)))(f"{letters(r, 3)} {digits(r, 4)}"))
+    add("test2", "DEVICE", lambda r, p: (lambda v: (f"ICD serial no. {v}.", num_keys(v)))(f"{letters(r, 3)}{digits(r, 6)}"))
+    add("test2", "DEVICE", lambda r, p: (lambda v: (f"Cochlear implant SN {v}.", num_keys(v)))(digits(r, 8)))
+    add("test2", "ADDRESS", lambda r, p: (lambda s_, t: (f"Address: {r.randint(2, 300)} {s_} Lane, {t}.", [f"{s_} Lane", t]))(r.choice(p["street"]), r.choice(p["town"])))
+    add("test2", "ADDRESS", lambda r, p: (lambda s_, t: (f"She lives at Lot {r.randint(2, 90)}, {s_} Road, {t}.", [f"{s_} Road", t]))(r.choice(p["street"]), r.choice(p["town"])))
+    add("test2", "RESIDENCE", lambda r, p: (lambda t: (f"She is a tea plucker from {t}.", [t]))(r.choice(p["town"])))
+    add("test2", "RESIDENCE", lambda r, p: (lambda t: (f"A {t} resident was admitted.", [t]))(r.choice(p["town"])))
+    add("test2", "RESIDENCE", lambda r, p: (lambda t: (f"He was travelling home to {t}.", [t]))(r.choice(p["town"])))
+    add("test2", "RESIDENCE", lambda r, p: (lambda t: (f"They farm near {t}.", [t]))(r.choice(p["town"])))
+    add("test2", "POSTCODE", lambda r, p: (lambda v: (f"Post code {v}.", [v]))(f"BS{r.randint(1, 9)} {r.randint(1, 9)}{letters(r, 2)}"))
+    add("test2", "POSTCODE", lambda r, p: (lambda v: (f"Postal code {v}.", [v]))(digits(r, 5)))
+    add("test2", "INSTITUTION", lambda r, p: (lambda t: (f"She was managed at the {t} Teaching Hospital.", [t]))(r.choice(p["town"])))
+    add("test2", "INSTITUTION", lambda r, p: (lambda s_, t: (f"He was seen at St {s_} Hospital, {t}.", [s_, t]))(r.choice(p["saint"]), r.choice(p["town"])))
+    add("test2", "INSTITUTION", lambda r, p: (lambda t: (f"Transferred from {t} District General Hospital.", [t]))(r.choice(p["town"])))
     return T
 
 
@@ -226,7 +287,7 @@ def main() -> None:
     parser.add_argument("--per-doc", type=int, default=6)
     parser.add_argument("--clean", type=int, default=1000, help="untouched reports for the false-positive rate")
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--split", choices=["dev", "test", "both"], default="both")
+    parser.add_argument("--split", choices=["dev", "test", "both", "test2", "all"], default="all")
     parser.add_argument("--skip-retrieval", action="store_true")
     args = parser.parse_args()
 
@@ -237,7 +298,8 @@ def main() -> None:
     rng = random.Random(args.seed)
     pool = [t for t in df["patient"].tolist() if isinstance(t, str) and 400 < len(t) < 6000]
     rng.shuffle(pool)
-    base = {"dev": pool[: args.docs], "test": pool[args.docs: 2 * args.docs]}
+    base = {"dev": pool[: args.docs], "test": pool[args.docs: 2 * args.docs],
+            "test2": pool[2 * args.docs + args.clean: 3 * args.docs + args.clean]}   # unused reports
     # Rules were tuned against the dev split and a DIFFERENT clean slice (the
     # end of the pool); the reported run uses the middle slice.
     clean = pool[-args.clean:] if args.split == "dev" else pool[2 * args.docs: 2 * args.docs + args.clean]
@@ -254,9 +316,9 @@ def main() -> None:
         "safe_harbor + NER + registry": lambda reg: Deidentifier(level="safe_harbor", backend=ner, known_identifiers=reg),
     }
     rows = []
-    splits = ["dev", "test"] if args.split == "both" else [args.split]
+    splits = {"both": ["dev", "test"], "all": ["dev", "test", "test2"]}.get(args.split, [args.split])
     for split in splits:
-        drng = random.Random(args.seed + (0 if split == "dev" else 1))
+        drng = random.Random(args.seed + {"dev": 0, "test": 1, "test2": 2}[split])
         docs = [inject(d, drng, split, templates, args.per_doc) for d in base[split]]
         for cname, make in conditions.items():
             tot, leak = Counter(), Counter()

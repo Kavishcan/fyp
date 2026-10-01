@@ -415,15 +415,32 @@ class PSINode:
         """Chunk tag -> (collection, envelope): every cluster's payload
         compressed and cut into CHUNK_BYTES chunks, every envelope the same
         length. Deterministic in (keys, clusters, dtype)."""
-        entries = {}
+        entries, groups = {}, []
         for cid, passages in self._clusters.items():
             collection = self.collection_of.get(cid, "public")
             out = scalar_mult(self.keys[collection], hash_to_point(encode_cluster_id(cid)))
             key = label_key(out, self.node_id, collection, cluster_id=cid)
+            group = []
             for i, chunk in enumerate(split_payload(encode_passages(passages, self.blind_embedding_dtype))):
-                entries[chunk_tag(out, self.node_id, collection, cid, i)] = (
-                    collection, seal_deterministic(key, chunk, aad=chunk_suffix(i)))
-        return {"epoch": self.epoch, "dtype": self.blind_embedding_dtype, "entries": entries}
+                tag = chunk_tag(out, self.node_id, collection, cid, i)
+                entries[tag] = (collection, seal_deterministic(key, chunk, aad=chunk_suffix(i)))
+                group.append(tag)
+            groups.append(group)
+        return {"epoch": self.epoch, "dtype": self.blind_embedding_dtype, "entries": entries, "groups": groups}
+
+    def pir_database(self, per_column: int = 1, seed: bytes | None = None):
+        """Tier 2 (docs/55): the same sealed chunks as `blind_table`, laid out
+        for PIR instead of downloaded whole. Returns (PIRServer, PIRLayout);
+        the device downloads the server's hint and the layout's tag map once
+        per epoch. Public collection only in this prototype (restricted
+        collections would each need their own database)."""
+        from privacy.pir import PIRServer, pack
+
+        self.blind_table()                                 # builds or refreshes self._blind
+        entries = self._blind["entries"]
+        groups = [[(t, entries[t][1]) for t in g] for g in self._blind["groups"] if entries[g[0]][0] == "public"]
+        D, layout = pack(groups, len(next(iter(entries.values()))[1]), per_column)
+        return PIRServer(D, seed=seed or os.urandom(16)), layout
 
     def blind_table(self, collections: list[str] | None = None) -> dict:
         """The offline download: every envelope of the permitted collections
