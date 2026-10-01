@@ -1,7 +1,12 @@
 ---
-tags: [type/mechanism, status/future]
+tags: [type/future]
+updated: 2026-09-30
 ---
 
 # Anonymous role tokens
 
-Privacy Pass-style tokens per role (reusing the [[OPRF]] code): nodes learn "an authorised clinician", not which. Trade-off: the audit log loses identity. See [[Privacy Pass and anonymous tokens]], [[Credential gate]].
+Future work: unlinkable authorisation tokens could prove a permitted role without presenting the current stable identity to every node.
+
+This requires issuer, unlinkability, rate-limit, double-spend and accountability design. Merely reusing OPRF code does not implement Privacy Pass.
+
+See [[Privacy Pass and anonymous tokens]], [[Credential gate]], [[Session linkage]].

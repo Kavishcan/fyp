@@ -1,9 +1,20 @@
 ---
 tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# Node-side de-identification (`privacy/deidentify.py`, docs/44)
+# Node-side de-identification
 
-Runs once at load, before embedding, profile, tables and serving — no path from raw text to the wire. Layers: registry (institution's names/ids, incl. surname-first and initialled forms) → institution id formats → structured rules (email, URL, IP, labelled ids, NIC, passports, SSN, card, dates in many formats, ages over 89, phones, addresses) → cued names (honorifics, "my name is", relatives/carers) → optional [[Presidio NER backend]].
+When enabled, de-identification runs before embedding, profiles and table publication. Layers include known name/ID registries, structured patterns, cued-name rules and optional NER.
 
-**Mitigated, not solved:** cued/registered identifiers 0% leaked; ~13% of uncued unregistered names missed even with NER; quasi-identifiers out of reach. Results: [[De-identification results]].
+Nodes can be configured with de-identification disabled. Unregistered names, quasi-identifiers and semantic clues remain risks. Test-case fixes do not establish clinical anonymisation or legal compliance.
+
+Measure identifier misses, unrelated text alterations and downstream retrieval separately. See [[De-identification results]], [[Presidio NER backend]].
+
+## Implementation / Experiment Sources
+
+- [backend/privacy/deidentify.py](../../backend/privacy/deidentify.py)
+- [backend/nodes/simulator.py](../../backend/nodes/simulator.py)
+- [docs/44-node-side-deidentification.md](../../docs/44-node-side-deidentification.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

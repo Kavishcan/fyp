@@ -1,7 +1,19 @@
 ---
 tags: [type/concept]
+updated: 2026-09-30
 ---
 
 # Trust boundary
 
-Everything inside is trusted: the user's [[Device]] — question, embedding, planning, unlocked records, [[Local LLM generation]]. In the studio the API process plays the device; the deployment path is the [[Standalone client]]. A hosted LLM API is outside the boundary; a "trusted LLM" means device-local, institution-hosted or an attested enclave.
+The strict deployment boundary contains the user's device, local embedding model, local generator, plaintext cache, credentials and logs. Node/transport parties are outside it.
+
+An institution-hosted service or enclave can be trusted in a different deployment, but then user-only visibility is no longer the same claim. A hosted API or LLM does not become private because dispatch uses blinding.
+
+See [[Threat model]].
+
+## Implementation / Experiment Sources
+
+- [backend/client/device.py](../../backend/client/device.py)
+- [docs/41-current-system-specification.md](../../docs/41-current-system-specification.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

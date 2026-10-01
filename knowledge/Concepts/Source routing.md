@@ -1,12 +1,19 @@
 ---
 tags: [type/concept]
+updated: 2026-09-30
 ---
 
 # Source routing
 
-Choosing which sources (hospitals) to contact for a question. Selective routing saves contacts but its choice is a function of the question → [[Access-pattern leakage]].
+Earlier modes select a small subset of sources. The new blind mode selects useful clusters locally but contacts every enrolled node with equal padding.
 
-- [[Legacy router]], [[Smart router]], cosine top-k — selective, leak the topic.
-- [[Anonymity cells]] — contact a fixed group; leak the group.
-- [[Broadcast]] — contact everyone; no pattern, but in text mode every hospital reads the question.
-- [[Blind unlock]] — route at the level of *clusters* across all hospitals, contact everyone identically.
+Thus its research trade-off is hidden source relevance versus all-node evaluation/setup cost, not fewer contacts than RAGRoute. Compare utility at controlled evidence/probe budgets and state the different contact costs.
+
+See [[Architecture]], [[Research gap analysis]].
+
+## Implementation / Experiment Sources
+
+- [backend/client/device.py](../../backend/client/device.py)
+- [docs/41-current-system-specification.md](../../docs/41-current-system-specification.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

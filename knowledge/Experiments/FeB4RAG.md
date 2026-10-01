@@ -1,7 +1,21 @@
 ---
 tags: [type/experiment]
+updated: 2026-09-30
 ---
 
 # FeB4RAG
 
-Federated search benchmark: 13 of 16 engines, graded qrels. Used for resource selection ([[PSI dispatch results]]: nDCG@1 0.734), the [[Pattern leak results]] (topic = origin engine, 0.496 vs 0.077) and [[Anonymity cells]].
+Source: [FeB4RAG official repository](https://github.com/ielab/FeB4RAG).
+
+Used for graded source selection and contact-pattern attacks. Local coverage is thirteen of sixteen engines, 785 routing requests and 640 leakage cases. Profiles use available sampled BEIR document text.
+
+TREC top_100 files are ranked retrieval outputs, not the complete source document collections. Do not treat published ranks as patient records.
+
+See [[PSI dispatch results]], [[Pattern leak results]], [[Dataset register]].
+
+## Implementation / Experiment Sources
+
+- [backend/eval/run_feb4rag.py](../../backend/eval/run_feb4rag.py)
+- [docs/36-psi-dispatch-and-feb4rag.md](../../docs/36-psi-dispatch-and-feb4rag.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

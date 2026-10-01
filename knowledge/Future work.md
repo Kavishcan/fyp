@@ -1,15 +1,19 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Future work (decided out of scope)
+# Future Work
 
-- [[Anonymous role tokens]] — hide which credential is active.
-- [[Verifiable OPRF]] — detect key substitution by a node.
-- Key lifecycle — scheduled rotation, secure deletion, threshold or hardware keys ([[Key epochs and rotation]]).
-- Scale — grouped blind unlock, PIR ([[Scaling of blind unlock]], [[Tiptoe and SimplePIR]]).
-- Disclosure — two-level unlock or k-of-K OT ([[Pointing the Way]]).
-- Transport — MCP over HTTP + TLS between buildings ([[MCP node]]).
-- De-identification — clinical transformer + validation ([[Node-side de-identification]]).
-- Cells — join-stable construction ([[Cell churn intersection]]).
-- Integrity — Sybil-resistant registration, prompt-injection measurement ([[Security audit results]]).
+[[Next steps]] distinguishes urgent correctness/evaluation work from longer-term extensions.
+
+Longer-term candidates:
+- [[Anonymous role tokens]] for credential unlinkability.
+- [[Verifiable OPRF]] for consistent server evaluation.
+- Per-document private fetching/scoring rather than opening clusters.
+- Explicit source metadata protection rather than public centroid heuristics.
+- Larger real-network federations, changing membership and concurrent users.
+- Clinical expert-reviewed de-identification and multilingual identifiers.
+- Key lifecycle, backup and cache-retention policy.
+
+Not implemented, not part of claimed POC results. Existing source-control, side-channel and malicious-content limitations should remain visible.

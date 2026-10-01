@@ -1,7 +1,19 @@
 ---
-tags: [type/mechanism, status/superseded]
+tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# Anonymity cells (`decoy_policy="cells"`, docs/40)
+# Anonymity cells
 
-Sources partitioned once into fixed domain-diverse cells; the whole cell of the top source is contacted. Reduces both leaks on [[FeB4RAG]] (topic 0.454 → 0.201, source 0.744 → 0.231) but leaks the cell: 0.254 vs floor 0.239 on PMC k-means, **0.294 vs 0.210 on Dirichlet**; 0.256 → 0.283 over a session. Weaknesses: [[Cell churn intersection]], self-declared labels. Now the fallback for nodes too large to cache; [[Blind unlock]] recommended. Results: [[Cells and rerank results]].
+Cell routing contacts a group rather than exposing a single source. It reduces some source/topic inference but the selected group can still reveal topic.
+
+Earlier cells are vulnerable to registry-churn intersection and untrusted grouping labels. They are not the current all-node blind design. Measured improvements have utility and residual-leakage costs.
+
+See [[Cells and rerank results]], [[Cell churn intersection]].
+
+## Implementation / Experiment Sources
+
+- [backend/router/anonymity.py](../../backend/router/anonymity.py)
+- [docs/40-cells-rerank-healthcare.md](../../docs/40-cells-rerank-healthcare.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

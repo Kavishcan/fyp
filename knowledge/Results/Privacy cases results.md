@@ -1,7 +1,20 @@
 ---
 tags: [type/result]
+updated: 2026-09-30
 ---
 
-# Privacy cases results (docs/37)
+# Privacy cases results
 
-psi exposes 0 of 3 sensitive values; legacy/smart/v2 3 of 3. All 60 attack cases succeed in every mode. Enumeration ⌈C/nprobe⌉. Persistent MCP sessions: 10/9/61 ms per query (legacy/v2/psi). See [[Synthetic privacy cases]], [[Query leakage]].
+Earlier synthetic benchmark: 200 privacy cases plus 60 attack cases. PSI exposes zero of three tracked sensitive query values; legacy/smart/v2 expose three of three under the harness.
+
+All sixty malicious-source cases succeed in the then-tested modes. Those runs predate the current blind path; do not imply either success or defence was established for blind mode.
+
+Persistent-session timing examples (legacy/v2/PSI) were about 10/9/61 ms/query. Local tests do not represent remote Internet deployment.
+
+See [[Synthetic privacy cases]], [[Forged profile attack]].
+
+## Implementation / Experiment Sources
+
+- [docs/37-privacy-cases-and-transport.md](../../docs/37-privacy-cases-and-transport.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

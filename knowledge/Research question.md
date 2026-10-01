@@ -1,15 +1,16 @@
 ---
-tags: [hub, type/concept]
+tags: [hub, research-support]
+updated: 2026-09-30
 ---
 
-# Research question
+# Research Question
 
-> To what extent do source-routing decisions in [[Federated RAG]] reveal the query — its content to contacted sources, and its topic to an observer of the contact pattern — and can privacy-aware routing reduce both leaks while preserving retrieval, answer quality and efficiency?
+How much do query content and query-dependent source contacts reveal in federated RAG, and can a training-free client-side design reduce both channels while retaining useful retrieval and answer quality?
 
-Two leaks:
-1. [[Query leakage]] — a contacted hospital reads the question.
-2. [[Access-pattern leakage]] — *which* hospitals are contacted reveals the topic.
+1. **Query content:** text and embeddings can expose sensitive questions to sources.
+2. **Source contacts:** the identity of contacted sources can reveal the topic even when content is encrypted.
+3. **Supporting data protection:** authorised retrieval still requires de-identification, collection permissions and disclosure budgets.
 
-Supporting (hospital-side) protection: [[Node-side de-identification]], [[Role-based access]], [[Credential gate]].
+The current intervention is [[Blind unlock]]: local cluster selection, equal padded requests to every enrolled node, cached encrypted tables, and local ranking and generation. This changes the original selective-router plan; it does not contact only three relevant hospitals.
 
-Answer (docs/47, 50, 51): [[Blind unlock]] removes both leaks under the [[Threat model]]; retrieval cost depends on the probe budget P ([[Robustness results]]).
+Evaluate [[Query leakage]], [[Access-pattern leakage]], [[Session attack]], [[Robustness results]], [[Answer quality results]] and system cost together. See [[Research gap analysis]] for unresolved issues.

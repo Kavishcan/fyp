@@ -1,7 +1,21 @@
 ---
 tags: [type/result]
+updated: 2026-09-30
 ---
 
-# Pattern leak results (docs/39)
+# Pattern leak results
 
-FeB4RAG: observer names the topic 0.496 (chance 0.077, top-3 0.841) from contacted ids alone. Topic-stable decoys 0.495; random decoys 0.336–0.380 topic but source 0.667–0.692. **No decoy strategy reduces both; broadcast alone does.** Reversed the earlier decoy verdict. See [[Access-pattern leakage]], [[Topic-stable decoys]].
+Historical FeB4RAG contact-set attack:
+- Cosine/selective routing topic accuracy .496; balanced-origin floor about .077.
+- Topic-stable decoys .495: stable cover sets fingerprint topic.
+- Random decoys topic .336-.380, but genuine-source identification .667-.692.
+
+These are bounded attacker/configuration results, not a theorem that every possible decoy strategy fails. All-node contact removes this design's query-dependent contact-set signal; broader timing/session channels need separate tests.
+
+See [[Topic inference attack]], [[Session attack]], [[Blind unlock]].
+
+## Implementation / Experiment Sources
+
+- [docs/39-routing-pattern-leakage.md](../../docs/39-routing-pattern-leakage.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,7 +1,14 @@
 ---
 tags: [type/literature]
+updated: 2026-09-30
 ---
 
-# HyFedRAG (arXiv 2509.06444)
+# HyFedRAG
 
-Federated RAG for hybrid data: broadcast to all clients, raw edge retrieval, server fusion, stock Presidio. No public code, no threat model. Contacts everyone → no pattern leak, but every hospital reads the question. Reimplemented locally: [[HyFedRAG comparison results]].
+Primary record: [HyFedRAG](https://arxiv.org/abs/2509.06444).
+
+Heterogeneous federated retrieval combines different source modalities in an edge/cloud pipeline. Read the full method to distinguish its privacy assumptions from training-free blind input hiding.
+
+Our HyFedRAG-style experiment is a local approximation on public PMC data, not execution of official code or reproduction of published results. No current blanket claim about authors' code availability is made.
+
+Worksheet P08; see [[HyFedRAG comparison results]].

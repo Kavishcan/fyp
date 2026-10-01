@@ -1,14 +1,19 @@
 ---
 tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# Chunked blind tables (docs/47 addendum)
+# Chunked blind tables
 
-Each cluster's payload (de-identified text + int8 embeddings) is zlib-compressed and cut into fixed 16 KB chunks; chunk i sealed under the cluster key with i as associated data, listed under its own pseudorandom tag. Sizes hidden without padding every box to the largest.
+Each cluster payload is compressed and split into padded 16 KB encrypted chunks indexed by derived tags. Clients download the full permitted table, rather than query-dependent partial chunks.
 
-| Layout | Download, 8 PMC hospitals | MRR P=8 |
-|---|---|---|
-| padded to largest (first version) | 86 MB (66% padding) | 0.421 |
-| chunked + compressed + int8 (default) | **15.0 MB** | 0.423 |
+The current int8 k-means run reports 15,037,120 cached bytes across eight nodes. Historical padded/float16 layouts were roughly 83-86 MB. Total collection size, number of chunks and opened-label sizes remain observable; padding does not make all metadata secret.
 
-~3 KB per record → ~180 MB at 100 hospitals ([[Scaling of blind unlock]]). Why it lives on the device: fetching only the needed box would reveal which box ([[Blind unlock]]).
+See [[Blind unlock results]], [[Scaling of blind unlock]].
+
+## Implementation / Experiment Sources
+
+- [backend/privacy/psi.py](../../backend/privacy/psi.py)
+- [docs/47-blind-unlock.md](../../docs/47-blind-unlock.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

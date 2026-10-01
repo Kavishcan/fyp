@@ -1,7 +1,20 @@
 ---
 tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# Role-based access ("tolap", docs/45)
+# Role-based access
 
-Documents belong to collections (public, research, clinical_notes). The signed profile publishes `access_policy` (role → collections); a client's roles live only in the node's allow-list. **One OPRF key per collection**: an unpermitted collection is never evaluated, so its boxes never open. Blind tables include restricted collections only for permitted roles. Built in rather than an external LDAP/OPA product. Results: [[RBAC results]]. See [[Role-scoped publication]].
+Node-side allow-lists determine roles and permitted collections. Collection-specific OPRF keys and permitted table/profile views restrict what the client can evaluate and unlock.
+
+The client cannot gain a role merely by claiming it in a request in tested gated configurations. Open nodes and misconfigured publication have different guarantees. Authorisation does not revoke already obtained plaintext or old keys.
+
+See [[RBAC results]], [[Credential gate]], [[Role-scoped publication]].
+
+## Implementation / Experiment Sources
+
+- [backend/privacy/credentials.py](../../backend/privacy/credentials.py)
+- [backend/privacy/psi.py](../../backend/privacy/psi.py)
+- [docs/45-role-based-access.md](../../docs/45-role-based-access.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

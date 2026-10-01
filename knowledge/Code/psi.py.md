@@ -1,7 +1,14 @@
 ---
 tags: [type/code]
+updated: 2026-09-30
 ---
 
-# `privacy/psi.py`
+# psi.py
 
-Group helpers, [[OPRF]], `label_key`/`label_tag`/`chunk_tag` ([[2HashDH key binding]]), [[Dummy points]], compact float16/int8 payloads, chunking + zlib, deterministic sealing, `PSINode` (per-collection keys, `evaluate_for`, `blind_table`, `epoch`, `rotate_keys`). See [[Chunked blind tables]].
+Implementation: [psi.py](../../backend/privacy/psi.py).
+
+Group operations, OPRF evaluation/unblinding, label/tag derivation, encrypted labelled tables, float16/int8 payloads, compressed padded chunks, per-collection keys and rotation live here.
+
+Input hiding, table confidentiality, authorisation and disclosure bounds are separate claims. Multi-collection output and cached keys matter; no externally reviewed compositional security proof is established.
+
+See [[OPRF]], [[Formal leakage]], [[Key epochs and rotation]].

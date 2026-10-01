@@ -1,20 +1,27 @@
 ---
-tags: [hub, type/claim]
+tags: [hub, research-support]
+updated: 2026-09-30
 ---
 
-# Claims ledger
+# Claims Ledger
 
-| Claim (exact wording) | Evidence | Scope / caveat |
+| Claim You Can Defend | Evidence | Qualification |
 |---|---|---|
-| No hospital receives the question in blind mode | [[Formal leakage]] claim 1; tests patch every text/vector tool to fail | under the [[Threat model]]; the device sees it |
-| The contact pattern is at the inference floor | [[Robustness results]], [[Session attack]] | 3 splits; sessions on k-means only |
-| Only blind unlock does both, among the designs compared | [[HyFedRAG comparison results]], [[Robustness results]] | HyFedRAG-style ties on pattern; PSI ties on content |
-| With the standalone client no server holds the question | [[Client and cover results]] | studio still uses the API as the device |
-| With cover traffic, nodes cannot tell when the user asks | [[Client and cover results]] | credential id still visible; budget cost |
-| Retrieval: 97–98% of a local HyFedRAG-style baseline at P = 24 (matched hybrid ranking) | [[Robustness results]] | quote the split; P = 8 is 81–94%; n.s. only on k-means |
-| Blind unlock beats PSI + cells by ~+0.07 MRR | [[Robustness results]] | all splits, p < 0.001 |
-| Blind unlock improves answers over closed-book | [[Answer quality results]] | MIRAGE, 150 q, one model, p = 0.035 |
-| De-identification mitigates, not eliminates, identifier leakage | [[De-identification results]] | ~13% uncued unregistered names missed |
-| Not new cryptography | [[Unbalanced PSI with precomputation]] | the multi-owner setting is the contribution |
+| Blind nodes do not receive query text or its embedding | [[Blind unlock]], [[Client and cover results]] | Standalone path; metadata and credentials remain visible |
+| Fixed all-node contacts hide query-dependent source selection | [[Robustness results]], [[Session attack]] | Fixed federation; attack measures contact-set leakage, not every side channel |
+| Blind P=24 preserves 96.9-98.4% of the matched local hybrid baseline MRR | [[Robustness results]] | Eight simulated nodes, three PMC splits; not official HyFedRAG execution |
+| Blind dense improves MIRAGE answers over closed-book in one run | [[Answer quality results]] | 150 questions, one local model; p=.035 |
+| De-identification reduces some identifier disclosures | [[De-identification results]] | Synthetic and public-text tests; misses remain; alteration is not semantic damage |
+| Collection permissions and persistent budgets constrain future access | [[RBAC results]], [[Credential gate]] | Configured gated nodes; saved plaintext or past unlock keys cannot be revoked |
+| This is an implemented integration, not new cryptography | [[Novelty and contribution]] | Broader novelty needs a systematic primary-paper comparison |
 
-**Never say:** "privacy fully solved", "superior retrieval", "94–98%" without the split, "HyFedRAG leaks both", "end-to-end", "PII removed".
+**Do not claim:** universally superior; all privacy solved; exact equivalence from nonsignificant p-values; all records anonymised; 1,000 blind nodes measured; published baselines reproduced when only local approximations were run.
+
+Earlier test totals are engineering checks, not evidence of privacy guarantees. See [[Project status]] and [[Source reconciliation]].
+
+## Implementation / Experiment Sources
+
+- [docs/50-robustness-significance-sessions.md](../docs/50-robustness-significance-sessions.md)
+- [docs/51-formal-leakage.md](../docs/51-formal-leakage.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,21 +1,54 @@
 ---
-tags: [hub, type/mechanism]
+tags: [hub, research-support]
+updated: 2026-09-30
 ---
 
-# Architecture (recommended: `routing_mode="blind"`, `rerank="hybrid"`)
+# Current Architecture
 
-```text
-Offline, once per key epoch
-  hospital: de-identify → cluster into boxes → lock each box (per-collection OPRF key)
-            → publish signed profile + cluster centroids → publish chunked table
-  device:   download every table once (same bytes for every client of a role)
+**Recommended privacy deployment:** standalone client, blind dispatch, local embeddings and local generation. The Studio is a demonstration, not the same trust boundary.
 
-Per question (on the device)
-  embed → score every hospital's clusters → global top-P
-  → EXACTLY P blinded points to EVERY hospital (real r·H(c) or dummy r·G)
-  → each hospital stamps (OPRF) every point, charges its budget
-  → unblind real replies → tag lookup in cache → open chunks
-  → hybrid rank → top-k evidence → local LLM answer
+```mermaid
+flowchart TD
+  subgraph NODE["Each independent data owner"]
+    D["Owner documents"] --> DI["Configured de-identification"]
+    DI --> C["Local embeddings and cluster index"]
+    C --> PR["Public / role-scoped profiles"]
+    C --> TB["Encrypted labelled tables"]
+    AU["Allow-list, roles, persistent budget"] --> EV["OPRF point evaluation"]
+  end
+  subgraph DEVICE["Trusted user device"]
+    CA["Cache permitted tables and profiles"]
+    Q["User question"] --> EM["Local query embedding"]
+    EM --> PLAN["Score centroids; global top P clusters"]
+    CA --> PLAN
+    PLAN --> PAD["P shuffled real/dummy points per node"]
+    RE["Collect all replies first"] --> UN["Unblind; unlock cached chunks"]
+    CA --> UN
+    UN --> RR["Local dense or hybrid reranking"]
+    RR --> GEN["Local LLM"]
+    Q --> GEN
+    GEN --> AN["Answer and evidence"]
+  end
+  PR --> CA
+  TB --> CA
+  PAD --> EV
+  EV --> RE
+  CV["Optional finite cover schedule"] --> PAD
 ```
 
-Components: [[Node-side de-identification]] → [[Cluster index]] → [[Chunked blind tables]] → [[Blind unlock]] ([[OPRF]], [[Dummy points]], [[Key epochs and rotation]]) → [[Role-based access]] + [[Credential gate]] → [[Hybrid rerank]] → [[Local LLM generation]]. Runs in the [[Standalone client]] with optional [[Cover traffic]].
+**Offline:** owner prepares de-identified data if enabled; publishes profiles and role-permitted encrypted tables. The client caches them. Signatures require suitable configuration and identity provisioning; defaults are not universally strict.
+
+**Online:** the device picks global top-P clusters. Every node receives P points, including dummies. Replies are collected before local unlocking. The device ranks opened passages and supplies selected evidence to a local generator.
+
+**Budget meaning:** P is real cluster selection budget globally and padded evaluation count per node. N nodes mean N x P online evaluations, not P source contacts. One cluster may disclose many passages.
+
+**Limits:** public centroids still disclose structure; metadata sizes and identity remain visible; stale caches, node failures and timing need operational treatment. No verified malicious-server scoring or prompt-injection defence. See [[Threat model]], [[Cover traffic]], [[Profile signing]] and [[Source reconciliation]].
+
+## Implementation / Experiment Sources
+
+- [backend/client/device.py](../backend/client/device.py)
+- [backend/privacy/blind_unlock.py](../backend/privacy/blind_unlock.py)
+- [backend/nodes/simulator.py](../backend/nodes/simulator.py)
+- [backend/client/cover.py](../backend/client/cover.py)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,16 +1,19 @@
 ---
 tags: [type/concept]
+updated: 2026-09-30
 ---
 
 # Query leakage
 
-A contacted hospital learns the question (or its topic) from what it receives.
+A node can learn sensitive query information from raw text or an embedding. Text-dispatch and tested vector inversion demonstrate this risk.
 
-| Mode | Hospital receives | Leak |
-|---|---|---|
-| text ([[Legacy router]], [[Smart router]], [[HyFedRAG]]-style) | the question | full ([[Privacy cases results]]: 3 of 3 sensitive values) |
-| [[v2 vector dispatch]] | an embedding | full via [[Embedding inversion]] (1.000) |
-| [[Per-query PSI dispatch]] | blinded cluster ids | none |
-| [[Blind unlock]] | P uniform points, real or dummy | none — not even whether it was relevant |
+Blinded cluster lookup avoids sending either in the current private path. That does not hide credential identity, arrival times or information deliberately exposed by a compromised device.
 
-Why it matters: patient details in questions; minimum-necessary sharing rules; question logs leak (AOL 2006); sensitive topics. Not a threat when hospitals are trusted (setting A — use text + [[Broadcast]]).
+See [[Privacy cases results]], [[Embedding inversion]], [[Formal leakage]].
+
+## Implementation / Experiment Sources
+
+- [backend/client/device.py](../../backend/client/device.py)
+- [docs/41-current-system-specification.md](../../docs/41-current-system-specification.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

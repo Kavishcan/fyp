@@ -1,7 +1,19 @@
 ---
-tags: [type/attack, status/fixed]
+tags: [type/attack]
+updated: 2026-09-30
 ---
 
-# Scoring tool embedding theft (audit, docs/49)
+# Scoring tool embedding theft
 
-The [[Paillier encrypted scoring]] node tool accepted chosen plaintexts (x_j = B^j packs coordinates): **3 unauthenticated requests recovered 100% of embeddings, restricted clinical notes included**. Fixed: off by default, never on gated nodes, public rows only. Regression test in `tests/test_audit_fixes.py`.
+Chosen inputs to the experimental scoring endpoint recovered all tested embeddings in three unauthenticated requests, including restricted rows.
+
+Audit fixes disable that tool by default/on gated nodes and limit enabled access to public data. Do not treat this experimental endpoint as a secure private-scoring implementation.
+
+See [[Paillier encrypted scoring]], [[Security audit results]].
+
+## Implementation / Experiment Sources
+
+- [backend/privacy/encrypted_scoring.py](../../backend/privacy/encrypted_scoring.py)
+- [docs/49-security-audit.md](../../docs/49-security-audit.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

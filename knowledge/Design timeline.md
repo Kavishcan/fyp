@@ -1,18 +1,19 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Design timeline
+# Design Timeline
 
-1. [[Legacy router]] / [[Smart router]] — text to sources.
-2. [[v2 vector dispatch]] — vector instead of text → invertible ([[v2 negative results]]).
-3. [[Per-query PSI dispatch]] — content hidden, pattern not; whole table per question.
-4. Decoys → [[Pattern leak results]]: decoys fail.
-5. [[Anonymity cells]] — both leaks reduced, cell still leaks.
-6. [[HyFedRAG comparison results]] — broadcast hides pattern but exposes the question; PSI-to-all hides both at 198 MB/question.
-7. **[[Blind unlock]]** — download once, identical probes to everyone.
-8. [[Hybrid rerank]] — device-side quality.
-9. [[Security audit results]] — three holes closed.
-10. [[Formal leakage]] — proofs; [[Timing channel]] found and fixed.
-11. [[Chunked blind tables]] — 86 → 15 MB.
-12. [[Standalone client]] + [[Cover traffic]] — no server, timing hidden.
+1. Text-based selective routing: useful but sources see the query.
+2. Vector dispatch: literal text hidden, tested inversion still succeeds.
+3. Per-query PSI: query inputs hidden, selective contacts leak patterns and table transfer costs are high.
+4. Decoys/cells: partial pattern mitigation, longitudinal and churn weaknesses.
+5. Cached blind unlock: local cluster selection, all-node equal probes, setup amortisation.
+6. Local reranking: PMC utility improves; MIRAGE hybrid answers do not.
+7. Permissions, budgets and audit fixes: source disclosure constrained but not solved.
+8. Standalone client and finite cover scheduling: tighter query boundary and timing treatment.
+9. Three PMC partitions, bootstrap comparisons and session attacks: broader evidence, still scoped.
+10. Current review: correct revocation, signing, disclosure and timing overclaims.
+
+See [[Source reconciliation]], [[Next steps]]. Historical modes remain controls, not current recommended deployment.

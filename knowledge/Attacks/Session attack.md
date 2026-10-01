@@ -1,17 +1,28 @@
 ---
 tags: [type/attack]
+updated: 2026-09-30
 ---
 
-# Session attack (`eval/run_session_attack.py`, docs/50)
+# Session attack
 
-Five follow-up questions about one patient (967 PMC patients, summary split into five chunks). Topic (floor 0.238) and source (chance 0.125), 1 → 5 questions:
+Eligible PMC summaries yield 967 patients; the reported held-out evaluation uses 484 sessions on k-means only. Five snippets stand in for related questions.
 
-| Policy | Topic | Source |
+| Policy | Topic, One -> Five | Source, One -> Five |
 |---|---|---|
-| cosine top-4 | 0.314 → 0.543 | 0.228 → 0.477 |
-| topic-stable decoys | 0.469 → 0.570 | 0.190 → 0.252 |
-| random decoys | 0.258 → 0.504 | 0.189 → 0.492 |
-| cells | 0.256 → 0.283 | 0.183 → 0.200 |
-| **blind unlock** | **0.238 → 0.238** | **0.125 → 0.125** |
+| Cosine top-four | .314 -> .543 | .228 -> .477 |
+| Topic-stable decoys | .469 -> .570 | .190 -> .252 |
+| Random decoys | .258 -> .504 | .189 -> .492 |
+| Cells | .256 -> .283 | .183 -> .200 |
+| Blind all-node | .238 -> .238 | .125 -> .125 |
 
-k-means split only. See [[Session linkage]], [[Robustness results]].
+This tests contact histories, not every longitudinal side channel. More partitions and real follow-up questions remain needed.
+
+See [[Session linkage]], [[Inference floor]].
+
+## Implementation / Experiment Sources
+
+- [backend/eval/run_session_attack.py](../../backend/eval/run_session_attack.py)
+- [docs/50-robustness-significance-sessions.md](../../docs/50-robustness-significance-sessions.md)
+- [docs/results/session_attack_20260929-201522.csv](../../docs/results/session_attack_20260929-201522.csv)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

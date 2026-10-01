@@ -1,7 +1,20 @@
 ---
 tags: [type/result]
+updated: 2026-09-30
 ---
 
-# Scaling and transport results (docs/33)
+# Scaling and transport results
 
-At a 6-contact cap, source recall falls 0.872 → 0.707 → 0.518 from 30 to 300 sources. v2's vector costs ~102 KB/query. 30 real MCP processes: ~2.7–2.9 s/query, almost all spawn-per-call overhead. 1,000 sources not run.
+Earlier six-contact-cap source recall declines .872 -> .707 -> .518 from thirty to three hundred virtual sources. Thirty real MCP processes show substantial spawn-per-call overhead; persistent sessions reduce it.
+
+These results concern earlier selective/vector/PSI modes. A thousand sources were not run; eight-node PMC blind measurements do not establish thousand-node blind scalability.
+
+Report real process/network costs separately from virtual source-selection tests and arithmetic estimates.
+
+See [[Scaling of blind unlock]], [[Next steps]].
+
+## Implementation / Experiment Sources
+
+- [docs/33-scaling-and-transport.md](../../docs/33-scaling-and-transport.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

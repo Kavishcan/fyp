@@ -1,7 +1,14 @@
 ---
 tags: [type/code]
+updated: 2026-09-30
 ---
 
-# `api/state.py`
+# api state
 
-The studio's coordinator (plays the [[Device]]): every routing mode, `_blind_retrieve` via the shared `blind_round`, `_rerank_evidence` ([[Hybrid rerank]]), per-query instrumentation. Legacy remains the API default.
+Implementation: [state.py](../../backend/api/state.py).
+
+The Studio coordinator handles modes, blind retrieval and local/API ranking. It therefore sees raw query text in the demonstration path, even if nodes receive only blinded points.
+
+Do not equate this hosted API boundary with standalone user-only query visibility. Record routing mode and generator settings in every run.
+
+See [[studio]], [[Device]], [[Threat model]].

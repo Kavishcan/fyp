@@ -1,16 +1,24 @@
 ---
 tags: [type/result]
+updated: 2026-09-30
 ---
 
-# HyFedRAG comparison results (docs/46)
+# HyFedRAG comparison results
 
-Local reimplementation of [[HyFedRAG]]'s privacy-relevant design on [[PMC-Patients]] (not its code; not comparable to its published numbers).
+This is a **local HyFedRAG-style reimplementation**, not the official implementation or a reproduction of published scores.
 
-| Config | MRR | Question to hospitals | Topic (floor 0.239) | Received/q |
-|---|---|---|---|---|
-| HyFedRAG-style | 0.444 | all 8 | 0.239 | 0.24 MB |
-| cosine top-4 | 0.444 | 4 | 0.318 | 0.13 MB |
-| PSI + cells | 0.350 | 0 | 0.254 | 103 MB |
-| PSI to all 8, nprobe 3 | 0.409 | 0 | 0.239 | 198 MB |
+Historical PMC k-means dense comparison:
+| Condition | MRR | Query Text at Nodes | Transfer / Query |
+|---|---|---|---|
+| HyFedRAG-style broadcast | .444 | All eight nodes | About .24 MB |
+| Cosine top-four | .444 | Four nodes | About .13 MB |
+| PSI+cells | .350 | None | About 103 MB |
+| PSI to all, nprobe=3 | .409 | None | About 198 MB |
 
-The cost that motivated [[Blind unlock]].
+These older per-query-table costs motivated cached [[Blind unlock]]. Current matched hybrid comparison is in [[Robustness results]]. Broadcast's constant contact set already hides source selection, so do not say it leaks both channels.
+
+## Implementation / Experiment Sources
+
+- [docs/46-hyfedrag-comparison.md](../../docs/46-hyfedrag-comparison.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

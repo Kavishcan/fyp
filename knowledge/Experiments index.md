@@ -1,17 +1,20 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Experiments index
+# Experiments Index
 
-| Dataset / harness | Used for |
+[[Dataset register]] provides source links; [[Dataset strategy]] explains each test.
+
+| Experiment | Data / Endpoint |
 |---|---|
-| [[FeB4RAG]] | resource selection, pattern leak (docs/36, 39, 40) |
-| [[PMC-Patients]] | patient-to-patient retrieval, HyFedRAG comparison, blind unlock (docs/46–50) |
-| [[MIRAGE]] | answer accuracy with a local LLM (docs/38, 50) |
-| [[BEIR healthcare federation]] | same-domain 8-client federation (docs/40) |
-| [[Synthetic privacy cases]] | 200 cases, sensitive values reaching nodes (docs/37) |
-| [[Hospital splits]] | k-means / Dirichlet / random robustness (docs/50) |
-| [[Paired bootstrap]] | significance for every retrieval ratio |
+| [[PMC-Patients]], [[Hospital splits]] | Main retrieval utility and contact-set leakage |
+| [[MIRAGE]] | Answer accuracy with six BEIR nodes |
+| [[FeB4RAG]] | Federated source selection and origin/topic inference |
+| [[BEIR healthcare federation]] | Earlier homogeneous-source contact leakage |
+| [[Synthetic privacy cases]] | Fictional query values and malicious fixtures |
+| [[Paired bootstrap]] | Shared-query uncertainty tests |
+| [[Session attack]] | Longitudinal contact histories, k-means only |
 
-Harnesses live in `backend/eval/` — see [[Code map]].
+No additional benchmark was run in this documentation update. See [[eval harnesses]] for entry points and [[Results index]] for archives.

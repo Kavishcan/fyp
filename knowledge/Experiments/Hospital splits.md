@@ -1,7 +1,24 @@
 ---
 tags: [type/experiment]
+updated: 2026-09-30
 ---
 
-# Hospital splits (docs/50)
+# Hospital splits
 
-The same 5,000 PMC patients split three ways: **k-means** in the routing embedding (topic-focused, docs/46), **Dirichlet(α=0.5)** over k-means topics (non-IID), **random** (IID). Floors 0.239 / 0.210 / 0.141. Answers the "k-means split is circular" critique. Results: [[Robustness results]].
+Same 5,000 PMC records and eight nodes:
+- K-means in the routing embedding: topic-concentrated partition.
+- Dirichlet alpha=.5 over topics: uneven non-IID distribution.
+- Random: less specialised distribution.
+
+Per-query topic majority floors: .239/.210/.141. Additional splits challenge the possible advantage of partitioning with the same embedding used to route.
+
+These are three deterministic experimental settings, not evidence across many seeds or real institutions.
+
+See [[Robustness results]], [[Dataset strategy]].
+
+## Implementation / Experiment Sources
+
+- [backend/eval/run_hyfedrag_compare.py](../../backend/eval/run_hyfedrag_compare.py)
+- [docs/50-robustness-significance-sessions.md](../../docs/50-robustness-significance-sessions.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

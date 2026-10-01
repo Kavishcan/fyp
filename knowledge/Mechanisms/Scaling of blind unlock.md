@@ -1,13 +1,19 @@
 ---
-tags: [type/concept]
+tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
 # Scaling of blind unlock
 
-| Hospitals | Points/question (P=8) | One-time download (~3 KB/record) |
-|---|---|---|
-| 8 | ~4.6 KB | ~15 MB |
-| 100 | ~57 KB | ~180 MB |
-| 1,000 | ~570 KB | ~1.8 GB |
+For N enrolled nodes and padding P, online work scales as N x P point evaluations. Every permitted table is cached, so setup/storage depends on total corpus size.
 
-Inherent to hiding which source matters ([[Anonymity set]]). Paths for large federations: grouped blind unlock, PIR ([[Future work]]). Each hospital's load grows with total users, not relevance.
+Eight PMC nodes are measured. The older 30 real-process and 300 virtual-source tests concern earlier routing modes. Hundred/thousand-node blind costs are estimates, not demonstrated scalability. At about 3 KB per record, more owners of similar size can require substantial cache storage.
+
+See [[Scaling and transport results]], [[Blind unlock results]].
+
+## Implementation / Experiment Sources
+
+- [docs/47-blind-unlock.md](../../docs/47-blind-unlock.md)
+- [docs/33-scaling-and-transport.md](../../docs/33-scaling-and-transport.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

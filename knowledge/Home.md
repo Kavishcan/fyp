@@ -1,26 +1,31 @@
 ---
-tags: [hub]
+tags: [hub, research-support]
+updated: 2026-09-30
 ---
 
-# FedSafeRouter — knowledge graph
+# FedSafeRouter Research Vault
 
-**Title:** *Privacy-Aware Source Routing for Federated RAG: Mitigating Query and Access-Pattern Leakage*
+**Project:** Privacy-Aware Source Routing for Federated RAG: Mitigating Query and Access-Pattern Leakage.
 
-Start here, then open the **graph view** (Ctrl/Cmd+G). Colours: concepts, mechanisms, attacks, experiments, results, code, literature, claims.
+This vault is research support, not a submission-ready literature review. Imported worksheet comments are working notes; read the primary papers and write your own assessed summaries.
 
-| Map | What it covers |
+| Start Here | Contents |
 |---|---|
-| [[Research question]] | the question and the two leaks |
-| [[Threat model]] | who is trusted, who is not, what each party sees |
-| [[Architecture]] | the recommended pipeline end to end |
-| [[Mechanisms index]] | every privacy / retrieval mechanism built |
-| [[Attacks index]] | every attack measured or found |
-| [[Experiments index]] | datasets, harnesses, splits |
-| [[Results index]] | docs/30–52 as results |
-| [[Claims ledger]] | what may be claimed, with numbers and scope |
-| [[Code map]] | modules and what they do |
-| [[Literature map]] | prior work and how this project relates |
-| [[Design timeline]] | how the design evolved and why |
-| [[Future work]] | decided out of scope |
+| [[Project status]] | What works, what is measured, what is still open |
+| [[Research question]] | The actual problem and research question |
+| [[Architecture]] | Current standalone-client pipeline |
+| [[Threat model]] | Trust boundaries, observers and assumptions |
+| [[Claims ledger]] | Defensible wording and limits |
+| [[Dataset register]] and [[Dataset strategy]] | Real data, links, client construction and tests |
+| [[Literature themes]] and [[Paper register]] | All 63 worksheet papers, grouped for reading |
+| [[Research gap analysis]] | One row per distinct gap |
+| [[Novelty and contribution]] | Contribution versus existing building blocks |
+| [[Results index]] | Results, including negative findings |
+| [[Code map]] | Where the implementation lives |
+| [[Next steps]] | Prioritised research and engineering work |
+| [[Source reconciliation]] | Conflicts between worksheet, old docs and code |
+| [[Vault maintenance]] | Source provenance and how to update these notes |
 
-**One-sentence result:** [[Blind unlock]] is the only compared design in which no hospital receives the question **and** the contact pattern stays at the [[Inference floor]] — on three [[Hospital splits]] and over five-question sessions — at 97–98% of a local [[HyFedRAG]]-style baseline's retrieval at P = 24.
+**Current conclusion:** in the tested eight-node PMC federation, all-node blind unlock hides query content from nodes and makes the contacted-source set query-independent. At P=24, hybrid retrieval retains 96.9-98.4% of the local HyFedRAG-style hybrid baseline across three splits. This is a scoped prototype result, not complete privacy or universally superior retrieval.
+
+Supporting maps: [[Mechanisms index]], [[Attacks index]], [[Experiments index]], [[Literature map]], [[Design timeline]], [[Future work]].

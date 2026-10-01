@@ -1,7 +1,20 @@
 ---
-tags: [type/result, status/negative]
+tags: [type/result]
+updated: 2026-09-30
 ---
 
-# v2 negative results (docs/32)
+# v2 negative results
 
-A1: no inversion resistance ([[Embedding inversion]]). A3: v2 trust is inert (exclusion gate only; raising it deadlocks the network). Plausibility check blocks the attacker only by rejecting 17.7 of 24 honest sources. Preserve these. See [[v2 vector dispatch]].
+Embedding dispatch does not stop the tested inversion attack. Noise and plausibility/trust hard gates lose honest utility before giving useful protection.
+
+The earlier exclusion-only trust path was ineffective against A3; a plausibility setting rejected about 17.7 of 24 honest sources. Later trust-term experiments are separate and still partial.
+
+These negative findings justify changing the design rather than claiming vector dispatch private.
+
+See [[Embedding inversion]], [[Trust term results]].
+
+## Implementation / Experiment Sources
+
+- [docs/32-v2-attack-results.md](../../docs/32-v2-attack-results.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,7 +1,19 @@
 ---
-tags: [type/mechanism, status/recommended]
+tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# Standalone client (`backend/client/`, docs/52)
+# Standalone client
 
-`client.Device` runs the whole [[Blind unlock]] path on the user's machine with **no server in the path**: connect (verify signed profile, download table, fetch restricted centroids, fail closed) → plan (no network) → `blind_round` → finish (rank, generate). Transports: `MCPTransport` (real node process), `LocalTransport` (in-process, gated like the server). CLI: `python -m client`. Removes the caveat "the API process sees the question". Results: [[Client and cover results]].
+The client Device performs local planning, blind dispatch, cached unlock, ranking and optional generation. MCPTransport and LocalTransport share the interface; the CLI runs the path without the Studio API handling the question.
+
+**Conditions:** use local models/generation, configured node permissions and suitable identity/signature policy. The registry permits unsigned profiles by default; a supplied generator could be remote. Neither is automatically a privacy-safe deployment.
+
+See [[Device]], [[Trust boundary]], [[client package]].
+
+## Implementation / Experiment Sources
+
+- [backend/client/device.py](../../backend/client/device.py)
+- [backend/router/registry.py](../../backend/router/registry.py)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

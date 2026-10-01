@@ -1,7 +1,14 @@
 ---
 tags: [type/literature]
+updated: 2026-09-30
 ---
 
-# Pointing the Way, Hiding the Destination (arXiv 2608.25735)
+# Pointing the Way
 
-Private dense retrieval against one provider: deep-hash candidates under metric DP, encrypted rerank, k-out-of-K OT bounding disclosure. Closest work; single owner. Its OT idea is [[Future work]] for disclosure.
+Primary record: [Pointing the Way, Hiding the Destination](https://arxiv.org/abs/2608.25735).
+
+Private dense retrieval combines learned hashing, private candidate handling, encrypted reranking and oblivious release. It is particularly relevant to disclosure control and should be examined before claiming a first private retrieval framework.
+
+The current prototype does not implement or benchmark that pipeline. Compare owner setting, metadata, training, authorised output and setup/online cost.
+
+Supplemental close prior work. See [[Novelty and contribution]], [[Reading plan]].

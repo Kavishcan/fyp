@@ -1,13 +1,17 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Attacks index
+# Attacks Index
 
-**Measured routing attacks:** [[Topic inference attack]] · [[Source attack]] · [[Session attack]]
+| Axis | Notes |
+|---|---|
+| Query content | [[Embedding inversion]], [[Query leakage]] |
+| Contact histories | [[Topic inference attack]], [[Source attack]], [[Session attack]] |
+| Source integrity | [[Forged profile attack]] |
+| Authorised disclosure | [[Enumeration attack]], [[Hospital-side PII]] |
+| Endpoint/regression issues | [[Budget reset]], [[Open retrieve dump]], [[Scoring tool embedding theft]] |
+| Residual channels | [[Timing channel]], [[Cell churn intersection]] |
 
-**Content / integrity:** [[Embedding inversion]] · [[Forged profile attack]] · [[Enumeration attack]]
-
-**Found in the security audit (docs/49):** [[Scoring tool embedding theft]] · [[Open retrieve dump]] · [[Budget reset]] · [[Timing channel]] · [[Cell churn intersection]]
-
-Floors: always report the [[Inference floor]] (majority class), not 1/k.
+Separate measured attacks from hypothetical threats and audit discoveries. Always state the affected routing mode. See [[Threat model]], [[Security audit results]].

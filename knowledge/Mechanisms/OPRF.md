@@ -1,7 +1,19 @@
 ---
-tags: [type/mechanism, type/building-block]
+tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# OPRF (oblivious pseudorandom function)
+# OPRF
 
-Client sends B = r·H(x); node returns k·B; client computes r⁻¹·k·B = k·H(x). The node learns nothing about x; the client learns F only for inputs the node evaluated. Ed25519 prime-order group via PyNaCl (`privacy/psi.py`). Basis of [[Labeled PSI]], [[Per-query PSI dispatch]], [[Blind unlock]]. Security: one-more gap DH in the random-oracle model ([[Formal leakage]] claim 3). Privacy Pass uses a verifiable OPRF ([[Anonymous role tokens]], [[Verifiable OPRF]]).
+The client blinds an input-derived group point, the node evaluates it with its secret key, and the client unblinds the result. The prototype uses Ed25519 group operations through PyNaCl.
+
+This prevents the node from seeing the cluster input under the protocol assumptions. It does not authenticate the user's identity anonymously, verify honest server evaluation, or prove application-level disclosure limits.
+
+Read [[Verifiable OPRF]], [[2HashDH key binding]], [[Formal leakage]]. This implementation has not inherited a published malicious-security proof.
+
+## Implementation / Experiment Sources
+
+- [backend/privacy/psi.py](../../backend/privacy/psi.py)
+- [docs/51-formal-leakage.md](../../docs/51-formal-leakage.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,23 +1,14 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Literature map
+# Literature Map
 
-| Work | Relation |
-|---|---|
-| [[HyFedRAG]] | the federated RAG baseline compared against |
-| [[RAGRoute]] | selective routing baseline (stub) |
-| [[C-FedRAG]] | TEE-based federated RAG; broadcasts the query |
-| [[RAG security survey]] | frames federated RAG as training-time; routing leakage absent from its threat list |
-| [[Kiss et al 2017]] | **the core of blind unlock** (unbalanced PSI with precomputation) |
-| [[Chen-Laine-Rindal 2018]] | labeled PSI |
-| [[Google Password Checkup]] | OPRF + downloaded bucket |
-| [[Wally]] | indistinguishable fake queries (needs a crowd) |
-| [[Pointing the Way]] | private dense retrieval, single provider, k-of-K OT |
-| [[Tiptoe and SimplePIR]] | offline-hint PIR / private search |
-| [[Oya and Kerschbaum]] | access/search-pattern leakage abuse |
-| [[Privacy Pass and anonymous tokens]] | anonymous credentials direction |
-| [[Routing hijacking]] | integrity attack on federated RAG routing |
+[[Paper register]] contains all 63 worksheet records and links to individual imported working notes. [[Literature themes]] groups them; [[Reading plan]] prioritises the closest work.
 
-Novelty claim: a new **architecture** for multi-owner query- and pattern-private routing from known primitives; not new cryptography. Verify "first" claims with a proper review.
+Focused comparison notes: [[RAGRoute]], [[HyFedRAG]], [[C-FedRAG]], [[Routing hijacking]], [[RAG security survey]].
+
+Established cryptographic/private-search context: [[Kiss et al 2017]], [[Chen-Laine-Rindal 2018]], [[Tiptoe and SimplePIR]], [[Wally]], [[Pointing the Way]], [[Google Password Checkup]], [[Privacy Pass and anonymous tokens]], [[Oya and Kerschbaum]].
+
+Some supplemental citations still require exact-source verification. The imported 63 records are not certified full-text reviews. [[Novelty and contribution]] records what must be established before novelty claims.

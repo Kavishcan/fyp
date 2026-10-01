@@ -1,7 +1,12 @@
 ---
 tags: [type/literature]
+updated: 2026-09-30
 ---
 
-# Oya and Kerschbaum — search-pattern leakage
+# Oya and Kerschbaum
 
-Hiding the access pattern is not enough; repeated queries leak through search patterns. The encrypted-search analogue of the [[Session attack]].
+Working pointer to encrypted-search leakage research. The existing vault did not contain an unambiguous title, year or primary URL; resolve that citation before using it in an assessed report.
+
+Study repeated search-pattern leakage separately from contacts and query contents. Do not attribute a detailed theorem to an unspecified publication.
+
+Supplemental citation-verification task. See [[Session linkage]], [[Reading plan]].

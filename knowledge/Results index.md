@@ -1,30 +1,14 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Results index (docs/30–52)
+# Results Index
 
-| Doc | Note |
-|---|---|
-| 30–31 | [[v2 vector dispatch]] |
-| 32 | [[v2 negative results]] |
-| 33 | [[Scaling and transport results]] |
-| 34 | [[Paillier encrypted scoring]] |
-| 35 | [[Bucket recall results]] |
-| 36 | [[PSI dispatch results]] |
-| 37 | [[Privacy cases results]] |
-| 38 | [[Answer quality results]] |
-| 39 | [[Pattern leak results]] |
-| 40 | [[Cells and rerank results]] |
-| 41 | [[System specification]] |
-| 42 | [[Trust term results]] |
-| 43 | [[Credential gate]] |
-| 44 | [[De-identification results]] |
-| 45 | [[RBAC results]] |
-| 46 | [[HyFedRAG comparison results]] |
-| 47 | [[Blind unlock results]] |
-| 48 | [[Hybrid rerank results]] |
-| 49 | [[Security audit results]] |
-| 50 | [[Robustness results]] |
-| 51 | [[Formal leakage]] |
-| 52 | [[Client and cover results]] |
+**Current headline evidence:** [[Robustness results]], [[Blind unlock results]], [[Answer quality results]], [[Session attack]], [[De-identification results]], [[Client and cover results]].
+
+**Historical controls:** [[HyFedRAG comparison results]], [[PSI dispatch results]], [[Pattern leak results]], [[Cells and rerank results]], [[Bucket recall results]], [[Hybrid rerank results]], [[Privacy cases results]], [[Scaling and transport results]], [[Trust term results]], [[v2 negative results]].
+
+**Security/configuration:** [[Formal leakage]], [[RBAC results]], [[Security audit results]], [[System specification]].
+
+Use [[Claims ledger]] for report wording. Results are scoped to archived configurations; current implementation changes do not retroactively regenerate benchmark numbers. [[Source reconciliation]] lists important conflicts.

@@ -1,7 +1,19 @@
 ---
-tags: [type/mechanism, type/building-block]
+tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
 # Unbalanced PSI with precomputation
 
-The server's large set is encoded and downloaded once (setup phase); each online query costs only the client's small set ([[Kiss et al 2017]]). **This is the core of [[Blind unlock]]** — credit it; blind unlock is its labeled, multi-owner form, not a new protocol. Related: [[Google Password Checkup]], PIR with offline hints ([[Tiptoe and SimplePIR]]).
+Large server-side sets motivate setup/online separation: prepare the large representation offline and evaluate a small client input online.
+
+This established idea informs cached blind tables. The prototype is not asserted to implement a specific published PSI protocol exactly or inherit its proof. It combines labelled cluster retrieval, multiple owners and padded all-owner evaluation.
+
+See [[Kiss et al 2017]], [[Labeled PSI]], [[Novelty and contribution]].
+
+## Implementation / Experiment Sources
+
+- [backend/privacy/psi.py](../../backend/privacy/psi.py)
+- [docs/47-blind-unlock.md](../../docs/47-blind-unlock.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

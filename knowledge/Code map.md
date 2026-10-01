@@ -1,24 +1,21 @@
 ---
-tags: [hub, type/code]
+tags: [hub]
+updated: 2026-09-30
 ---
 
-# Code map
+# Code Map
 
-| Module | Note |
+| Area | Entry Point / Note |
 |---|---|
-| `backend/privacy/blind_unlock.py` | [[blind_unlock.py]] |
-| `backend/privacy/psi.py` | [[psi.py]] |
-| `backend/privacy/cluster_index.py` | [[Cluster index]] |
-| `backend/privacy/credentials.py` | [[Credential gate]] |
-| `backend/privacy/deidentify.py` | [[Node-side de-identification]] |
-| `backend/client/` | [[client package]] |
-| `backend/router/hybrid_rerank.py` | [[Hybrid rerank]] |
-| `backend/router/anonymity.py` | [[Anonymity cells]] |
-| `backend/router/v2.py`, `smart.py` | [[v2 vector dispatch]], [[Smart router]] |
-| `backend/nodes/mcp_server.py`, `mcp_client.py` | [[MCP node]] |
-| `backend/nodes/signing.py` | [[Profile signing]] |
-| `backend/api/state.py` | [[api state]] |
-| `backend/eval/` | [[eval harnesses]] |
-| `frontend/` | [[studio]] |
+| User-local path | [[client package]], [[Standalone client]] |
+| Private probes/cache | [[blind_unlock.py]] |
+| OPRF and encrypted labels | [[psi.py]] |
+| Node cluster profiles | [[Cluster index]], [[Profile signing]] |
+| Permissions/budgets | [[Role-based access]], [[Credential gate]] |
+| Filtering | [[Node-side de-identification]] |
+| Local ranking | [[Hybrid rerank]] |
+| API demonstration | [[api state]], [[studio]] |
+| Older controls | [[Legacy router]], [[Smart router]], [[v2 vector dispatch]] |
+| Evaluation | [[eval harnesses]], [[Results index]] |
 
-Tests: `.venv/bin/pytest -q` (500+). Test counts are not privacy results.
+Configuration and defaults affect guarantees. Read [[Source reconciliation]] before interpreting old docs as current code. No implementation files were changed during this vault update.

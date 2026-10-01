@@ -1,17 +1,16 @@
 ---
 tags: [hub]
+updated: 2026-09-30
 ---
 
-# Mechanisms index
+# Mechanisms Index
 
-**Recommended pipeline:** [[Blind unlock]] · [[Chunked blind tables]] · [[Dummy points]] · [[Key epochs and rotation]] · [[2HashDH key binding]] · [[Standalone client]] · [[Cover traffic]] · [[Hybrid rerank]] · [[Local LLM generation]]
+**Current path:** [[Blind unlock]], [[OPRF]], [[2HashDH key binding]], [[Dummy points]], [[Chunked blind tables]], [[Cluster index]], [[Standalone client]], [[Cover traffic]], [[Hybrid rerank]], [[Local LLM generation]], [[Key epochs and rotation]].
 
-**Hospital side:** [[Node-side de-identification]] · [[Presidio NER backend]] · [[Role-based access]] · [[Role-scoped publication]] · [[Credential gate]] · [[Profile signing]] · [[Cluster index]]
+**Owner controls:** [[Node-side de-identification]], [[Presidio NER backend]], [[Role-based access]], [[Role-scoped publication]], [[Credential gate]], [[Profile signing]].
 
-**Earlier / alternative dispatch:** [[Per-query PSI dispatch]] · [[Anonymity cells]] · [[Topic-stable decoys]] · [[Random decoys]] · [[v2 vector dispatch]] · [[Broadcast]] · [[Legacy router]] · [[Smart router]]
+**Historical controls:** [[Per-query PSI dispatch]], [[Anonymity cells]], [[Broadcast]], [[Legacy router]], [[Smart router]], [[v2 vector dispatch]], [[Random decoys]], [[Topic-stable decoys]].
 
-**Integrity:** [[Trust ranking term]] · [[Cross-node evidence rerank]] · [[Profile signing]]
+**Integrity / alternatives:** [[Cross-node evidence rerank]], [[Trust ranking term]], [[Paillier encrypted scoring]].
 
-**Experimental, off by default:** [[Paillier encrypted scoring]]
-
-Building blocks: [[OPRF]] · [[Labeled PSI]] · [[Unbalanced PSI with precomputation]]
+**Prior building blocks:** [[Labeled PSI]], [[Unbalanced PSI with precomputation]]. Cost: [[Scaling of blind unlock]].

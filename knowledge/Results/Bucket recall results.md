@@ -1,7 +1,18 @@
 ---
 tags: [type/result]
+updated: 2026-09-30
 ---
 
-# Bucket recall results (docs/35)
+# Bucket recall results
 
-SimHash unusable; published k-means cluster ids at ~10 docs/cluster, nprobe 2, min size 5: recall 0.89 of dense@10, ~36 passages per contact. Never publish near-document centroids. Basis of the [[Cluster index]].
+Earlier bucket retrieval study: SimHash was unsuitable in tested settings. Spherical k-means clusters targeting ten records, nprobe=2, retained about .89 of dense@10 recall and disclosed about 36 passages per contact.
+
+This is not an absolute privacy guarantee. The minimum-size heuristic is capped by corpus size; centroid disclosure needs independent evaluation.
+
+See [[Cluster index]], [[Dataset strategy]].
+
+## Implementation / Experiment Sources
+
+- [docs/35-bucket-recall.md](../../docs/35-bucket-recall.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,7 +1,18 @@
 ---
-tags: [type/result, hub]
+tags: [type/result]
+updated: 2026-09-30
 ---
 
-# System specification (docs/41)
+# System specification
 
-The authoritative statement of what is implemented, measured and claimed. Recommended pipeline: [[Blind unlock]] + [[Hybrid rerank]]; studio default blind P=8 + hybrid; API default legacy. See [[Architecture]], [[Claims ledger]].
+Use current code plus archived experiments to interpret docs/41, which records implementation history.
+
+The strict user-only-query path is standalone blind dispatch with local generation. Studio demonstrates the framework but sends the query through its API. Blind defaults, roles, signatures, de-identification and generator configuration must be recorded.
+
+See [[Architecture]], [[Project status]], [[Claims ledger]], [[Source reconciliation]].
+
+## Implementation / Experiment Sources
+
+- [docs/41-current-system-specification.md](../../docs/41-current-system-specification.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

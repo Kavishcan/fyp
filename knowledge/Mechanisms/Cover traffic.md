@@ -1,7 +1,20 @@
 ---
 tags: [type/mechanism]
+updated: 2026-09-30
 ---
 
-# Cover traffic (constant rate, docs/52)
+# Cover traffic
 
-`CoverTrafficScheduler` sends exactly one round per tick: the queued question if any, else a cover round of P dummies to every node. Planning happens at submit time; daily fetches on the tick; a timed run finishes local answers after the network schedule. Real and cover rounds are identical on the wire and in the budget. Hides *when* the user asks. Cost: ticks/day × P evaluations per node; a question waits up to one tick; bursts queue. See [[Timing channel]], [[Session linkage]].
+The scheduler uses one monotonic timed run and sends a padded round on each scheduled tick. Real work can replace a cover round; planning is local and local answer generation finishes after the schedule.
+
+The CLI now uses one schedule rather than repeatedly restarting one-tick runs. Direct tick calls do not pace themselves. Slow nodes can miss deadlines; finite schedule participation is visible. No universal timing-anonymity guarantee has been demonstrated.
+
+Every cover tick consumes per-node evaluation budget. See [[Timing channel]], [[Client and cover results]].
+
+## Implementation / Experiment Sources
+
+- [backend/client/cover.py](../../backend/client/cover.py)
+- [backend/client/__main__.py](../../backend/client/__main__.py)
+- [docs/52-standalone-client-and-cover-traffic.md](../../docs/52-standalone-client-and-cover-traffic.md)
+
+These sources support the scoped note; older source prose may require the corrections in [[Source reconciliation]].

@@ -1,7 +1,14 @@
 ---
 tags: [type/code]
+updated: 2026-09-30
 ---
 
-# Studio (`frontend/`)
+# studio
 
-Next.js demo: defaults to blind unlock P = 8 + hybrid ranking; every mode selectable and labelled; identity switch (no credential / researcher / clinician); per-answer "what left your device" panel. The API coordinator plays the [[Device]]; the [[Standalone client]] is the deployment path.
+Implementation: [frontend](../../frontend/).
+
+The node/framework interface is a demonstration and engineering deliverable. It is not a new privacy primitive or evidence of research novelty by itself.
+
+Selecting blind mode protects node dispatch within scope, but the API still receives the user question. A strictly user-local deployment needs the standalone path or a redesigned local front end/API boundary.
+
+See [[api state]], [[Standalone client]], [[Novelty and contribution]].
