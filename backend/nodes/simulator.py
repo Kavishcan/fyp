@@ -172,6 +172,7 @@ def build_simulated_source(
     deidentify: bool = True,
     known_identifiers: list[str] | None = None,
     deid_backend=None,
+    deid_level: str = "basic",
     collections: list[str] | None = None,
     access_policy: dict[str, list[str]] | None = None,
 ) -> tuple[InProcessNode, SourceProfile]:
@@ -195,7 +196,7 @@ def build_simulated_source(
         # holds, embeds, publishes or serves the raw text.
         from privacy.deidentify import Deidentifier
 
-        _deid = Deidentifier(known_identifiers=known_identifiers or (), backend=deid_backend)
+        _deid = Deidentifier(known_identifiers=known_identifiers or (), backend=deid_backend, level=deid_level)
         documents = _deid.redact_all(documents)
         deid_counts = {k: v for k, v in _deid.counts.items() if v}
     else:

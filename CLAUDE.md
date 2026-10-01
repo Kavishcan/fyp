@@ -11,6 +11,33 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/54: `Deidentifier(level="safe_harbor")` (opt-in; node JSON
+"deid_level"; default "basic" byte-identical) adds labelled
+account/plan/licence/vehicle/device numbers, fax, partial dates (month-year
+-> year), institutions, residence/postcodes, uncued names. Held-out synthetic
+benchmark on real PMC prose (eval/run_deid_benchmark.py, dev/test templates
+and name pools disjoint, test run once): recall 0.528 (basic + NER, the
+docs/46-53 node setting) -> 0.928 (safe_harbor + NER) -> 0.975 (+ registry);
+clean reports altered 13.8% -> 24.2% (mostly real dates/hospitals);
+centralized PMC MRR 0.4433 -> 0.4404 (n.s.). Known test gaps (MRN compound
+labels 0.53, residence 0.72, bare names 0.75) were NOT fixed. Not a validated
+de-identifier; never "HIPAA compliant".
+
+Docs/53: published systems on PMC (593 test queries, 30/10/60 split for
+RAGRoute's router): RAGRoute (MIT, router copied; cross-encoder replaced) and
+Flower FedRAG (Apache-2.0, merge + IVF client copied), backend/baselines/
+external_fedrag.py, eval/run_external_baselines.py. Cost at 8/16/32 hospitals
+(k-means): bge broadcast hospital CPU 287/542/1,112 ms and 275 KB/0.55/1.1 MB
+per question; blind P8 68/137/274 ms and 9/18/37 KB (~4x less CPU, ~30x less
+traffic). RAGRoute hospitals only search (~0.1 ms; the coordinator sends text
+AND embedding), so blind is NOT cheapest in hospital CPU, and NOT fastest
+(modelled 112-148 ms vs 50-114). RAGRoute topic 0.562 vs floor 0.226; on
+Dirichlet/random its router (AUC 0.852/0.583) contacts 5.5/7.4 of 8 at
+0.95-1.28 MB. Blind P8 hybrid beats RAGRoute hybrid on k-means (+0.04-0.06)
+but loses on Dirichlet/random (-0.05/-0.09); P24 ties or beats. Latency is a
+model; hospital CPU is one Apple M5. Blind discloses more records (139) than
+broadcast (80). Say "privacy at comparable cost", never "cheapest".
+
 Docs/50: robustness, significance, sessions, answers. Blind unlock at the
 pattern floor on k-means/Dirichlet/random splits and over 5-question
 sessions (router/decoys climb to 0.50–0.57; cells leak on Dirichlet 0.294
@@ -336,6 +363,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/privacy/psi.py, cluster_index.py | OPRF/labeled-PSI dispatch and the node's cluster table (docs/36) |
 | backend/privacy/credentials.py | HMAC credential + per-client daily evaluation budget gating psi_evaluate (docs/43) |
 | backend/privacy/deidentify.py, backend/eval/run_node_deid.py | Node-side de-identification at load, and its leakage/cost measurement (docs/44) |
+| backend/eval/run_deid_benchmark.py | Held-out Safe Harbor de-identification benchmark on PMC prose; basic vs safe_harbor level (docs/54) |
 | backend/eval/run_rbac.py (+ privacy/credentials roles, psi per-collection keys) | Role-based access to node collections, enforced in the PSI step (docs/45) |
 | backend/eval/run_feb4rag.py | FeB4RAG graded resource-selection evaluation (docs/36) |
 | backend/eval/run_privacy_cases.py, run_psi_enumeration.py | Synthetic privacy/attack cases and PSI enumeration cost (docs/37) |
@@ -344,6 +372,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/attacks/a2_topic_inference.py, backend/eval/run_leakage.py | Contacted-set → query-topic attack and the decoy ablation (docs/39) |
 | backend/eval/run_healthcare.py | Same-domain 8-client healthcare federation, hard case for routing leakage (docs/40) |
 | backend/eval/run_hyfedrag_compare.py | HyFedRAG-style design vs ours on PMC-Patients (docs/46, blind rows docs/47; `--only` runs a subset) |
+| backend/baselines/external_fedrag.py, backend/eval/run_external_baselines.py | RAGRoute and Flower FedRAG reproduced on PMC; quality, privacy and hospital cost vs blind unlock (docs/53) |
 | backend/router/hybrid_rerank.py | Device-side dense + pool-BM25 rerank (docs/48); no model, no network |
 | backend/client/ | Standalone device: Device (blind unlock, no server), CoverTrafficScheduler, node transports, CLI (docs/52) |
 | backend/privacy/blind_unlock.py | Blind unlock: global probe planning, dummy padding, table cache, tag-lookup unlock (docs/47) |

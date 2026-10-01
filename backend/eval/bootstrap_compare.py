@@ -43,7 +43,7 @@ def main() -> None:
     args = parser.parse_args()
     data = json.loads(args.perquery.read_text())
     mrr = data["mrr"]
-    print(f"{args.perquery.name} (partition {data.get('partition')}, {len(data['query_ids'])} queries)")
+    print(f"{args.perquery.name} (partition {data.get('partition')}, {len(data.get('query_ids') or data['test_query_ids'])} queries)")
     for pair in args.pairs:
         a, b = pair.split(":")
         r = paired_bootstrap(np.array(mrr[a]), np.array(mrr[b]), args.resamples)

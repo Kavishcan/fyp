@@ -91,13 +91,90 @@ _NOT_NAMES = {"The", "This", "A", "An", "He", "She", "They", "Was", "Is", "With"
               "Records", "Record", "Information", "Advocacy", "Engagement", "Journey", "Portal"}
 
 
+# --- level "safe_harbor" (docs/54) --------------------------------------------
+#
+# Opt-in additions aimed at the HIPAA Safe Harbor identifier list. The default
+# level ("basic") is unchanged, so every earlier measured result stays valid.
+# Written against the DEV half of the docs/54 benchmark only; its TEST half
+# (other templates, other names) is what is reported.
+
+_MONTH = r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+_MONTHS = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+           "November", "December"}
+
+# A labelled number of any Safe Harbor kind: accounts, health-plan and member
+# ids, licences and certificates, vehicle plates and VINs, device serials,
+# fax. The value must contain at least three digits so "policy changes" or
+# "serial measurements" are never touched.
+_SH_LABELLED = re.compile(
+    r"\b(?i:account|acct|a/c|billing|policy|member(?:ship)?|insurance|insurer|health plan|beneficiary|subscriber|"
+    r"claim|driving licen[cs]e|licen[cs]e|certificate|registration|number plate|licen[cs]e plate|plate|VIN|chassis|"
+    r"serial|S/N|IMEI|badge|employee|staff)"
+    r"(?:\s+(?i:no|number|num|id|code|#))?\.?\s*(?:[:#]\s*)?"
+    r"(?=[A-Z0-9/ -]{0,30}?\d[A-Z0-9/ -]{0,30}?\d[A-Z0-9/ -]{0,30}?\d)"
+    r"[A-Z0-9](?:[A-Z0-9/-]|\s(?=[A-Z0-9]))*[A-Z0-9]")
+_SH_FAX = re.compile(r"\b(?i:fax)\.?\s*(?i:no|number)?\.?\s*:?\s*\+?[\d()][\d ()-]{6,18}\d")
+_SH_DATES: list[re.Pattern] = [
+    re.compile(r"(?<![\d.])\d{1,2}([/.-])\d{1,2}\1\d{2}(?![\d.]\d|\d)"),                      # 12/03/19, not 12.0-16.0
+    re.compile(rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?{_MONTH}\b"),                       # 3 March, 3rd of March
+    re.compile(rf"\b{_MONTH}\.?\s+\d{{1,2}}(?:st|nd|rd|th)?\b(?!\s*(?:%|mg|patients|cases))"),  # March 3rd
+    # "on 12/03": only after on/dated and only with "/" — "from 3.2" is a lab
+    # value and "7/10" after from/by is a pain score
+    re.compile(r"\b(?i:on|dated)\s+\d{1,2}/\d{1,2}\b(?![/.]\d|\s*(?:mg|mmHg|%))"),
+]
+_SH_MONTH_YEAR = re.compile(rf"\b{_MONTH}\.?,?\s+((?:19|20)\d{{2}})\b")                   # March 2019 -> [DATE] 2019
+_SH_INSTITUTION = re.compile(
+    r"\b(?!(?:The|Our|A|An|This|That|Its|Their|His|Her|In|At|To|From|Of|Each|Every)\s)"
+    r"(?:St\.?\s+|Saint\s+)?(?:[A-Z][a-z']+\s+){1,4}"
+    r"(?:Hospital|Medical Cent(?:er|re)|Clinic|Infirmary|Health Cent(?:er|re)|Nursing Home|Hospice|Polyclinic)\b")
+_SH_LOCATION_CUE = re.compile(
+    r"\b(?:[Rr]esident of|[Rr]esides in|[Rr]esiding in|[Ll]ives in|[Ll]iving in|[Ll]ived in|[Bb]orn in|[Nn]ative of|"
+    r"[Hh]ometown(?: of| is|,)?|from the (?:town|village|city|district|province) of|[Hh]ome in|"
+    r"(?:travell?ed|came|moved|relocated) (?:here )?(?:from|to))\s+"
+    r"((?:[A-Z][a-z]+)(?:[ -][A-Z][a-z]+){0,2})")
+_SH_PLACE_PAIR = re.compile(r"\bin ([A-Z][a-z]+(?: [A-Z][a-z]+)?), (?:[A-Z][a-z]+(?: [A-Z][a-z]+)?|[A-Z]{2})\b")
+_SH_POSTCODE: list[re.Pattern] = [
+    re.compile(r"\b[A-Z]{1,2}\d[A-Z\d]?\s\d[A-Z]{2}\b"),                                    # UK
+    re.compile(r"\b[A-Z]{2}\s\d{5}(?:-\d{4})?\b"),                                          # US state + ZIP
+    re.compile(r"\b(?i:zip(?: code)?|postcode|post code|postal code)\s*:?\s*[A-Z0-9]{3,4}\s?[A-Z0-9]{0,4}\b"),
+]
+# Names without an honorific: a 2-3 word capitalised span directly followed by
+# what only a person does in a case report ("..., a 45-year-old", "was
+# admitted", "'s mother"), clinician roles, signature lines and header labels.
+_PERSON_NEXT = (r"(?=,\s+an?\s+\d{1,3}[- ](?:year|month|week|day)|\s+\(\d{1,3}\s*(?:y|yo|yrs?|years?)\b|"
+                r"\s+(?:was|is|had|has)\s+(?:admitted|referred|brought|transferred|seen|born|discharged|a\s+\d)|"
+                r"\s+(?:presented|complained|reported|underwent|died|attended|visited|consented)\b|"
+                r"'s\s+(?:mother|father|wife|husband|daughter|son|family|parents|sister|brother|condition|symptoms))")
+_SH_NAME_CUES: list[re.Pattern] = [
+    re.compile(rf"\b({_NAME}\s+{_NAME}(?:\s+{_NAME})?){_PERSON_NEXT}"),
+    re.compile(rf"\b(?:[Aa]ttending|[Cc]onsultant|[Ss]urgeon|[Pp]hysician|[Rr]eferred by|[Ss]een by|[Ss]igned(?: by)?:?|"
+               rf"[Rr]eviewed by|[Cc]c:)\s+(?:Dr\.?\s+)?({_FULLNAME})"),
+    re.compile(r"\b([A-Z]\.\s?(?:[A-Z]\.\s?)?[A-Z][a-z]+),?\s+(?=(?:MD|MBBS|DO|RN|FRCP|MRCP|MS|PhD)\b)"),
+    # consent statements name the person who gave it
+    re.compile(rf"\b(?:[Cc]onsent|[Pp]ermission|[Aa]ssent)\b[^.]{{0,40}}?\b(?:from|by)\s+({_FULLNAME})"),
+    re.compile(r"\b(?:NAME|PATIENT|PT NAME|PATIENT NAME|[Nn]ame|[Pp]atient|[Pp]atient [Nn]ame)\s*:\s*"
+               r"([A-Z][A-Za-z'-]+,?\s+[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+)?)"),
+]
+_NOT_NAME_WORDS = _NOT_NAMES | _MONTHS | {
+    "Patient", "Patients", "Case", "Cases", "Our", "Their", "His", "Her", "Its", "Physical", "Clinical", "Report",
+    "Emergency", "Department", "Hospital", "Medical", "Center", "Centre", "University", "General", "Type",
+    "Group", "Table", "Figure", "Fig", "Disease", "Syndrome", "Doctor", "Mother", "Father", "Baby", "Infant",
+    "Boy", "Girl", "Man", "Woman", "Subject", "Proband", "Index", "Control", "Controls", "Twin", "Donor"}
+
+
 @dataclass
 class Deidentifier:
     """`known_identifiers`: the node's own registry of names and ids.
-    `backend`: optional extra callable text -> text (a validated tool)."""
+    `backend`: optional extra callable text -> text (a validated tool).
+    `level`: "basic" (docs/44, the default every measured result used) or
+    "safe_harbor" (docs/54: adds labelled account/plan/licence/vehicle/device
+    numbers, fax, dates without a year and month-year reduced to the year,
+    institutions, residence places and postcodes, and names without an
+    honorific)."""
     known_identifiers: Iterable[str] = ()
     id_patterns: Iterable[str] = ()        # the institution's own record formats, e.g. r"\bTEST-\d{4}\b"
     backend: Callable[[str], str] | None = None
+    level: str = "basic"
     counts: Counter = field(default_factory=Counter)
 
     def __post_init__(self) -> None:
@@ -113,12 +190,15 @@ class Deidentifier:
         terms = sorted(variants, key=len, reverse=True)
         self._registry = re.compile(r"\b(?:" + "|".join(re.escape(t) for t in terms) + r")\b", re.I) if terms else None
         self._id_patterns = [re.compile(p) for p in self.id_patterns]
+        if self.level not in ("basic", "safe_harbor"):
+            raise ValueError(f"unknown de-identification level {self.level!r}")
 
     def __call__(self, text: str) -> str:
         return self.redact(text)
 
     def redact(self, text: str) -> str:
-        if self.backend is not None:
+        sh = self.level == "safe_harbor"
+        if self.backend is not None and not sh:
             text = self.backend(text)
         if self._registry is not None:
             text, n = self._registry.subn("[NAME_OR_ID]", text)
@@ -126,15 +206,52 @@ class Deidentifier:
         for pattern in self._id_patterns:
             text, n = pattern.subn("[ID]", text)
             self.counts["ID"] += n
+        if sh:
+            text = self._sub(_SH_FAX, "PHONE", text)
+            text = self._sub(_SH_LABELLED, "ID", text)
         for label, pattern in _STRUCTURED:
             if label == "CARD":
                 text = pattern.sub(self._card_sub, text)
                 continue
+            if sh and label == "AGE":                       # full dates are done; now the partial ones
+                for p in _SH_DATES:
+                    text = self._sub(p, "DATE", text)
+                text, n = _SH_MONTH_YEAR.subn(r"[DATE] \1", text)
+                self.counts["DATE"] += n
             text, n = pattern.subn(f"[{label}]", text)
             self.counts[label] += n
+        if sh:
+            text = self._sub(_SH_INSTITUTION, "ORGANIZATION", text)
+            for p in _SH_POSTCODE:
+                text = self._sub(p, "LOCATION", text)
+            text = _SH_LOCATION_CUE.sub(self._place_sub, text)
+            text = _SH_PLACE_PAIR.sub(self._place_sub, text)
+            if self.backend is not None:                    # NER after the rules, so it cannot split an address
+                text = self.backend(text)
         for pattern in _NAME_CUES:
             text = pattern.sub(self._name_sub, text)
+        if sh:
+            for pattern in _SH_NAME_CUES:
+                text = pattern.sub(self._sh_name_sub, text)
         return text
+
+    def _sub(self, pattern: re.Pattern, label: str, text: str) -> str:
+        text, n = pattern.subn(f"[{label}]", text)
+        self.counts[label] += n
+        return text
+
+    def _place_sub(self, match: re.Match) -> str:
+        if match.group(1).split()[0] in _MONTHS | _NOT_NAMES:
+            return match.group(0)
+        self.counts["LOCATION"] += 1
+        return match.group(0)[: match.start(1) - match.start(0)] + "[LOCATION]" + match.group(0)[match.end(1) - match.start(0):]
+
+    def _sh_name_sub(self, match: re.Match) -> str:
+        name = match.group(1)
+        if any(w.strip(",.") in _NOT_NAME_WORDS for w in name.split() if len(w.strip(",.")) > 1):   # initials pass
+            return match.group(0)
+        self.counts["NAME"] += 1
+        return match.group(0)[: match.start(1) - match.start(0)] + "[NAME]" + match.group(0)[match.end(1) - match.start(0):]
 
     def _card_sub(self, match: re.Match) -> str:
         digits = [int(c) for c in match.group(0) if c.isdigit()]
@@ -159,7 +276,7 @@ class Deidentifier:
         return [self.redact(d) for d in documents]
 
 
-_PLACEHOLDER = re.compile(r"\[(?:EMAIL|URL|IP|ID|SSN|CARD|DATE|PHONE|NAME|NAME_OR_ID|LOCATION|AGE|ADDRESS)\]")
+_PLACEHOLDER = re.compile(r"\[(?:EMAIL|URL|IP|ID|SSN|CARD|DATE|PHONE|NAME|NAME_OR_ID|LOCATION|AGE|ADDRESS|ORGANIZATION)\]")
 
 
 def strip_placeholders(text: str) -> str:

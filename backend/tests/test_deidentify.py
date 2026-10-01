@@ -170,3 +170,53 @@ def test_new_rules_leave_scientific_text_alone(text):
     from privacy.deidentify import Deidentifier
 
     assert Deidentifier().redact(text) == text
+
+
+# --- level "safe_harbor" (docs/54) ----------------------------------------------
+
+SH = Deidentifier(level="safe_harbor")
+
+
+@pytest.mark.parametrize("text,gone", [
+    ("Policy No. AIA-55821934.", "55821934"),
+    ("Account number 4410 2231 9988.", "4410 2231 9988"),
+    ("Driving licence B1234567.", "B1234567"),
+    ("The car, number plate WP CAB-4521, overturned.", "CAB-4521"),
+    ("A pacemaker, serial PJN 4482019, was implanted.", "4482019"),
+    ("Fax: 011 269 4321.", "269 4321"),
+    ("She returned on 3 March.", "3 March"),
+    ("Bloods were repeated on 12/03.", "12/03"),
+    ("Biopsy 12/03/19 showed granulomas.", "12/03/19"),
+    ("He was admitted to Kandy General Hospital.", "Kandy"),
+    ("He is a resident of Kurunegala.", "Kurunegala"),
+    ("Postcode SW1A 1AA.", "SW1A 1AA"),
+    ("Rahul Menon, a 45-year-old man, was admitted.", "Menon"),
+    ("Signed: A. Garcia, MD.", "Garcia"),
+    ("Patient: Olumide Adeyemi.", "Adeyemi"),
+    ("Written consent was obtained from Kavya Perera.", "Perera"),
+])
+def test_safe_harbor_level_removes_more_identifier_types(text, gone):
+    assert gone not in SH.redact(text)
+
+
+def test_month_year_keeps_only_the_year():
+    assert SH.redact("He first noticed the lump in March 2019.") == "He first noticed the lump in [DATE] 2019."
+
+
+@pytest.mark.parametrize("text", [
+    "Haemoglobin 10.2 g/dL (reference range 12.0-16.0 g/dL).",
+    "Potassium decreased from 3.2 mEq/L to 2.8 mEq/L.",
+    "Pain decreased from 7/10 to 3/10.",
+    "The Patient presented with fever; Crohn disease was excluded.",
+    "Kaplan Meier curves were drawn; Graves disease was treated.",
+    "The policy changes reduced admissions; serial measurements were taken.",
+])
+def test_safe_harbor_level_leaves_clinical_values_alone(text):
+    assert SH.redact(text) == text
+
+
+def test_default_level_is_unchanged():
+    text = "Rahul Menon, a 45-year-old man, was admitted to Kandy General Hospital in March 2019."
+    assert Deidentifier().redact(text) == text
+    with pytest.raises(ValueError):
+        Deidentifier(level="hipaa")
