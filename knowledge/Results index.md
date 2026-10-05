@@ -1,11 +1,13 @@
 ---
 tags: [hub]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Results Index
 
-**Current headline evidence:** [[Robustness results]], [[Blind unlock results]], [[Answer quality results]], [[Session attack]], [[De-identification results]], [[Client and cover results]].
+**Current headline evidence:** [[Robustness results]], [[Blind unlock results]], [[External baselines results]], [[Session attack]], [[Safe Harbor de-identification results]], [[Release results]], [[PIR tier results]], [[Client and cover results]].
+
+**Out of scope since 2026-10-02 (generation):** [[Answer quality results]]. Earlier de-identification: [[De-identification results]].
 
 **Historical controls:** [[HyFedRAG comparison results]], [[PSI dispatch results]], [[Pattern leak results]], [[Cells and rerank results]], [[Bucket recall results]], [[Hybrid rerank results]], [[Privacy cases results]], [[Scaling and transport results]], [[Trust term results]], [[v2 negative results]].
 

@@ -1,6 +1,6 @@
 ---
 tags: [hub, research-support]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Novelty and Contribution
@@ -13,6 +13,7 @@ updated: 2026-09-30
 | Routing | Profiles and local similarity ranking | Cluster selection without query-dependent source contacts |
 | Operations | Permissions, rate limits, signatures | Combined owner-controlled evaluation and cache lifecycle prototype |
 | Evaluation | Retrieval/QA and inference attacks | Three partition comparisons and longitudinal contact-pattern analysis |
+| Large hospitals | SimplePIR (PIR) | Used to fetch blind-unlock envelopes ([[PIR tier]]); not new |
 | UX | Framework / node connector studio | Engineering deliverable, not by itself research novelty |
 
 All-node contact sacrifices selective-routing savings. Public source centroids are not secure profile matching. The blind planner is not yet a trust-aware routing algorithm. These are important differences from the original proposal.

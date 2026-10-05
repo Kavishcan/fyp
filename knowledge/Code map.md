@@ -1,6 +1,6 @@
 ---
 tags: [hub]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Code Map
@@ -16,6 +16,8 @@ updated: 2026-09-30
 | Local ranking | [[Hybrid rerank]] |
 | API demonstration | [[api state]], [[studio]] |
 | Older controls | [[Legacy router]], [[Smart router]], [[v2 vector dispatch]] |
+| Large-hospital tier | [[pir.py]] |
+| Published baselines | [[external baselines]] |
 | Evaluation | [[eval harnesses]], [[Results index]] |
 
-Configuration and defaults affect guarantees. Read [[Source reconciliation]] before interpreting old docs as current code. No implementation files were changed during this vault update.
+Configuration and defaults affect guarantees. Read [[Source reconciliation]] before interpreting old docs as current code. No implementation files were changed by this vault update.

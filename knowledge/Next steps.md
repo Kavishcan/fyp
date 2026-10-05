@@ -1,9 +1,15 @@
 ---
 tags: [hub, research-support]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Next Steps
+
+## Now (2026-10-05)
+- Commit docs/55–56, PIR tier, Safe Harbor fixes, release harness.
+- Run the main comparison on [[MedRAG Textbooks]] (natural sources), then [[TREC-COVID]] and [[MTSamples]]; retrieval metrics only.
+- 2–3 seeds for the PMC comparison.
+- Optional: wire the [[PIR tier]] into MCP/client; cap tier-2 cluster size at one column.
 
 ## First: Close Claim-Relevant Gaps
 1. Fix restricted-only public profile fallback and require explicit source identity/signature policy for privacy deployments.

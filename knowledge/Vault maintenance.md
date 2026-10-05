@@ -1,16 +1,16 @@
 ---
 tags: [hub, research-support]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Vault Maintenance and Provenance
 
-- Updated: 2026-09-30.
-- Implementation snapshot: 67796309ed20a83f7586965808bad15f2770b368.
+- Updated: 2026-10-05 (docs/53–56 added; scope narrowed to privacy + retrieval).
+- Implementation snapshot: 7065fef plus uncommitted working tree (PIR tier, Safe Harbor fixes, release harness, docs/55–56).
 - Sheet: five tabs, 63 numbered papers in My Comments.
 - Existing Obsidian configuration files were left unchanged.
 - This is AI-assisted research organisation. Imported worksheet comments are not independently verified or submission-ready summaries.
-- No new benchmark was run for this documentation update.
+- No new benchmark was run for this vault update; numbers are copied from docs/53–56 and docs/results.
 
 ## Update Order
 1. Run the relevant harness and archive configuration, aggregate and per-query output.

@@ -1,6 +1,6 @@
 ---
 tags: [hub, research-support]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Consolidated Research Gap Analysis
@@ -16,6 +16,16 @@ A gap is a bounded comparison with prior work, not a claim that nobody has built
 | G5: External validity in realistic federations | Public medical and heterogeneous benchmarks | Public simulated clients do not establish clinical deployment, workload stability or broad scale | HyFedRAG P08; medical FL/RAG P20; MIRAGE P39; FeB4RAG P13 | PMC three-way partition; BEIR/MIRAGE; fictional canaries | Domain expert review, additional models/seeds, authorised clinical data if feasible; remote scale tests |
 
 G1 merges the old overlapping routing and end-to-end privacy rows. G2 is a distinct data-owner disclosure axis, not the same query-leakage problem.
+
+## Thesis framing (2026-10-02)
+
+| Thesis gap | Contribution | Evidence | Status |
+|---|---|---|---|
+| G1 Query-content leakage | Blind unlock: no hospital receives the question or an invertible representation | [[Blind unlock results]], [[Robustness results]], [[External baselines results]] | Measured |
+| G2 Access-pattern leakage | Identical real/dummy probes to every hospital; cover traffic | [[Robustness results]], [[Session attack]], [[External baselines results]] (RAGRoute .562 vs .226) | Measured (strongest) |
+| G3 [[Source-content exposure]] | Safe Harbor de-identification, role keys, budgets, tunable release | [[Safe Harbor de-identification results]], [[Release results]] | Measured and controlled, not eliminated |
+
+Retrieval quality is the utility endpoint; generation is out of scope.
 
 **Working main gap:** a well-scoped, reproducible evaluation of training-free multi-owner RAG that hides query-dependent source contacts and node query inputs together, while measuring the retrieval and authorised-disclosure costs.
 

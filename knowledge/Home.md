@@ -1,11 +1,13 @@
 ---
 tags: [hub, research-support]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # FedSafeRouter Research Vault
 
-**Project:** Privacy-Aware Source Routing for Federated RAG: Mitigating Query and Access-Pattern Leakage.
+**Project:** Privacy-Aware Source Routing for Federated RAG: Mitigating Query, Access-Pattern and Source-Data Leakage.
+
+**Scope (2026-10-02):** privacy and retrieval quality only; answer generation is out of scope. **Thesis gaps:** G1 query content, G2 access pattern, G3 [[Source-content exposure]]. See [[Research gap analysis]].
 
 This vault is research support, not a submission-ready literature review. Imported worksheet comments are working notes; read the primary papers and write your own assessed summaries.
 
@@ -25,6 +27,8 @@ This vault is research support, not a submission-ready literature review. Import
 | [[Next steps]] | Prioritised research and engineering work |
 | [[Source reconciliation]] | Conflicts between worksheet, old docs and code |
 | [[Vault maintenance]] | Source provenance and how to update these notes |
+
+**Since 2026-10-01:** published baselines reproduced ([[External baselines results]]); held-out Safe Harbor de-identification ([[Safe Harbor de-identification results]]); a PIR tier for large hospitals ([[PIR tier results]]); measured evidence release ([[Release results]]).
 
 **Current conclusion:** in the tested eight-node PMC federation, all-node blind unlock hides query content from nodes and makes the contacted-source set query-independent. At P=24, hybrid retrieval retains 96.9-98.4% of the local HyFedRAG-style hybrid baseline across three splits. This is a scoped prototype result, not complete privacy or universally superior retrieval.
 

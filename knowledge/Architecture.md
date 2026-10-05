@@ -1,6 +1,6 @@
 ---
 tags: [hub, research-support]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Current Architecture
@@ -25,9 +25,7 @@ flowchart TD
     RE["Collect all replies first"] --> UN["Unblind; unlock cached chunks"]
     CA --> UN
     UN --> RR["Local dense or hybrid reranking"]
-    RR --> GEN["Local LLM"]
-    Q --> GEN
-    GEN --> AN["Answer and evidence"]
+    RR --> AN["Top-k evidence to the user / local application"]
   end
   PR --> CA
   TB --> CA
@@ -37,6 +35,10 @@ flowchart TD
 ```
 
 **Offline:** owner prepares de-identified data if enabled; publishes profiles and role-permitted encrypted tables. The client caches them. Signatures require suitable configuration and identity provisioning; defaults are not universally strict.
+
+**Large hospitals ([[PIR tier]]):** instead of the table, the device downloads a fixed hint + tag map and fetches the real clusters' sealed chunks with exactly F PIR queries per hospital (one extra round trip; the hospital scans its table per query).
+
+**Scope:** answer generation is outside the thesis; the pipeline ends at ranked evidence.
 
 **Online:** the device picks global top-P clusters. Every node receives P points, including dummies. Replies are collected before local unlocking. The device ranks opened passages and supplies selected evidence to a local generator.
 

@@ -1,9 +1,11 @@
 ---
 tags: [type/result]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # Answer quality results
+
+> **Out of thesis scope since 2026-10-02** (privacy + retrieval only). Kept as a historical result, not headline evidence.
 
 Latest archived run: MIRAGE 150 questions (30 per subset), six BEIR sources, local Qwen3.5-9B.
 

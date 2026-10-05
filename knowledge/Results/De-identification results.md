@@ -1,9 +1,11 @@
 ---
 tags: [type/result]
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # De-identification results
+
+> Superseded as headline by [[Safe Harbor de-identification results]] (held-out benchmark, docs/54). The rows below are the docs/44 `basic` level.
 
 Separate fixture results from public-text alteration and downstream utility.
 
