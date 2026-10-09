@@ -35,13 +35,21 @@ class OllamaGenerator(Generator):
         self.timeout = timeout
 
     def generate(self, question: str, passages: list[str]) -> str:
+        return self.complete(build_prompt(question, passages))
+
+    def complete(self, prompt: str, max_tokens: int | None = None) -> str:
+        """A raw prompt, for evaluation harnesses that need their own template
+        (docs/57); `generate` is this with the fixed template."""
+        options: dict = {"temperature": 0.0}
+        if max_tokens is not None:
+            options["num_predict"] = max_tokens
         body = json.dumps({
-            "model": self.model, "prompt": build_prompt(question, passages), "stream": False,
+            "model": self.model, "prompt": prompt, "stream": False,
             # Qwen3-family "thinking" traces off: the fixed prompt stays the whole
             # prompt and the response is only the answer. Ignored by models
             # without a thinking mode.
             "think": False,
-            "options": {"temperature": 0.0},
+            "options": options,
         }).encode("utf-8")
         request = urllib.request.Request(f"{self.host}/api/generate", data=body,
                                          headers={"Content-Type": "application/json"}, method="POST")

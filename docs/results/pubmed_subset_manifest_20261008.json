@@ -1,0 +1,16 @@
+{
+  "built": "2026-10-08 22:10:40",
+  "subsets": [
+    "pubmedqa",
+    "bioasq"
+  ],
+  "questions": 1118,
+  "per_question": 20,
+  "gold_pmids": 3967,
+  "gold_with_abstract": 3967,
+  "gold_missing": [],
+  "distractors": 19280,
+  "snippets": 23247,
+  "source": "NCBI E-utilities esearch (relevance) + efetch",
+  "bytes": 40559701
+}

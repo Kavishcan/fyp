@@ -11,6 +11,18 @@ Preserve the negative v2 results. Do not resume the evidence-budget direction.
 
 ## Current research direction
 
+Docs/57: C-FedRAG-style answers (eval/run_cfedrag_style.py; corpus from
+eval/build_pubmed_subset.py: 23,247 NCBI abstracts + 17,277 BM25-selected
+MedRAG Textbooks snippets; 8 k-means hospitals; Qwen3.5-9B; 8 passages).
+All 1,118 MIRAGE PubMedQA + BioASQ: closed-book 0.686, broadcast
+(C-FedRAG-style) = centralized 0.842, selective top-2 0.833 (topic 0.637 vs
+floor 0.184), FedSafeRAG P=8 0.822 (-0.020, p<0.001, significant), P=24
+0.834 (-0.007, p=0.11, n.s.); FedSafeRAG topic 0.166 at floor, 0 hospitals
+read the question; records 124 (P=8) / 362 (P=24) vs 64 broadcast; hospital
+CPU 72/211 ms vs 103 ms broadcast incl. per-hospital query embedding; 96 MB
+one-time tables. Secondary evidence; never compare with C-FedRAG's 72.51.
+"FedSafeRAG" is the system name for the blind-unlock design in all writing.
+
 Docs/56: Gap 3, source content released per question (eval/run_release.py,
 PMC 986 q, hybrid). Default blind (clusters 10/5, P=8) unlocks 140 records
 for a top-10 (14x, release precision 1.2%); broadcast returns 80 (but every
@@ -403,6 +415,7 @@ The earlier instruction prohibiting a new router is superseded.
 | backend/privacy/blind_unlock.py | Blind unlock: global probe planning, dummy padding, table cache, tag-lookup unlock (docs/47) |
 | backend/privacy/pir.py, backend/eval/run_pir_tier.py | Tier 2 for large hospitals: SimplePIR fetch of blind-unlock chunks instead of full download (docs/55) |
 | backend/eval/run_release.py | Gap 3: records released per question vs top-10, cluster granularity x P frontier, centroid proximity (docs/56) |
+| backend/eval/build_pubmed_subset.py, backend/eval/run_cfedrag_style.py | C-FedRAG-style MIRAGE PubMedQA + BioASQ answer accuracy with privacy, release, cost and timing columns (docs/57) |
 | backend/eval/scorecard.py | One command: assemble (or --run then assemble) the central configuration × axis table from result CSVs; copies numbers, never recomputes |
 | frontend/lib/api.ts | Hand-maintained mirror of backend/api/schemas.py |
 | docs/ | Current design, planned experiments and limitations |
